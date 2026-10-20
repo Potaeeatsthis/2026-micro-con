@@ -1,1 +1,14 @@
-resources/
+# Local and generated files
+.DS_Store
+Thumbs.db
+*.swp
+*~
+Debug/
+Release/
+build/
+
+resources
+
+# Accidental duplicate
+study/Kinematic-Slide.pdf
+study/robotic-arm-budget.xlsx
