@@ -20,7 +20,13 @@ Mechanical design is based on the [OmArTronics DIY 6-DOF robotic arm](https://om
 | **Raspberry Pi 4** | RGB-D camera processing, object detection, depth, and object XYZ in robot-base coordinates |
 | **STM32 NUCLEO-F767ZI** | Two-microphone voice recognition, task state machine, inverse kinematics, four control modes, manual inputs, 2.4-inch ILI9341 LCD, four limit-switch inputs, safety, trajectory generation, and six hardware-PWM servo signals |
 
-The Pi reports where the camera sees an object. The STM32 recognises voice commands, calculates joint angles, and controls movement. The voice model and complete IK solver are planned; they have not been validated in this repository.
+The Pi reports where the camera sees an object. The STM32 is planned to recognise voice commands, calculate joint angles, and control movement. The voice model and complete IK solver have not been validated in this repository.
+
+### Planned STM32 voice model
+
+Two INMP441 microphones share a proposed 16 kHz stereo SAI/I²S input. A TC-ResNet keyword model deployed with X-CUBE-AI would classify a rolling one-second audio window every 100 ms. The proposed 21 labels cover `move/pick/grab`; four coloured boxes; `hand/station/base`; four jog directions; `undo`; `place/drop`; `yes/no`; and `home/stop`. These are command labels, including two-word labels such as `red box`. The friend's ~33 ms inference claim and model accuracy are **unverified here**. The repository has no trained model or STM32 voice firmware; measure memory, inference time and recognition accuracy on the board before integration.
+
+The task flow is: recognise an object command → request its XYZ from the Pi → show it and wait for `yes` → check reachability and limits → grasp → choose a destination or a bounded jog sequence → confirm placement before releasing. `no` cancels a pending choice, and `undo` removes the last pending jog. Voice `stop` cancels pending work and requests a controlled stop promptly, including during grasp. Keep holding the object while power is available; never release it automatically after a timeout. The hardware emergency stop disconnects servo power independently of voice and firmware.
 
 ### Four operating modes
 
@@ -165,7 +171,7 @@ Raspberry Pi 4
         ▼
 STM32 NUCLEO-F767ZI
    ├── 2 × INMP441          3.3 V, shared SAI/I²S bus, left/right channels
-   ├── Voice recognition    fixed commands; model and timing to validate
+   ├── Voice recognition    planned TC-ResNet / X-CUBE-AI; timing to validate
    ├── Inverse kinematics   convert target XYZ to safe joint angles
    ├── KY-023 joystick      X/Y to ADC; power from 3.3 V, not 5 V
    ├── KY-040 encoder       CLK/DT to timer encoder inputs; SW to digital input
@@ -286,7 +292,7 @@ The DS3218 is a practical shoulder upgrade, but it is not guaranteed to be a per
 | **6** | Implement Joint Group | Each joystick axis moves only its selected joint, inside safe limits |
 | **7** | Add MODE cycle and ILI9341 LCD | Four modes cycle correctly; switches start from current targets and LCD shows status |
 | **8** | Implement STM32 inverse kinematics and Cartesian mode | Reachable XYZ produces safe joint angles; unreachable targets are rejected |
-| **9** | Capture two microphones and validate voice recognition on the STM32 | Fixed commands recognised within the required timing and memory limits |
+| **9** | Capture two microphones and validate the planned TC-ResNet model on the STM32 | Command accuracy, latency and memory measured on the actual board |
 | **10** | Pi GPIO UART ↔ STM32 UART | STM32 requests an object; Pi returns XYZ or `NOTFOUND` |
 | **11** | Camera detection and depth, no motion | Cube located in image reliably |
 | **12** | Camera-to-robot calibration | XYZ in robot-base coordinates is within 2 cm |

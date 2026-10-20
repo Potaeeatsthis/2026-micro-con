@@ -31,7 +31,7 @@ Raspberry Pi 4
 STM32 NUCLEO-F767ZI - Main Controller
 |- SAI/I²S audio input
 |  `- 2 × INMP441 microphones, left and right channels
-|- Voice recognition and task state machine
+|- Planned TC-ResNet keyword model (X-CUBE-AI) and task state machine
 |- Inverse kinematics and reachability checks
 |- UART receive
 |  `- Pi object positions and status
@@ -256,6 +256,29 @@ STM32 hardware timers generate PWM
       v
 Robot arm moves the object
 ```
+
+### Planned voice model and command flow
+
+Two INMP441 microphones can share one STM32 SAI/I²S bus as left and right channels at 16 kHz. The proposed keyword model is a TC-ResNet CNN deployed with X-CUBE-AI. It would evaluate a rolling one-second audio window every 100 ms. Channel selection, model memory use, recognition accuracy and inference time must be measured on the actual STM32; the friend's reported ~33 ms inference time is not verified in this repository. No trained model or STM32 voice firmware is included here yet.
+
+The proposed vocabulary has 21 command labels:
+
+| Group | Labels |
+|---|---|
+| Start | `move`, `pick`, `grab` |
+| Object | `blue box`, `green box`, `red box`, `black box` |
+| Destination | `hand`, `station`, `base` |
+| Jog | `forward`, `backward`, `left`, `right` |
+| Edit | `undo` |
+| Release | `place`, `drop` |
+| Confirm | `yes`, `no` |
+| Other | `home`, `stop` |
+
+For an automatic pick, the STM32 accepts a start command and object label, asks the Pi for the object position, displays the result, and waits for `yes`. It then checks reachability and limits before grasping. While holding an object, it accepts a destination or a small, **bounded** sequence of jog commands; `undo` removes the last pending jog. A placement needs a fresh `yes` before motion and gripper release. `no` cancels the pending choice. Invalid words for the current task state do nothing.
+
+Voice `stop` cancels pending work and requests a controlled stop as soon as the controller can do so safely, including during a grasp. Keep the gripper closed if servo power remains available; never release a held object on a timer or as a side effect of `stop`. The hardware emergency stop remains the way to remove servo power immediately. When power is lost, commanded joint angles do not prove where the physical joints are; require inspection and a safe restart before new motion. Set a short maximum jog count and travel range during implementation, then validate them with the real arm.
+
+### Pi camera exchange
 
 The Pi link carries camera results, not six servo angles. A proposed message exchange is:
 
@@ -496,7 +519,7 @@ The recommended development order is:
 9. Implement and test STM32 inverse kinematics and Cartesian Mode with measured arm geometry.
 10. Test Pi GPIO UART communication and camera-to-robot calibration.
 11. Add the camera object search and depth calculation on the Pi.
-12. Capture audio from both STM32 microphones and validate the planned voice model on the board.
+12. Capture audio from both STM32 microphones and validate the planned TC-ResNet model, vocabulary, memory use, latency and accuracy on the board.
 13. Install and test all four limit switches and the hardware emergency stop before autonomous motion.
 14. Test the complete autonomous sequence.
 15. Add battery operation only if enough time remains.
