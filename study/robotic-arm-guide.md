@@ -2,7 +2,7 @@
 
 **Project:** Microcontroller Interfacing, Semester 1/2026  
 **Main controller:** STM32 NUCLEO-F767ZI  
-**High-level computer:** Raspberry Pi 4  
+**Vision computer:** Raspberry Pi 4
 **Control method:** Direct STM32 hardware PWM  
 
 ## 1. Project Goal
@@ -16,25 +16,25 @@ The system has four operating modes:
 3. Joint Group Mode
 4. Single-Joint Service Mode
 
-The Raspberry Pi handles tasks that require more processing power. The STM32 handles real-time movement, manual controls, safety, the display, and servo PWM.
+The Raspberry Pi processes the RGB-D camera and sends object positions to the STM32. The STM32 handles voice recognition, inverse kinematics (IK), movement, manual controls, safety, the display, and servo PWM. The STM32 voice model and complete IK solver are planned; neither is implemented in this repository yet.
 
 ## 2. Final Architecture
 
 ```text
 Raspberry Pi 4
 |- RGB-D camera
-|- INMP441 microphone
-|- Speech recognition
 |- Object and colour detection
-|- Depth calculation
-|- Inverse kinematics
-`- Autonomous task planning
+`- Depth and object XYZ in robot-base coordinates
               |
-              | USB UART at 115200 8N1
+              | 3.3 V GPIO UART, TX/RX/GND, 115200 8N1
               v
 STM32 NUCLEO-F767ZI - Main Controller
-|- UART interrupt
-|  `- Pi commands and system status
+|- SAI/I²S audio input
+|  `- 2 × INMP441 microphones, left and right channels
+|- Voice recognition and task state machine
+|- Inverse kinematics and reachability checks
+|- UART receive
+|  `- Pi object positions and status
 |
 |- ADC with DMA
 |  |- KY-023 joystick X
@@ -48,7 +48,7 @@ STM32 NUCLEO-F767ZI - Main Controller
 |  |- KY-040 encoder push button
 |  |- Hold-to-Enable button
 |  |- Emergency-stop status
-|  `- Limit switches
+|  `- 4 × physical limit switches
 |
 |- SPI
 |  `- ILI9341 2.4-inch graphic TFT LCD
@@ -81,18 +81,18 @@ STM32 NUCLEO-F767ZI - Main Controller
           Six servos
 ```
 
-The planned PWM assignment is TIM3 channels 1-4 and TIM4 channels 1-2. The final pins must be checked in STM32CubeMX because the PWM pins must not conflict with UART, ADC, SPI, EXTI, or the rotary encoder timer.
+Six hardware-PWM outputs are planned on TIM3 and TIM4. TIM3 channels 1-2 and TIM4 channels 1-4 are a candidate, not a verified pin map. Check PWM, audio, UART, ADC, SPI, EXTI, the encoder, and all four limit switches together in STM32CubeMX. In particular, do not reuse an audio pin for a limit switch.
 
 ## 3. Responsibilities
 
 | Device | Main responsibilities |
 |---|---|
-| Raspberry Pi 4 | Speech recognition, camera processing, depth measurement, inverse kinematics, and automatic task planning |
-| STM32F767ZI | Manual inputs, operating modes, safety checks, smooth trajectories, LCD, communication, and six servo PWM signals |
+| Raspberry Pi 4 | Camera processing, depth measurement, and object XYZ in the robot-base frame |
+| STM32F767ZI | Two-microphone voice recognition, task state machine, inverse kinematics, manual inputs, operating modes, safety checks, smooth trajectories, LCD, UART, and six servo PWM signals |
 | SN74AHCT244N | Changes the six STM32 PWM signals from 3.3 V logic to reliable 5 V logic |
 | Servos | Move the six robot joints to the requested positions |
 
-The STM32 is the main physical controller. The Raspberry Pi may request a movement, but the STM32 checks the request before moving the arm.
+The STM32 is the main physical controller. The Pi reports what the camera sees; the STM32 decides whether and how to move. Camera-to-robot calibration must convert the reported XYZ position into the robot-base frame.
 
 ## 4. Control Panel
 
@@ -101,9 +101,9 @@ The control panel and servo-signal hardware contain:
 | Equipment | Quantity | Purpose |
 |---|---:|---|
 | STM32 NUCLEO-F767ZI | 1 | Main controller, safety checks and six PWM outputs |
-| Raspberry Pi 4 | 1 | Voice, vision and inverse kinematics |
+| Raspberry Pi 4 | 1 | RGB-D camera processing |
 | RGB-D camera | 1 | Object location and depth |
-| INMP441 microphone | 1 | Voice input |
+| INMP441 microphone | 2 | Left and right voice input to the STM32 |
 | KY-023 joystick module | 1 | Two analogue axes for manual movement |
 | KY-040 rotary encoder module | 1 | Rotation and push-button input |
 | ILI9341 2.4-inch SPI TFT LCD | 1 | Mode, target and safety status |
@@ -111,7 +111,7 @@ The control panel and servo-signal hardware contain:
 | 22 mm latching emergency-stop button, 1NO + 1NC | 1 | NC contact controls the servo-power disconnect; NO contact reports status to the STM32 |
 | SN74AHCT244N DIP-20 | 1 | Buffers six STM32 PWM signals for the servos |
 
-The KY-023 replaces the earlier six-potentiometer design. Power it from 3.3 V so its X and Y outputs stay within the STM32 ADC range. Power the KY-040 from 3.3 V so its digital signals are safe for STM32 inputs. Its push button is separate from the MODE and Hold-to-Enable buttons.
+The KY-023 replaces the earlier six-potentiometer design. Power the KY-023, KY-040 and both INMP441 microphones from 3.3 V so their signals stay within STM32 input limits. The two microphones share audio clock/data wiring and use separate left/right channel selection; verify the exact SAI wiring in CubeMX. The KY-040 push button is separate from the MODE and Hold-to-Enable buttons.
 
 ## 5. Operating Modes
 
@@ -157,9 +157,9 @@ Encoder rotation -> Change target Z
 Encoder press    -> Open or close gripper
 ```
 
-Cartesian Mode sends the XYZ target to the Raspberry Pi. The Pi calculates inverse kinematics and returns six target joint angles. Therefore, Cartesian Mode needs the Pi.
+The STM32 calculates inverse kinematics from the XYZ target and rejects positions outside the arm's reachable workspace. Cartesian Mode therefore works without the Pi.
 
-Joint Group and Single-Joint Service modes can operate without the Pi. They provide manual control if speech, camera, or Pi software fails.
+All three manual modes work without the Pi. Joint Group and Single-Joint Service also remain available if the STM32 voice or IK functions fail.
 
 ### 6.2 Joint Group control
 
@@ -176,18 +176,18 @@ Rotate the KY-040 to select a group. Press it to change between Fine and Fast sp
 Every mode must use the same safety and movement functions. A mode only creates a new target. It must not control PWM directly.
 
 ```text
-Auto joint target ---------+
-Cartesian joint target ----+
-Joint Group target --------+--> Joint-limit checks
-Single-Joint target -------+            |
-                                         v
-                              Trajectory generator
-                                         |
-                                         v
-                                 STM32 hardware PWM
-                                         |
-                                         v
-                                      Servos
+Auto target ------+
+Cartesian target -+--> STM32 IK --+
+Joint Group target ---------------+--> Joint-limit and limit-switch checks
+Single-Joint target --------------+                  |
+                                                   v
+                                         Trajectory generator
+                                                   |
+                                                   v
+                                           STM32 hardware PWM
+                                                   |
+                                                   v
+                                                 Servos
 ```
 
 This design prevents duplicated movement code. It also makes sure that every mode uses the same speed limits, joint limits, and emergency behaviour.
@@ -197,7 +197,7 @@ This design prevents duplicated movement code. It also makes sure that every mod
 Before the STM32 changes modes, it must:
 
 1. Stop accepting movement input from the current mode.
-2. Cancel the active Raspberry Pi task when leaving Auto/Voice Mode.
+2. Cancel the active voice task and any pending camera request when leaving Auto/Voice Mode.
 3. Smoothly reduce the current movement speed.
 4. Wait until the planned trajectory state becomes `IDLE`.
 5. Require the Hold-to-Enable button to be released.
@@ -233,19 +233,16 @@ The Hold-to-Enable button is not the same as the emergency stop:
 Voice command
       |
       v
-Raspberry Pi recognises the command
+STM32 recognises the command from two INMP441 microphones
       |
       v
-Camera finds the coloured object
+STM32 asks the Pi to find the coloured object
       |
       v
-Depth camera calculates the XYZ position
+Pi camera reports the object's XYZ position in the robot-base frame
       |
       v
-Pi calculates inverse kinematics
-      |
-      v
-Pi sends six target angles to STM32
+STM32 calculates inverse kinematics and checks reachability
       |
       v
 STM32 checks safety and joint limits
@@ -260,15 +257,17 @@ STM32 hardware timers generate PWM
 Robot arm moves the object
 ```
 
-An example UART command is:
+The Pi link carries camera results, not six servo angles. A proposed message exchange is:
 
 ```text
-MOVE 90 65 110 45 90 30 2500
+STM32 → Pi: FIND red_block
+Pi → STM32: OBJ red_block 182 -45 30
+Pi → STM32: NOTFOUND red_block
 ```
 
-The command contains six target joint angles and the planned movement time in milliseconds.
+Coordinates are millimetres in the robot-base frame. The exact message format, timeout, and calibration method still need agreement and testing. Connect Pi GPIO14 (TX, physical pin 8) to an STM32 UART RX pin, STM32 UART TX to Pi GPIO15 (RX, physical pin 10), and the grounds together. Both sides use 3.3 V signals. USART6 on PG9/PG14 is a candidate; verify the board routing and full pin map before wiring. The ST-LINK USB cable may still provide programming, debugging, or power, but it is not the Pi command link.
 
-Because normal hobby servos do not report their positions, `DONE` means that the planned movement time has ended. It does not confirm the exact physical position.
+Because normal hobby servos do not report their positions, a completed trajectory means that the commanded motion time ended. It does not confirm the exact physical position.
 
 ## 11. PWM System
 
@@ -390,6 +389,8 @@ The power system should include:
 Software stopping alone is not enough because software may freeze.
 Use the NC contact in the low-current relay-control circuit so pressing the button releases the relay and removes servo power. Use the NO contact for the STM32 status input. Do not put the servo current through the button contacts; the relay or DC power switch carries it.
 
+Keep four **physical limit switches** at the arm's most important travel boundaries. If one is triggered, the STM32 must block motion farther into that boundary while allowing a safe move away. Their mounting points and GPIO pins require mechanical testing and CubeMX verification. Limit switches are a backup to software angle limits, not a replacement for the hardware emergency stop.
+
 ## 14. Graphic LCD
 
 The LCD should show only useful operating information.
@@ -461,7 +462,7 @@ The KY-040's mechanical contacts can also bounce. Filter its CLK/DT inputs and d
 | Course requirement | Project implementation | Status |
 |---|---|---|
 | STM32, HAL, and STM32CubeIDE | STM32F767ZI is the main controller | Satisfied |
-| Interrupts from two modules | UART interrupt and EXTI; timer interrupts are also used | Satisfied |
+| Interrupts from two modules | UART and EXTI; audio DMA and timers are also planned | Planned |
 | ADC | Joystick X and Y | Satisfied |
 | PWM | Six STM32 hardware PWM outputs | Satisfied |
 | Graphic LCD | ILI9341 2.4-inch SPI TFT LCD | Satisfied |
@@ -473,12 +474,12 @@ This architecture uses all three requested modules: ADC, PWM, and graphic LCD.
 
 The project has four main control features:
 
-1. **Auto/Voice:** Say a fixed command, such as "pick up the red block." The Pi uses the microphone and RGB-D camera to find the object, then requests a pick-and-place movement.
-2. **Cartesian:** Use the KY-023 joystick to move the target in X and Y, and turn the KY-040 to change Z. The Pi calculates the joint angles.
+1. **Auto/Voice:** Say a fixed command, such as "pick up the red block." The STM32 recognises it using two microphones and asks the Pi camera for the object's position. The STM32 calculates the joint angles and moves the arm.
+2. **Cartesian:** Use the KY-023 joystick to move the target in X and Y, and turn the KY-040 to change Z. The STM32 calculates the joint angles, so this mode works without the Pi.
 3. **Joint Group:** Move two selected joints with the KY-023 joystick. Turn the KY-040 to select one of three joint groups.
 4. **Single-Joint Service:** Test one joint at a time. Turn the KY-040 to select J1-J6, then move that joint with the joystick.
 
-The ILI9341 LCD shows the active mode and status. Manual movement requires Hold-to-Enable, and the emergency stop disconnects servo power.
+The 2.4-inch ILI9341 LCD shows the active mode and status. Manual movement requires Hold-to-Enable; four physical limit switches protect travel boundaries, and the emergency stop disconnects servo power.
 
 ## 18. Development Priority
 
@@ -492,11 +493,11 @@ The recommended development order is:
 6. Implement Single-Joint Service Mode.
 7. Add the short-press MODE cycle.
 8. Add the ILI9341 graphic LCD.
-9. Test Pi-to-STM32 UART communication.
-10. Implement Cartesian Mode through the Pi.
-11. Add the camera and depth calculation.
-12. Add fixed voice commands.
-13. Install and test the hardware emergency stop before autonomous motion.
+9. Implement and test STM32 inverse kinematics and Cartesian Mode with measured arm geometry.
+10. Test Pi GPIO UART communication and camera-to-robot calibration.
+11. Add the camera object search and depth calculation on the Pi.
+12. Capture audio from both STM32 microphones and validate the planned voice model on the board.
+13. Install and test all four limit switches and the hardware emergency stop before autonomous motion.
 14. Test the complete autonomous sequence.
 15. Add battery operation only if enough time remains.
 

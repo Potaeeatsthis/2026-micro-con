@@ -17,10 +17,10 @@ Mechanical design is based on the [OmArTronics DIY 6-DOF robotic arm](https://om
 
 | Board | Responsibility |
 |---|---|
-| **Raspberry Pi 4** | Speech-to-text, object detection, depth, inverse kinematics, task state machine |
-| **STM32 NUCLEO-F767ZI** | Four control modes, KY-023 joystick ADC, KY-040 encoder, ILI9341 SPI LCD, six hardware-PWM servo signals, limit switch interrupts, safety logic, trajectory generation and UART command parser |
+| **Raspberry Pi 4** | RGB-D camera processing, object detection, depth, and object XYZ in robot-base coordinates |
+| **STM32 NUCLEO-F767ZI** | Two-microphone voice recognition, task state machine, inverse kinematics, four control modes, manual inputs, 2.4-inch ILI9341 LCD, four limit-switch inputs, safety, trajectory generation, and six hardware-PWM servo signals |
 
-The Pi handles camera, speech and inverse kinematics. The STM32 keeps movement smooth and checks safety even while the Pi is busy.
+The Pi reports where the camera sees an object. The STM32 recognises voice commands, calculates joint angles, and controls movement. The voice model and complete IK solver are planned; they have not been validated in this repository.
 
 ### Four operating modes
 
@@ -28,8 +28,8 @@ Short MODE presses cycle **Auto/Voice → Cartesian → Joint Group → Single-J
 
 | Mode | What it does | Pi required? |
 |---|---|---|
-| Auto/Voice | A fixed spoken command starts camera-guided pick-and-place | Yes |
-| Cartesian | KY-023 changes target X/Y; KY-040 changes Z and its push button opens or closes the gripper | Yes, for inverse kinematics |
+| Auto/Voice | STM32 recognises a fixed spoken command, asks the Pi camera for object XYZ, then calculates joint angles and moves | Yes, for camera results |
+| Cartesian | KY-023 changes target X/Y; KY-040 changes Z; STM32 calculates joint angles | No |
 | Joint Group | KY-023 moves two joints; KY-040 selects one of three joint pairs and its push button changes Fine/Fast speed | No |
 | Single-Joint Service | KY-040 selects J1–J6; KY-023 moves the selected joint for testing | No |
 
@@ -50,7 +50,8 @@ Manual movement requires a separate Hold-to-Enable button. Releasing it stops th
 | Equipment | Quantity | Purpose |
 |---|---:|---|
 | STM32 NUCLEO-F767ZI, Raspberry Pi 4 and its adapter | 1 each | Main controller and high-level computer |
-| RGB-D camera and INMP441 microphone | 1 each | Vision and voice input |
+| RGB-D camera | 1 | Pi vision and depth input |
+| INMP441 microphones | 2 | Left and right voice input to the STM32 |
 | KY-023 joystick and KY-040 rotary encoder | 1 each | Manual movement and selection |
 | MG996R and SG90 servos | 3 of each fitted | Six arm joints |
 | ILI9341 2.4-inch SPI TFT LCD | 1 | Mode, target and safety display |
@@ -75,7 +76,7 @@ Manual movement requires a separate Hold-to-Enable button. Releasing it stops th
 | Path | Carries | Route |
 |---|---|---|
 | Power | up to 9.75 A | source → fuse → e-stop relay → buck → terminal block → servo **RED + BLACK** |
-| Signal | microamps | Pi → STM32 hardware PWM → SN74AHCT244N → servo **ORANGE** |
+| Signal | microamps | STM32 hardware PWM → SN74AHCT244N → servo **ORANGE** |
 
 The red and black servo wires connect to the 6.0 V distribution block. The orange signal wire connects to one SN74AHCT244N output.
 
@@ -86,13 +87,13 @@ The red and black servo wires connect to the 6.0 V distribution block. The orang
 | Rail | Voltage | Load | Source |
 |---|---|---|---|
 | Servo | **6.0 V** | 2.4 A moving, 9.75 A worst-case stall | 20 A buck |
-| Logic | **5.1 V** | Earlier 2.7 A peak estimate for Pi + camera + STM32; recheck with LCD and controls | 5 A buck |
+| Logic | **5.1 V** | Earlier 2.7 A peak estimate; recheck with two microphones, STM32 processing, LCD and controls | 5 A buck |
 
 Sharing one rail causes the Pi to brown out on every servo movement — random reboots that look exactly like software crashes.
 
 ### Earlier load estimate
 
-These figures came from the previous parts list. They are planning estimates, **not measurements of the updated build**. Recheck logic-rail current and battery runtime after adding the LCD and controls.
+These figures came from the previous parts list. They are planning estimates, **not measurements of the updated build**. Recheck logic-rail current and battery runtime with two microphones, STM32 voice processing, the LCD and controls.
 
 | Scenario | Servo rail | Logic rail | From battery | Runtime |
 |---|---|---|---|---|
@@ -143,7 +144,9 @@ XT60 male + 100 mm pigtail
         ▼
 SOLDER SPLIT (heat shrink over the joint)
         ├──▶ Fuse → e-stop relay → Buck 20 A → 6.0 V → terminal block → servos
-        └──▶ Buck 5 A  → 5.1 V → Raspberry Pi → STM32 (USB)
+        └──▶ Buck 5 A  → 5.1 V → Raspberry Pi → STM32 (USB power only)
+
+Pi GPIO UART ↔ STM32 UART carries camera data separately.
 ```
 
 > **Do not swap the bucks.** 6.0 V into a Raspberry Pi damages it; its maximum is about 5.25 V.
@@ -156,20 +159,22 @@ The 6.0 V servo distribution stays the same between phases. On the bench the Pi 
 
 ```
 Raspberry Pi 4
-   ├── INMP441 microphone   I²S on GPIO18 / 19 / 20, VDD = 3.3 V ONLY
    ├── RGB-D camera         USB 3.0 (blue port)
-   └── USB-A → micro-USB into Nucleo CN1
-              (power + programming + UART on one cable)
+   └── Object detection and depth → XYZ in robot-base frame
+        │  3.3 V GPIO UART: TX/RX/GND, 115200 8N1
         ▼
 STM32 NUCLEO-F767ZI
+   ├── 2 × INMP441          3.3 V, shared SAI/I²S bus, left/right channels
+   ├── Voice recognition    fixed commands; model and timing to validate
+   ├── Inverse kinematics   convert target XYZ to safe joint angles
    ├── KY-023 joystick      X/Y to ADC; power from 3.3 V, not 5 V
    ├── KY-040 encoder       CLK/DT to timer encoder inputs; SW to digital input
    ├── ILI9341 2.4-inch LCD SPI plus control pins; check module voltage ratings
    ├── MODE button          12 mm momentary, normally open
    ├── Hold-to-Enable       separate 12 mm momentary, normally open
    ├── E-stop status        22 mm latching button NO contact to input
-   ├── 4 × limit switch     PE2/PE3/PE4/PE5 proposed; verify in CubeMX
-   └── 6 × hardware PWM     TIM3 CH1–CH4 + TIM4 CH1–CH2, final pins checked in CubeMX
+   ├── 4 × limit switch     physical travel boundaries; pins to assign in CubeMX
+   └── 6 × hardware PWM     TIM3/TIM4; channels and pins to assign in CubeMX
         ▼
 SN74AHCT244N DIP-20 buffer  VCC = 5 V, GND shared, /1OE and /2OE tied LOW
    └── 100 nF ceramic capacitor directly between VCC and GND
@@ -182,26 +187,26 @@ SN74AHCT244N DIP-20 buffer  VCC = 5 V, GND shared, /1OE and /2OE tied LOW
 
 | Bus | Between | Wires |
 |---|---|---|
-| **UART** | Pi ↔ STM32 | via ST-LINK USB, no jumpers needed |
+| **UART** | Pi ↔ STM32 | Direct 3.3 V GPIO TX/RX/GND; object XYZ and status |
 | **PWM** | STM32 → SN74AHCT244N → servos | Six independent timer-output signals |
-| **I²S** | mic → Pi | SCK, WS, SD |
+| **SAI/I²S** | Two INMP441 microphones → STM32 | Shared clock/data with left/right channel selection |
 | **SPI** | STM32 → ILI9341 LCD | Clock, data and display-control signals |
 
-The KY-023 adds two analogue ADC signals. The KY-040 adds two timer-encoder signals and one push-button input. Verify the complete pin map in STM32CubeMX before wiring; the timer, SPI, UART and interrupt pins must not overlap.
+The KY-023 adds two analogue ADC signals. The KY-040 adds two timer-encoder signals and one push-button input. Verify the complete pin map in STM32CubeMX before wiring; audio, PWM, SPI, UART, ADC, encoder and four limit-switch inputs must not overlap. The older proposed `PE2`–`PE5` limit-switch map may conflict with audio pin candidates, so it is **not approved for wiring**.
 
 Power the KY-040 from 3.3 V so its digital outputs match STM32 inputs. Filter its mechanical CLK/DT signals and debounce its push button and the MODE button. The KY-040 is a user input; it does **not** measure a joint's actual position. Use the ILI9341 module's specified supply and logic voltages, which depend on the exact breakout board.
 
 ### UART detail
 
-`USART3` on `PD8`/`PD9` is routed internally to the ST-LINK virtual COM port. One USB cable from the Pi carries power, flashing and serial. Appears on the Pi as `/dev/ttyACM0` at **115200 8N1**. No CP2102 module required.
+Use the Pi's GPIO UART at **115200 8N1**: Pi GPIO14 TX (physical pin 8) → STM32 RX, STM32 TX → Pi GPIO15 RX (physical pin 10), plus a common ground. Both sides use 3.3 V logic. USART6 on PG9/PG14 is a candidate; verify it in CubeMX and on the Nucleo headers before wiring. The ST-LINK USB port remains available for programming, debugging or power, but the Pi command link uses GPIO UART.
 
-**Protocol:**
+The STM32 asks the Pi for a camera result. A proposed protocol is:
 ```
-Pi   → STM32:  MOVE 90 65 110 45 90 30 2500
-STM32 → Pi:    ACK
-STM32 → Pi:    DONE
+STM32 → Pi: FIND red_block
+Pi → STM32: OBJ red_block 182 -45 30
+Pi → STM32: NOTFOUND red_block
 ```
-Six joint angles plus duration in milliseconds.
+XYZ values are millimetres in the robot-base frame. Agree on message framing, timeout and camera calibration before implementation. The STM32 computes joint angles locally and rejects unreachable targets.
 
 ---
 
@@ -280,18 +285,18 @@ The DS3218 is a practical shoulder upgrade, but it is not guaranteed to be a per
 | **5** | Read/filter KY-023 and KY-040; implement Single-Joint Service with Hold-to-Enable | One selected joint moves only while enabled; release stops the command |
 | **6** | Implement Joint Group | Each joystick axis moves only its selected joint, inside safe limits |
 | **7** | Add MODE cycle and ILI9341 LCD | Four modes cycle correctly; switches start from current targets and LCD shows status |
-| **8** | Pi ↔ STM32 UART | `MOVE` command returns `DONE` |
-| **9** | Forward/inverse kinematics and Cartesian mode | Arm reaches a typed or joystick-selected XYZ within safe limits |
-| **10** | Camera detection, no motion | Cube located in image reliably |
-| **11** | Camera-to-robot calibration | Reported position within 2 cm |
-| **12** | Install/test limit switches and hardware emergency stop | E-stop removes servo power; STM32 reports status; switches stop unsafe travel |
-| **13** | Autonomous pick-and-place | 8 of 10 grasps succeed |
-| **14** | Speech integration | Fixed command list recognised |
+| **8** | Implement STM32 inverse kinematics and Cartesian mode | Reachable XYZ produces safe joint angles; unreachable targets are rejected |
+| **9** | Capture two microphones and validate voice recognition on the STM32 | Fixed commands recognised within the required timing and memory limits |
+| **10** | Pi GPIO UART ↔ STM32 UART | STM32 requests an object; Pi returns XYZ or `NOTFOUND` |
+| **11** | Camera detection and depth, no motion | Cube located in image reliably |
+| **12** | Camera-to-robot calibration | XYZ in robot-base coordinates is within 2 cm |
+| **13** | Install/test four limit switches and hardware emergency stop | E-stop removes servo power; each switch blocks further travel into its limit |
+| **14** | Voice-guided autonomous pick-and-place | Fixed commands recognised; 8 of 10 grasps succeed |
 | **15** | Battery conversion, full run-through | Runs untethered with both rails checked |
 
-**Speech is last on purpose.** Integrated early, every failure has three possible causes.
+Validate microphone capture and the STM32 voice model before joining voice, camera and motion. A working model is not present in this repository yet.
 
-**Camera-to-robot calibration at stage 11 is the schedule risk.** It looks like one step and typically consumes a week.
+**Camera-to-robot calibration at stage 12 is a schedule risk.** It can take a week. The STM32 voice model is another schedule risk until measured on the board.
 
 ---
 
@@ -304,6 +309,7 @@ The DS3218 is a practical shoulder upgrade, but it is not guaranteed to be a per
 | **Print accuracy** | 0.3 mm error in servo pockets means play you cannot calibrate out | Test part first |
 | **Camera calibration** | Usually the week-eater | Start it early, do not leave to the end |
 | **Pi USB current limit** | Earlier camera + Nucleo estimate used 79% of 1.2 A; the LCD may add load | Measure the updated setup; use a separate Nucleo adapter if undervoltage appears |
+| **STM32 voice and IK workload** | Audio capture, recognition, IK and motion must fit the board's memory and timing | Measure model memory and inference time on the actual STM32 before integration |
 | **Battery runtime** | Earlier estimate was ~46 min at normal draw; updated build is unmeasured | Bench-test on the wall adapter, then measure battery runtime |
 
 ---
@@ -334,7 +340,9 @@ Non-negotiable safety rules:
 - [ ] No servo red power wire connected to the STM32 or logic buffer
 - [ ] Ground continuity: terminal block minus → Pi GND → STM32 GND
 - [ ] INMP441 `VDD` measured at **3.3 V**, not 5 V
+- [ ] Both INMP441 microphones use distinct left/right channel selection and verified SAI wiring
 - [ ] KY-023 and KY-040 powered from **3.3 V**, not 5 V
+- [ ] Pi GPIO UART and STM32 UART use 3.3 V TX/RX with common ground; final pin map checked in CubeMX
 - [ ] Exact ILI9341 breakout supply and signal-voltage ratings checked before connection
 - [ ] No stray copper strands at any screw terminal
 - [ ] Heat shrink over the XT60 solder split
@@ -349,8 +357,9 @@ Non-negotiable safety rules:
 
 1. **Confirm the camera loan** covers the whole semester.
 2. **Confirm all equipment is available:** ILI9341, two 12 mm buttons, e-stop circuit, four limit switches, jumper wires and LiPo balance charger.
-3. **Verify the complete STM32CubeMX pin map:** six TIM3/TIM4 PWM outputs, two ADC inputs, KY-040 timer inputs and switch, ILI9341 SPI/control pins, UART and EXTI inputs. Check the proposed `PE2`–`PE5` limit-switch pins.
-4. **Confirm the exact ILI9341 module's voltage ratings** and test the emergency-stop circuit before autonomous motion.
+3. **Verify the complete STM32CubeMX pin map:** six TIM3/TIM4 PWM outputs, two ADC inputs, shared SAI audio, KY-040 timer inputs and switch, ILI9341 SPI/control pins, Pi GPIO UART and EXTI inputs. Assign new pins for all four limit switches; do not reuse audio pins.
+4. **Validate the STM32 voice model and IK solver** on the real board, including memory use, timing, accuracy and unreachable-target handling.
+5. **Confirm the exact 2.4-inch ILI9341 module's voltage ratings** and test the emergency-stop circuit before autonomous motion.
 
 ---
 
@@ -363,4 +372,4 @@ Non-negotiable safety rules:
 
 ---
 
-*Verify all STM32 pin names against the NUCLEO-F767ZI silkscreen before wiring. Raspberry Pi `GPIO18`, `GPIO19` and `GPIO20` above are BCM numbers; their physical header pins are 12, 35 and 38.*
+*Verify all STM32 pin names against the NUCLEO-F767ZI silkscreen and CubeMX before wiring. Raspberry Pi `GPIO14` and `GPIO15` above are BCM numbers; their physical header pins are 8 and 10.*
