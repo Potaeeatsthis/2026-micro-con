@@ -37,21 +37,21 @@ STM32 NUCLEO-F767ZI - Main Controller
 |  `- Pi commands and system status
 |
 |- ADC with DMA
-|  |- Joystick X
-|  `- Joystick Y
+|  |- KY-023 joystick X
+|  `- KY-023 joystick Y
 |
 |- Timer Encoder Mode
-|  `- Rotary encoder rotation
+|  `- KY-040 rotary encoder rotation
 |
 |- EXTI interrupts
 |  |- MODE button
-|  |- Encoder push button
+|  |- KY-040 encoder push button
 |  |- Hold-to-Enable button
 |  |- Emergency-stop status
 |  `- Limit switches
 |
 |- SPI
-|  `- Graphic LCD, ILI9341 or ST7789
+|  `- ILI9341 2.4-inch graphic TFT LCD
 |
 |- Mode state machine
 |  |- Auto/Voice
@@ -75,7 +75,7 @@ STM32 NUCLEO-F767ZI - Main Controller
    `- Servo 6: gripper
               |
               v
-     SN74AHCT244N buffer
+     SN74AHCT244N DIP-20 buffer
               |
               v
           Six servos
@@ -96,22 +96,28 @@ The STM32 is the main physical controller. The Raspberry Pi may request a moveme
 
 ## 4. Control Panel
 
-The control panel contains:
+The control panel and servo-signal hardware contain:
 
-- One two-axis analogue joystick
-- One rotary encoder with a push button
-- One MODE button
-- One Hold-to-Enable button
-- One separate emergency-stop button
-- One SPI graphic LCD
+| Equipment | Quantity | Purpose |
+|---|---:|---|
+| STM32 NUCLEO-F767ZI | 1 | Main controller, safety checks and six PWM outputs |
+| Raspberry Pi 4 | 1 | Voice, vision and inverse kinematics |
+| RGB-D camera | 1 | Object location and depth |
+| INMP441 microphone | 1 | Voice input |
+| KY-023 joystick module | 1 | Two analogue axes for manual movement |
+| KY-040 rotary encoder module | 1 | Rotation and push-button input |
+| ILI9341 2.4-inch SPI TFT LCD | 1 | Mode, target and safety status |
+| 12 mm normally-open momentary push button | 2 | One MODE button and one separate Hold-to-Enable button |
+| 22 mm latching emergency-stop button, 1NO + 1NC | 1 | NC contact controls the servo-power disconnect; NO contact reports status to the STM32 |
+| SN74AHCT244N DIP-20 | 1 | Buffers six STM32 PWM signals for the servos |
 
-The joystick replaces the earlier six-potentiometer design. Its X and Y outputs give the STM32 two ADC inputs.
+The KY-023 replaces the earlier six-potentiometer design. Power it from 3.3 V so its X and Y outputs stay within the STM32 ADC range. Power the KY-040 from 3.3 V so its digital signals are safe for STM32 inputs. Its push button is separate from the MODE and Hold-to-Enable buttons.
 
 ## 5. Operating Modes
 
-### 5.1 Normal mode cycle
+### 5.1 Mode cycle
 
-A short press of the MODE button changes between the three normal modes:
+A short press of the MODE button changes between all four modes:
 
 ```text
 AUTO/VOICE
@@ -123,26 +129,15 @@ CARTESIAN
 JOINT GROUP
     |
     v
+SINGLE-JOINT SERVICE
+    |
+    v
 AUTO/VOICE
 ```
 
 ### 5.2 Single-Joint Service Mode
 
-Single-Joint Test is a protected service mode. It is not part of the normal short-press cycle.
-
-```text
-Hold MODE for 2 seconds
-          |
-          v
-Enter SINGLE-JOINT SERVICE
-
-Hold MODE for 2 seconds again
-          |
-          v
-Exit SINGLE-JOINT SERVICE
-```
-
-The STM32 must not use `HAL_Delay(2000)` to detect the long press. It should record the button press and release times with a hardware timer. This allows the safety system and PWM outputs to continue working.
+This mode is in the short-press cycle, but moving a joint still requires the Hold-to-Enable button. The STM32 must debounce MODE presses without blocking the safety system or PWM outputs.
 
 ## 6. Controls in Each Mode
 
@@ -151,17 +146,9 @@ The STM32 must not use `HAL_Delay(2000)` to detect the long press. It should rec
 | Auto/Voice | Movement control disabled | Select display information | Cancel the active task | Not required |
 | Cartesian | Move target X and Y | Move target Z | Open or close the gripper | Must be held |
 | Joint Group | Control two joints | Select Group 1-3 | Change Fine/Fast speed | Must be held |
-| Single-Joint Service | Move the selected joint | Select J1-J6 | Reset the selected target | Must be held |
+| Single-Joint Service | Move the selected joint | Select J1-J6 | Reset the selected target to the current commanded position | Must be held for movement |
 
-### 6.1 Joint groups
-
-| Group | Joystick X | Joystick Y |
-|---|---|---|
-| Group 1 | J1 Base | J2 Shoulder |
-| Group 2 | J3 Elbow | J4 Wrist pitch |
-| Group 3 | J5 Wrist rotation | J6 Gripper |
-
-### 6.2 Cartesian control
+### 6.1 Cartesian control
 
 ```text
 Joystick X       -> Change target X
@@ -172,7 +159,17 @@ Encoder press    -> Open or close gripper
 
 Cartesian Mode sends the XYZ target to the Raspberry Pi. The Pi calculates inverse kinematics and returns six target joint angles. Therefore, Cartesian Mode needs the Pi.
 
-Joint Group Mode and Single-Joint Service Mode can operate without the Pi. They provide a manual fallback if speech, camera, or Pi software fails.
+Joint Group and Single-Joint Service modes can operate without the Pi. They provide manual control if speech, camera, or Pi software fails.
+
+### 6.2 Joint Group control
+
+| Group | Joystick X | Joystick Y |
+|---|---|---|
+| Group 1 | J1 Base | J2 Shoulder |
+| Group 2 | J3 Elbow | J4 Wrist pitch |
+| Group 3 | J5 Wrist rotation | J6 Gripper |
+
+Rotate the KY-040 to select a group. Press it to change between Fine and Fast speed. Joint limits and the Hold-to-Enable button still apply.
 
 ## 7. Shared Motion Pipeline
 
@@ -383,7 +380,7 @@ E-stop pressed
 
 The power system should include:
 
-- A latching emergency-stop button
+- A 22 mm latching emergency-stop button with one normally-closed (NC) and one normally-open (NO) contact
 - A fuse close to the battery or source
 - A suitable relay or DC power switch
 - A transistor or MOSFET relay driver
@@ -391,6 +388,7 @@ The power system should include:
 - An EXTI status connection to the STM32
 
 Software stopping alone is not enough because software may freeze.
+Use the NC contact in the low-current relay-control circuit so pressing the button releases the relay and removes servo power. Use the NO contact for the STM32 status input. Do not put the servo current through the button contacts; the relay or DC power switch carries it.
 
 ## 14. Graphic LCD
 
@@ -421,7 +419,7 @@ Gripper: OPEN
 Example for Single-Joint Service Mode:
 
 ```text
-SERVICE: SINGLE JOINT
+MODE: SINGLE-JOINT SERVICE
 
 Joint: J2 SHOULDER
 Target: 65 deg
@@ -456,6 +454,7 @@ Filtered result
 ```
 
 The dead zone prevents the arm from slowly moving when the joystick is released.
+The KY-040's mechanical contacts can also bounce. Filter its CLK/DT inputs and debounce its push button so one physical detent or press produces one action.
 
 ## 16. Course Requirement Check
 
@@ -465,21 +464,21 @@ The dead zone prevents the arm from slowly moving when the joystick is released.
 | Interrupts from two modules | UART interrupt and EXTI; timer interrupts are also used | Satisfied |
 | ADC | Joystick X and Y | Satisfied |
 | PWM | Six STM32 hardware PWM outputs | Satisfied |
-| Graphic LCD | SPI graphic LCD | Satisfied |
-| At least 4-6 features | Four modes, voice, vision, LCD, and safety functions | Satisfied |
+| Graphic LCD | ILI9341 2.4-inch SPI TFT LCD | Satisfied |
+| At least 4-6 features | Four control modes, with voice, vision, LCD and safety functions | Satisfied |
 
 This architecture uses all three requested modules: ADC, PWM, and graphic LCD.
 
 ## 17. Main Features
 
-The project can present these six main features:
+The project has four main control features:
 
-1. Voice-controlled automatic pick-and-place
-2. RGB-D object position detection
-3. Cartesian XYZ manual control
-4. Two-joint group control
-5. Protected single-joint testing
-6. LCD status and safety monitoring
+1. **Auto/Voice:** Say a fixed command, such as "pick up the red block." The Pi uses the microphone and RGB-D camera to find the object, then requests a pick-and-place movement.
+2. **Cartesian:** Use the KY-023 joystick to move the target in X and Y, and turn the KY-040 to change Z. The Pi calculates the joint angles.
+3. **Joint Group:** Move two selected joints with the KY-023 joystick. Turn the KY-040 to select one of three joint groups.
+4. **Single-Joint Service:** Test one joint at a time. Turn the KY-040 to select J1-J6, then move that joint with the joystick.
+
+The ILI9341 LCD shows the active mode and status. Manual movement requires Hold-to-Enable, and the emergency stop disconnects servo power.
 
 ## 18. Development Priority
 
@@ -488,16 +487,16 @@ The recommended development order is:
 1. Verify the complete STM32CubeMX pin map.
 2. Test one servo with STM32 hardware PWM.
 3. Test all six PWM outputs without attaching the arm links.
-4. Read and filter the joystick.
-5. Implement Joint Group Mode.
+4. Read and filter the KY-023 joystick and KY-040 encoder.
+5. Implement Joint Group Mode with Hold-to-Enable.
 6. Implement Single-Joint Service Mode.
-7. Add the MODE and Hold-to-Enable behaviour.
-8. Add the graphic LCD.
+7. Add the short-press MODE cycle.
+8. Add the ILI9341 graphic LCD.
 9. Test Pi-to-STM32 UART communication.
 10. Implement Cartesian Mode through the Pi.
 11. Add the camera and depth calculation.
 12. Add fixed voice commands.
-13. Install and test the hardware emergency stop.
+13. Install and test the hardware emergency stop before autonomous motion.
 14. Test the complete autonomous sequence.
 15. Add battery operation only if enough time remains.
 

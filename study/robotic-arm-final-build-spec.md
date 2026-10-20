@@ -1,6 +1,6 @@
 # Autonomous Robotic Arm — Final Build Specification
 
-**Revision 1.1 · 8 September 2026**
+**Revision 1.2 · 20 October 2026**
 Microcontroller Project · Third Year Computer Engineering
 
 ---
@@ -18,9 +18,22 @@ Mechanical design is based on the [OmArTronics DIY 6-DOF robotic arm](https://om
 | Board | Responsibility |
 |---|---|
 | **Raspberry Pi 4** | Speech-to-text, object detection, depth, inverse kinematics, task state machine |
-| **STM32 NUCLEO-F767ZI** | Six hardware-PWM servo signals, potentiometer ADC, limit switch interrupts, safety logic, trajectory generation, UART command parser |
+| **STM32 NUCLEO-F767ZI** | Four control modes, KY-023 joystick ADC, KY-040 encoder, ILI9341 SPI LCD, six hardware-PWM servo signals, limit switch interrupts, safety logic, trajectory generation and UART command parser |
 
-The Pi thinks slowly and rarely. The STM32 moves fast and constantly. That split is why the arm stays smooth while the Pi is busy with the camera.
+The Pi handles camera, speech and inverse kinematics. The STM32 keeps movement smooth and checks safety even while the Pi is busy.
+
+### Four operating modes
+
+Short MODE presses cycle **Auto/Voice → Cartesian → Joint Group → Single-Joint Service → Auto/Voice**.
+
+| Mode | What it does | Pi required? |
+|---|---|---|
+| Auto/Voice | A fixed spoken command starts camera-guided pick-and-place | Yes |
+| Cartesian | KY-023 changes target X/Y; KY-040 changes Z and its push button opens or closes the gripper | Yes, for inverse kinematics |
+| Joint Group | KY-023 moves two joints; KY-040 selects one of three joint pairs and its push button changes Fine/Fast speed | No |
+| Single-Joint Service | KY-040 selects J1–J6; KY-023 moves the selected joint for testing | No |
+
+Manual movement requires a separate Hold-to-Enable button. Releasing it stops the manual trajectory and holds the current command. Changing modes must stop the old movement, wait for Hold-to-Enable to be released and the joystick to be centred, then start the new mode from the current joint targets. All four modes use the same joint-limit and trajectory checks.
 
 ### Success criteria
 
@@ -32,19 +45,24 @@ The Pi thinks slowly and rarely. The STM32 moves fast and constantly. That split
 
 ---
 
-## 2. Budget
+## 2. Equipment
 
-| | |
-|---|---|
-| Parts | **฿3,988** |
-| Shipping | ฿250 |
-| Contingency | ฿300 |
-| **TOTAL** | **฿4,538** |
-| Remaining from ฿5,000 | ฿462 |
-
-Already owned at ฿0: STM32 NUCLEO-F767ZI, Raspberry Pi 4 and its adapter, breadboard, RGB-D camera (borrowed).
-
-**Two lines that may free up ฿365** if confirmed: jumper wires (may already be owned) and the B3 balance charger (may be borrowable).
+| Equipment | Quantity | Purpose |
+|---|---:|---|
+| STM32 NUCLEO-F767ZI, Raspberry Pi 4 and its adapter | 1 each | Main controller and high-level computer |
+| RGB-D camera and INMP441 microphone | 1 each | Vision and voice input |
+| KY-023 joystick and KY-040 rotary encoder | 1 each | Manual movement and selection |
+| MG996R and SG90 servos | 3 of each fitted | Six arm joints |
+| ILI9341 2.4-inch SPI TFT LCD | 1 | Mode, target and safety display |
+| 12 mm normally-open momentary button | 2 | MODE and Hold-to-Enable |
+| 22 mm latching emergency stop, 1NO + 1NC | 1 | Hardware stop and status input |
+| Relay or suitable DC switch, fuse, driver and flyback diode | 1 set | Disconnect servo power when e-stop is pressed |
+| Limit switches | 4 | Detect travel limits |
+| SN74AHCT244N DIP-20 and 100 nF capacitor | 1 each | Buffer and decouple six PWM signals |
+| 2200 µF, 16 V capacitors | 3 | Support the 6.0 V servo rail during current changes |
+| PETG, 6806ZZ bearing, metric fasteners and base board | As required | Printed arm and support |
+| Breadboard, 12 V adapter, 20 A and 5 A buck converters, terminal blocks and wiring | 1 set | Bench testing and two power rails |
+| 3S LiPo battery, XT60 connector and balance charger | 1 each | Untethered operation |
 
 ---
 
@@ -56,7 +74,7 @@ Already owned at ฿0: STM32 NUCLEO-F767ZI, Raspberry Pi 4 and its adapter, brea
 
 | Path | Carries | Route |
 |---|---|---|
-| Power | up to 9.75 A | source → buck → terminal block → servo **RED + BLACK** |
+| Power | up to 9.75 A | source → fuse → e-stop relay → buck → terminal block → servo **RED + BLACK** |
 | Signal | microamps | Pi → STM32 hardware PWM → SN74AHCT244N → servo **ORANGE** |
 
 The red and black servo wires connect to the 6.0 V distribution block. The orange signal wire connects to one SN74AHCT244N output.
@@ -68,11 +86,13 @@ The red and black servo wires connect to the 6.0 V distribution block. The orang
 | Rail | Voltage | Load | Source |
 |---|---|---|---|
 | Servo | **6.0 V** | 2.4 A moving, 9.75 A worst-case stall | 20 A buck |
-| Logic | **5.1 V** | 2.7 A peak (Pi + camera + STM32) | 5 A buck |
+| Logic | **5.1 V** | Earlier 2.7 A peak estimate for Pi + camera + STM32; recheck with LCD and controls | 5 A buck |
 
 Sharing one rail causes the Pi to brown out on every servo movement — random reboots that look exactly like software crashes.
 
-### Measured load
+### Earlier load estimate
+
+These figures came from the previous parts list. They are planning estimates, **not measurements of the updated build**. Recheck logic-rail current and battery runtime after adding the LCD and controls.
 
 | Scenario | Servo rail | Logic rail | From battery | Runtime |
 |---|---|---|---|---|
@@ -80,9 +100,9 @@ Sharing one rail causes the Pi to brown out on every servo movement — random r
 | All six moving | 2.40 A / 14.4 W | 2.17 A | 2.64 A | ~46 min |
 | Worst-case stall | 9.75 A / 58.5 W | 2.72 A | 7.49 A | ~16 min |
 
-At 2.64 A the battery runs at 1.2C against a 35C rating — 3% of capability.
+The earlier 2.64 A moving estimate is about 1.2C for a 2200 mAh battery, below its 35C rating. The updated runtime still needs a load test.
 
-**Tightest constraint is the Pi's USB budget**, not the battery. The Pi supplies 1.2 A total across all ports; camera 0.7 A + Nucleo 0.25 A = 79%. If undervoltage warnings appear, power the Nucleo from its own adapter and keep the ground tied.
+Check the Pi's USB current limit after adding the LCD. The earlier estimate put the camera at 0.7 A and Nucleo at 0.25 A, or 79% of the Pi's 1.2 A total USB-port limit. If undervoltage warnings appear, power the Nucleo from its own adapter and keep the ground tied.
 
 ---
 
@@ -96,6 +116,9 @@ At 2.64 A the battery runs at 1.2C against a 35C rating — 3% of capability.
         ▼
 Barrel-to-screw-terminal adapter
         │  14 AWG
+        ▼
+Fuse + e-stop relay  ← install before autonomous motion
+        │
         ▼
 Buck 20 A → set to 6.0 V   ← measure BEFORE connecting servos
         │  14 AWG
@@ -119,13 +142,13 @@ LiPo 3S 11.1 V 2200 mAh  (XT60 female on pack)
 XT60 male + 100 mm pigtail
         ▼
 SOLDER SPLIT (heat shrink over the joint)
-        ├──▶ Buck 20 A → 6.0 V → terminal block → servos
+        ├──▶ Fuse → e-stop relay → Buck 20 A → 6.0 V → terminal block → servos
         └──▶ Buck 5 A  → 5.1 V → Raspberry Pi → STM32 (USB)
 ```
 
 > **Do not swap the bucks.** 6.0 V into a Raspberry Pi damages it; its maximum is about 5.25 V.
 
-**Only the source changes between phases.** Everything from the terminal block onward is identical, so motion tuned on the bench behaves the same on battery.
+The 6.0 V servo distribution stays the same between phases. On the bench the Pi uses its own adapter; on battery it uses the separate 5.1 V buck. Check both rails again after switching sources.
 
 ---
 
@@ -139,8 +162,13 @@ Raspberry Pi 4
               (power + programming + UART on one cable)
         ▼
 STM32 NUCLEO-F767ZI
-   ├── 6 × potentiometer    outer legs on 3.3 V (NOT 5 V), wipers to ADC
-   ├── 4 × limit switch     PE2/PE3/PE4/PE5 — different pin NUMBERS or EXTI collides
+   ├── KY-023 joystick      X/Y to ADC; power from 3.3 V, not 5 V
+   ├── KY-040 encoder       CLK/DT to timer encoder inputs; SW to digital input
+   ├── ILI9341 2.4-inch LCD SPI plus control pins; check module voltage ratings
+   ├── MODE button          12 mm momentary, normally open
+   ├── Hold-to-Enable       separate 12 mm momentary, normally open
+   ├── E-stop status        22 mm latching button NO contact to input
+   ├── 4 × limit switch     PE2/PE3/PE4/PE5 proposed; verify in CubeMX
    └── 6 × hardware PWM     TIM3 CH1–CH4 + TIM4 CH1–CH2, final pins checked in CubeMX
         ▼
 SN74AHCT244N DIP-20 buffer  VCC = 5 V, GND shared, /1OE and /2OE tied LOW
@@ -150,15 +178,18 @@ SN74AHCT244N DIP-20 buffer  VCC = 5 V, GND shared, /1OE and /2OE tied LOW
    PWM1 base · PWM2 shoulder · PWM3 elbow · PWM4 wrist pitch · PWM5 wrist rot · PWM6 gripper
 ```
 
-### Three buses, three purposes
+### Signal links
 
 | Bus | Between | Wires |
 |---|---|---|
 | **UART** | Pi ↔ STM32 | via ST-LINK USB, no jumpers needed |
 | **PWM** | STM32 → SN74AHCT244N → servos | Six independent timer-output signals |
 | **I²S** | mic → Pi | SCK, WS, SD |
+| **SPI** | STM32 → ILI9341 LCD | Clock, data and display-control signals |
 
-Similar names, unrelated protocols, different pins. No conflict.
+The KY-023 adds two analogue ADC signals. The KY-040 adds two timer-encoder signals and one push-button input. Verify the complete pin map in STM32CubeMX before wiring; the timer, SPI, UART and interrupt pins must not overlap.
+
+Power the KY-040 from 3.3 V so its digital outputs match STM32 inputs. Filter its mechanical CLK/DT signals and debounce its push button and the MODE button. The KY-040 is a user input; it does **not** measure a joint's actual position. Use the ILI9341 module's specified supply and logic voltages, which depend on the exact breakout board.
 
 ### UART detail
 
@@ -212,7 +243,7 @@ The model is already dimensioned for metric — the original's imperial No.2-32 
 | Zone | Contents |
 |---|---|
 | Front third | Arm bolted down, nothing else in reach |
-| Back third | Pi (85 × 56) and Nucleo (133 × 70) side by side |
+| Back third | Pi (85 × 56), Nucleo (133 × 70) and the LCD/control panel, outside the arm's reach |
 | Middle strip | Terminal blocks and bucks, close enough that 30 cm servo leads reach |
 | Corner | Battery, easy to grab and unplug |
 
@@ -224,7 +255,7 @@ Links the rotating base to the first arm segment and takes weight off the should
 
 **Spec:** ~38 mm free length, 9 mm OD, 1.0 mm wire. Mount so it sits stretched to 45–50 mm at rest, otherwise it does nothing until the arm is already lowered.
 
-Fit this **before** considering the ฿500 DS3218 upgrade.
+Fit this **before** considering a DS3218 shoulder-servo upgrade.
 
 ### Shoulder-servo replacement fit
 
@@ -246,17 +277,21 @@ The DS3218 is a practical shoulder upgrade, but it is not guaranteed to be a per
 | **2** | Print and assemble the arm | Joints move freely by hand |
 | **3** | Wire the 6.0 V rail, one servo | Rail holds 6.0 V under load |
 | **4** | STM32 → SN74AHCT244N → all six servos | Each joint sweeps its safe calibrated range |
-| **5** | Pi ↔ STM32 UART | `MOVE` command returns `DONE` |
-| **6** | Forward and inverse kinematics | Arm reaches a typed XYZ |
-| **7** | Camera detection, no motion | Cube located in image reliably |
-| **8** | Camera-to-robot calibration | Reported position within 2 cm |
-| **9** | Autonomous pick-and-place | 8 of 10 grasps succeed |
-| **10** | Speech integration | Fixed command list recognised |
-| **11** | Battery conversion, full run-through | Runs untethered |
+| **5** | Read/filter KY-023 and KY-040; implement Single-Joint Service with Hold-to-Enable | One selected joint moves only while enabled; release stops the command |
+| **6** | Implement Joint Group | Each joystick axis moves only its selected joint, inside safe limits |
+| **7** | Add MODE cycle and ILI9341 LCD | Four modes cycle correctly; switches start from current targets and LCD shows status |
+| **8** | Pi ↔ STM32 UART | `MOVE` command returns `DONE` |
+| **9** | Forward/inverse kinematics and Cartesian mode | Arm reaches a typed or joystick-selected XYZ within safe limits |
+| **10** | Camera detection, no motion | Cube located in image reliably |
+| **11** | Camera-to-robot calibration | Reported position within 2 cm |
+| **12** | Install/test limit switches and hardware emergency stop | E-stop removes servo power; STM32 reports status; switches stop unsafe travel |
+| **13** | Autonomous pick-and-place | 8 of 10 grasps succeed |
+| **14** | Speech integration | Fixed command list recognised |
+| **15** | Battery conversion, full run-through | Runs untethered with both rails checked |
 
 **Speech is last on purpose.** Integrated early, every failure has three possible causes.
 
-**Stage 8 is the schedule risk.** It looks like one step and typically consumes a week.
+**Camera-to-robot calibration at stage 11 is the schedule risk.** It looks like one step and typically consumes a week.
 
 ---
 
@@ -268,20 +303,20 @@ The DS3218 is a practical shoulder upgrade, but it is not guaranteed to be a per
 | **Shoulder torque** | ~11 kg-cm available, fully extended arm demands close to that | Fit the spring; keep links short; DS3218 only if still drooping |
 | **Print accuracy** | 0.3 mm error in servo pockets means play you cannot calibrate out | Test part first |
 | **Camera calibration** | Usually the week-eater | Start it early, do not leave to the end |
-| **Pi USB budget** | Camera + Nucleo = 79% of 1.2 A | Separate adapter for the Nucleo if warnings appear |
-| **Battery runtime** | ~46 min at normal draw | Bench-test on the wall adapter, save the battery for the demo |
+| **Pi USB current limit** | Earlier camera + Nucleo estimate used 79% of 1.2 A; the LCD may add load | Measure the updated setup; use a separate Nucleo adapter if undervoltage appears |
+| **Battery runtime** | Earlier estimate was ~46 min at normal draw; updated build is unmeasured | Bench-test on the wall adapter, then measure battery runtime |
 
 ---
 
 ## 9. Safety
 
-Full procedures in `safety-procedures.html`. Non-negotiables:
+Non-negotiable safety rules:
 
 **LiPo battery** — 2200 mAh at 35C delivers about 77 A into a short, with no off switch. Never let the output wires touch. Store in a LiPo bag or metal tin. Balance charger only, 1C (2.2 A), never unattended. Retire any pack that swells. The white JST-XH plug goes to the charger and nothing else.
 
 **Capacitor polarity** — the stripe marks negative. Reversed electrolytics vent and burst.
 
-**Emergency stop** — deferred to the deployment batch (฿125 for button + relay). **Until fitted, your only stop is unplugging the adapter or the XT60.** Decide before each session which you will grab and keep it clear. Fit the e-stop before any autonomous operation.
+**Emergency stop** — fit the 22 mm latching 1NO + 1NC button, fuse, relay or suitable DC switch, driver and flyback diode **before autonomous motion**. The NC contact controls the low-current relay circuit; the relay contacts disconnect servo power. The NO contact reports status to the STM32. Do not run servo current through the button. During early bench tests before it is fitted, keep the adapter plug within reach so power can be disconnected immediately.
 
 **The arm** — hands physically outside the reach envelope whenever the servo rail is live. First run of any new motion: reduced speed, reduced range, one hand on the disconnect.
 
@@ -299,22 +334,23 @@ Full procedures in `safety-procedures.html`. Non-negotiables:
 - [ ] No servo red power wire connected to the STM32 or logic buffer
 - [ ] Ground continuity: terminal block minus → Pi GND → STM32 GND
 - [ ] INMP441 `VDD` measured at **3.3 V**, not 5 V
-- [ ] Potentiometer outer legs on **3.3 V**, not 5 V
+- [ ] KY-023 and KY-040 powered from **3.3 V**, not 5 V
+- [ ] Exact ILI9341 breakout supply and signal-voltage ratings checked before connection
 - [ ] No stray copper strands at any screw terminal
 - [ ] Heat shrink over the XT60 solder split
 - [ ] Arm bolted to the base board
 - [ ] **One servo only** for first power-on
 - [ ] Remaining five added one at a time, watching the rail hold
+- [ ] Before autonomous motion: fuse, limit switches and latching e-stop tested; pressing e-stop removes servo power
 
 ---
 
 ## 11. Open items
 
-1. **Confirm the camera loan** covers the whole semester, in writing. The entire budget depends on it.
-2. **Confirm jumper wires** are already owned — ฿120.
-3. **Confirm the B3 charger** can be borrowed — ฿245.
-4. **Verify the six TIM3/TIM4 PWM pins and `PE2`–`PE5`** in STM32CubeMX before wiring, so PWM, UART, SPI, encoder and EXTI assignments do not conflict.
-5. **Buy the e-stop and limit switches** in the deployment batch (฿185 total).
+1. **Confirm the camera loan** covers the whole semester.
+2. **Confirm all equipment is available:** ILI9341, two 12 mm buttons, e-stop circuit, four limit switches, jumper wires and LiPo balance charger.
+3. **Verify the complete STM32CubeMX pin map:** six TIM3/TIM4 PWM outputs, two ADC inputs, KY-040 timer inputs and switch, ILI9341 SPI/control pins, UART and EXTI inputs. Check the proposed `PE2`–`PE5` limit-switch pins.
+4. **Confirm the exact ILI9341 module's voltage ratings** and test the emergency-stop circuit before autonomous motion.
 
 ---
 
@@ -322,13 +358,9 @@ Full procedures in `safety-procedures.html`. Non-negotiables:
 
 | File | Purpose |
 |---|---|
-| `Approved-Robotic-Arm-Budget.xlsx` | BOM, vendor options, contingencies |
-| `end-to-end-circuit.md` | Wire-by-wire connection reference |
-| `full-connection-map.html` | Interactive pin-level diagram |
-| `power-budget.html` | Load analysis with scenario switching |
-| `safety-procedures.html` | Full safety document with sign-off page |
-| `battery-sag-proof.html` | Why AAA cells cannot run servos |
+| [robotic-arm-guide.md](robotic-arm-guide.md) | Four-mode controls, signal buffer, LCD and safety behaviour |
+| [stm32_servo_pwm_guide.pdf](stm32_servo_pwm_guide.pdf) | STM32 servo PWM reference |
 
 ---
 
-*Verify all STM32 pin names against the NUCLEO-F767ZI silkscreen before wiring. Raspberry Pi pin numbers are physical header positions, not BCM.*
+*Verify all STM32 pin names against the NUCLEO-F767ZI silkscreen before wiring. Raspberry Pi `GPIO18`, `GPIO19` and `GPIO20` above are BCM numbers; their physical header pins are 12, 35 and 38.*
