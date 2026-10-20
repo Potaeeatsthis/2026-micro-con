@@ -15,7 +15,7 @@ Short presses of **MODE** cycle through these four modes. Manual movement requir
 
 ## How it works
 
-The **Raspberry Pi 4** processes the RGB-D camera and sends object positions to the **STM32 NUCLEO-F767ZI** over a 3.3 V GPIO UART link. The STM32 is planned to recognise voice through two INMP441 microphones, calculate inverse kinematics (joint angles from a target position), check four physical limit switches, and drive six servos through an SN74AHCT244N signal buffer. A **2.4-inch ILI9341 LCD** shows status. A hardware emergency stop disconnects servo power.
+The **Raspberry Pi 4** processes the RGB-D camera and sends object positions to the **STM32 NUCLEO-F767ZI** over a 3.3 V GPIO UART link. The STM32 is planned to run a TC-ResNet voice-command model through two INMP441 microphones, calculate inverse kinematics (joint angles from a target position), check four physical limit switches, and drive six servos through an SN74AHCT244N signal buffer. A **2.4-inch ILI9341 LCD** shows status. A hardware emergency stop disconnects servo power; optional ADC sensing can report servo-rail loss or sag.
 
 ## Project files
 
