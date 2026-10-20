@@ -38,7 +38,8 @@ STM32 NUCLEO-F767ZI - Main Controller
 |
 |- ADC with DMA
 |  |- KY-023 joystick X
-|  `- KY-023 joystick Y
+|  |- KY-023 joystick Y
+|  `- Optional servo-rail voltage sense
 |
 |- Timer Encoder Mode
 |  `- KY-040 rotary encoder rotation
@@ -81,7 +82,7 @@ STM32 NUCLEO-F767ZI - Main Controller
           Six servos
 ```
 
-Six hardware-PWM outputs are planned on TIM3 and TIM4. TIM3 channels 1-2 and TIM4 channels 1-4 are a candidate, not a verified pin map. Check PWM, audio, UART, ADC, SPI, EXTI, the encoder, and all four limit switches together in STM32CubeMX. In particular, do not reuse an audio pin for a limit switch.
+Six hardware-PWM outputs are planned on TIM3 and TIM4. TIM3 channels 1-2 and TIM4 channels 1-4 are a candidate, not a verified pin map. Check PWM, audio, UART, ADC (including optional rail sense), SPI, EXTI, the encoder, and all four limit switches together in STM32CubeMX. In particular, do not reuse an audio pin for a limit switch.
 
 ## 3. Responsibilities
 
@@ -110,6 +111,7 @@ The control panel and servo-signal hardware contain:
 | 12 mm normally-open momentary push button | 2 | One MODE button and one separate Hold-to-Enable button |
 | 22 mm latching emergency-stop button, 1NO + 1NC | 1 | NC contact controls the servo-power disconnect; NO contact reports status to the STM32 |
 | SN74AHCT244N DIP-20 | 1 | Buffers six STM32 PWM signals for the servos |
+| 10 kΩ and 3.3 kΩ resistors; optional 100 nF capacitor | 1 set, optional | Divides the 6 V servo rail for an STM32 ADC input |
 
 The KY-023 replaces the earlier six-potentiometer design. Power the KY-023, KY-040 and both INMP441 microphones from 3.3 V so their signals stay within STM32 input limits. The two microphones share audio clock/data wiring and use separate left/right channel selection; verify the exact SAI wiring in CubeMX. The KY-040 push button is separate from the MODE and Hold-to-Enable buttons.
 
@@ -371,9 +373,8 @@ Servo power and logic power use separate regulated paths, but all devices share 
           |                                  |
           |                                  v
           |                         Servo distribution block
-          |                                  |
-          |                                  v
-          |                         Six servo power inputs
+          |                                  +--> Six servo power inputs
+          |                                  `--> Optional divider --> STM32 ADC
           |
           `--> 5 A buck at 5.1 V --> Raspberry Pi and logic
 ```
@@ -413,6 +414,18 @@ Software stopping alone is not enough because software may freeze.
 Use the NC contact in the low-current relay-control circuit so pressing the button releases the relay and removes servo power. Use the NO contact for the STM32 status input. Do not put the servo current through the button contacts; the relay or DC power switch carries it.
 
 Keep four **physical limit switches** at the arm's most important travel boundaries. If one is triggered, the STM32 must block motion farther into that boundary while allowing a safe move away. Their mounting points and GPIO pins require mechanical testing and CubeMX verification. Limit switches are a backup to software angle limits, not a replacement for the hardware emergency stop.
+
+### Optional servo-rail ADC sense
+
+This measures whether power reaches the **6 V servo distribution block**, after the servo buck and emergency-stop relay. It is a diagnostic input, not part of the hardware stop circuit.
+
+```text
+6 V distribution -> 10 kΩ -> ADC junction -> 3.3 kΩ -> common ground
+                                  |
+                                  `-> 100 nF -> ground (optional)
+```
+
+The divider gives about **1.49 V at 6 V** and **2.98 V at 12 V** at the ADC junction. Verify the STM32 ADC input limit and possible rail transients before wiring; 12 V is a fault example, not an acceptable servo supply. Use a free ADC pin confirmed in the complete CubeMX map. `PC3` in the friend's guide is only a candidate. A low reading can warn of rail loss or sag and show `SERVO POWER OFF` on the LCD. The emergency-stop relay must disconnect servo power even if the STM32 or ADC fails. After rail loss, stop the trajectory and voice task, and do not assume the servos stayed at their last commanded positions.
 
 ## 14. Graphic LCD
 
@@ -486,7 +499,7 @@ The KY-040's mechanical contacts can also bounce. Filter its CLK/DT inputs and d
 |---|---|---|
 | STM32, HAL, and STM32CubeIDE | STM32F767ZI is the main controller | Satisfied |
 | Interrupts from two modules | UART and EXTI; audio DMA and timers are also planned | Planned |
-| ADC | Joystick X and Y | Satisfied |
+| ADC | Joystick X and Y; optional servo-rail diagnostic | Satisfied |
 | PWM | Six STM32 hardware PWM outputs | Satisfied |
 | Graphic LCD | ILI9341 2.4-inch SPI TFT LCD | Satisfied |
 | At least 4-6 features | Four control modes, with voice, vision, LCD and safety functions | Satisfied |
@@ -523,5 +536,7 @@ The recommended development order is:
 13. Install and test all four limit switches and the hardware emergency stop before autonomous motion.
 14. Test the complete autonomous sequence.
 15. Add battery operation only if enough time remains.
+
+If servo-rail sensing is fitted, verify its ADC pin, divider voltage and rail-loss display before autonomous motion.
 
 The Motion 2350 Pro and PCA9685 are not part of the final architecture. They may be kept only as backup hardware if direct STM32 PWM cannot be completed.

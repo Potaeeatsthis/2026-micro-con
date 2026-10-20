@@ -67,6 +67,7 @@ Manual movement requires a separate Hold-to-Enable button. Releasing it stops th
 | Limit switches | 4 | Detect travel limits |
 | SN74AHCT244N DIP-20 and 100 nF capacitor | 1 each | Buffer and decouple six PWM signals |
 | 2200 µF, 16 V capacitors | 3 | Support the 6.0 V servo rail during current changes |
+| 10 kΩ and 3.3 kΩ resistors; optional 100 nF capacitor | 1 set, optional | Servo-rail ADC voltage divider and filtering |
 | PETG, 6806ZZ bearing, metric fasteners and base board | As required | Printed arm and support |
 | Breadboard, 12 V adapter, 20 A and 5 A buck converters, terminal blocks and wiring | 1 set | Bench testing and two power rails |
 | 3S LiPo battery, XT60 connector and balance charger | 1 each | Untethered operation |
@@ -85,6 +86,8 @@ Manual movement requires a separate Hold-to-Enable button. Releasing it stops th
 | Signal | microamps | STM32 hardware PWM → SN74AHCT244N → servo **ORANGE** |
 
 The red and black servo wires connect to the 6.0 V distribution block. The orange signal wire connects to one SN74AHCT244N output.
+
+An **optional** 10 kΩ / 3.3 kΩ divider can sense the 6.0 V distribution block after the buck and emergency-stop relay. Connect 6 V → 10 kΩ → ADC junction → 3.3 kΩ → common ground; an optional 100 nF capacitor connects the junction to ground. The ADC sees about 1.49 V at 6 V or 2.98 V at 12 V. Confirm the ADC's maximum voltage and possible transients before wiring. A low reading can report rail loss or sag; this diagnostic cannot replace the hardware stop. Use an ADC pin confirmed free in CubeMX. The friend's `PC3` proposal is not an assigned pin.
 
 > **Do not send servo power through the STM32 or SN74AHCT244N.** The buffer carries only the six PWM signals. All devices must share one common signal ground.
 
@@ -174,6 +177,7 @@ STM32 NUCLEO-F767ZI
    ├── Voice recognition    planned TC-ResNet / X-CUBE-AI; timing to validate
    ├── Inverse kinematics   convert target XYZ to safe joint angles
    ├── KY-023 joystick      X/Y to ADC; power from 3.3 V, not 5 V
+   ├── Servo-rail sense     optional divider to a free ADC input
    ├── KY-040 encoder       CLK/DT to timer encoder inputs; SW to digital input
    ├── ILI9341 2.4-inch LCD SPI plus control pins; check module voltage ratings
    ├── MODE button          12 mm momentary, normally open
@@ -198,7 +202,7 @@ SN74AHCT244N DIP-20 buffer  VCC = 5 V, GND shared, /1OE and /2OE tied LOW
 | **SAI/I²S** | Two INMP441 microphones → STM32 | Shared clock/data with left/right channel selection |
 | **SPI** | STM32 → ILI9341 LCD | Clock, data and display-control signals |
 
-The KY-023 adds two analogue ADC signals. The KY-040 adds two timer-encoder signals and one push-button input. Verify the complete pin map in STM32CubeMX before wiring; audio, PWM, SPI, UART, ADC, encoder and four limit-switch inputs must not overlap. The older proposed `PE2`–`PE5` limit-switch map may conflict with audio pin candidates, so it is **not approved for wiring**.
+The KY-023 adds two analogue ADC signals; optional rail sensing adds a third. The KY-040 adds two timer-encoder signals and one push-button input. Verify the complete pin map in STM32CubeMX before wiring; audio, PWM, SPI, UART, ADC, encoder and four limit-switch inputs must not overlap. The older proposed `PE2`–`PE5` limit-switch map may conflict with audio pin candidates, so it is **not approved for wiring**.
 
 Power the KY-040 from 3.3 V so its digital outputs match STM32 inputs. Filter its mechanical CLK/DT signals and debounce its push button and the MODE button. The KY-040 is a user input; it does **not** measure a joint's actual position. Use the ILI9341 module's specified supply and logic voltages, which depend on the exact breakout board.
 
@@ -302,6 +306,8 @@ The DS3218 is a practical shoulder upgrade, but it is not guaranteed to be a per
 
 Validate microphone capture and the STM32 voice model before joining voice, camera and motion. A working model is not present in this repository yet.
 
+If the optional rail sensor is fitted, verify its ADC voltage at power-off and 6 V, and its LCD warning before autonomous motion. It must not delay emergency-stop power removal.
+
 **Camera-to-robot calibration at stage 12 is a schedule risk.** It can take a week. The STM32 voice model is another schedule risk until measured on the board.
 
 ---
@@ -330,6 +336,8 @@ Non-negotiable safety rules:
 
 **Emergency stop** — fit the 22 mm latching 1NO + 1NC button, fuse, relay or suitable DC switch, driver and flyback diode **before autonomous motion**. The NC contact controls the low-current relay circuit; the relay contacts disconnect servo power. The NO contact reports status to the STM32. Do not run servo current through the button. During early bench tests before it is fitted, keep the adapter plug within reach so power can be disconnected immediately.
 
+After any servo-power loss, stop the trajectory and voice task. A commanded joint angle does not prove the physical joint position; inspect the arm and restart motion safely. Optional ADC rail sensing may show `SERVO POWER OFF`, but the emergency-stop hardware works without it.
+
 **The arm** — hands physically outside the reach envelope whenever the servo rail is live. First run of any new motion: reduced speed, reduced range, one hand on the disconnect.
 
 **Common ground is mandatory** — both bucks, Pi, STM32, SN74AHCT244N and all servos connect to one common ground point. A PWM signal is a voltage relative to ground; without a shared reference the servos move unpredictably, and it looks exactly like a software bug.
@@ -356,6 +364,7 @@ Non-negotiable safety rules:
 - [ ] **One servo only** for first power-on
 - [ ] Remaining five added one at a time, watching the rail hold
 - [ ] Before autonomous motion: fuse, limit switches and latching e-stop tested; pressing e-stop removes servo power
+- [ ] If fitted: optional divider and ADC pin verified in CubeMX; ADC voltage and rail-loss warning tested
 
 ---
 
@@ -363,7 +372,7 @@ Non-negotiable safety rules:
 
 1. **Confirm the camera loan** covers the whole semester.
 2. **Confirm all equipment is available:** ILI9341, two 12 mm buttons, e-stop circuit, four limit switches, jumper wires and LiPo balance charger.
-3. **Verify the complete STM32CubeMX pin map:** six TIM3/TIM4 PWM outputs, two ADC inputs, shared SAI audio, KY-040 timer inputs and switch, ILI9341 SPI/control pins, Pi GPIO UART and EXTI inputs. Assign new pins for all four limit switches; do not reuse audio pins.
+3. **Verify the complete STM32CubeMX pin map:** six TIM3/TIM4 PWM outputs, two joystick ADC inputs plus one optional rail-sense ADC input, shared SAI audio, KY-040 timer inputs and switch, ILI9341 SPI/control pins, Pi GPIO UART and EXTI inputs. Assign new pins for all four limit switches; do not reuse audio pins.
 4. **Validate the STM32 voice model and IK solver** on the real board, including memory use, timing, accuracy and unreachable-target handling.
 5. **Confirm the exact 2.4-inch ILI9341 module's voltage ratings** and test the emergency-stop circuit before autonomous motion.
 
