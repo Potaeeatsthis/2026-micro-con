@@ -177,22 +177,19 @@ Rotate the KY-040 to select a group. Press it to change between Fine and Fast sp
 
 Every mode must use the same safety and movement functions. A mode only creates a new target. It must not control PWM directly.
 
-```text
-Auto target ------+
-Cartesian target -+--> STM32 IK --+
-Joint Group target ---------------+--> Joint-limit and limit-switch checks
-Single-Joint target --------------+                  |
-                                                   v
-                                         Trajectory generator
-                                                   |
-                                                   v
-                                           STM32 hardware PWM
-                                                   |
-                                                   v
-                                                 Servos
+```mermaid
+flowchart TD
+    A["Auto/Voice target"] --> IK["STM32 inverse kinematics"]
+    C["Cartesian target"] --> IK
+    IK --> S["Joint-limit and limit-switch checks"]
+    J["Joint Group target"] --> S
+    O["Single-Joint target"] --> S
+    S --> T["Trajectory generator"]
+    T --> P["STM32 hardware PWM"]
+    P --> M["Servos"]
 ```
 
-This design prevents duplicated movement code. It also makes sure that every mode uses the same speed limits, joint limits, and emergency behaviour.
+Auto/Voice and Cartesian targets need IK to become joint targets. Joint Group and Single-Joint targets already specify joints, so they enter the shared safety checks directly. Every mode then uses the same trajectory, speed limits, and emergency behaviour.
 
 ## 8. Safe Mode Switching
 
