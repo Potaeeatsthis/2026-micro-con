@@ -1,6 +1,6 @@
 # Robotic Arm Code
 
-This repository currently contains **Arduino bench tests for one servo at a time**. The planned Raspberry Pi and STM32 four-mode arm controller is described in [the system guide](../study/robotic-arm-guide.md); its firmware is not in this repository yet.
+This repository currently contains **Arduino bench tests for one servo at a time**. The planned four-mode controller, including STM32 voice recognition and inverse kinematics, is described in [the system guide](../study/robotic-arm-guide.md); its firmware is not in this repository yet.
 
 | Sketch | What it tests |
 |---|---|

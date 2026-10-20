@@ -15,7 +15,7 @@ Short presses of **MODE** cycle through these four modes. Manual movement requir
 
 ## How it works
 
-The **Raspberry Pi 4** handles voice, the RGB-D camera and inverse kinematics (calculating joint angles from a target position). It sends movement requests to the **STM32 NUCLEO-F767ZI** over USB serial. The STM32 checks limits, creates smooth motion and drives six servos through an SN74AHCT244N signal buffer. An ILI9341 LCD shows the mode and system status. A hardware emergency stop disconnects servo power.
+The **Raspberry Pi 4** processes the RGB-D camera and sends object positions to the **STM32 NUCLEO-F767ZI** over a 3.3 V GPIO UART link. The STM32 is planned to recognise voice through two INMP441 microphones, calculate inverse kinematics (joint angles from a target position), check four physical limit switches, and drive six servos through an SN74AHCT244N signal buffer. A **2.4-inch ILI9341 LCD** shows status. A hardware emergency stop disconnects servo power.
 
 ## Project files
 
@@ -23,4 +23,4 @@ The **Raspberry Pi 4** handles voice, the RGB-D camera and inverse kinematics (c
 - [System guide](study/robotic-arm-guide.md): mode controls and STM32 responsibilities.
 - [Code and bench tests](code/README.md): the Arduino servo test sketches.
 
-**Current code status:** the repository contains single-servo Arduino tests. The complete Raspberry Pi and STM32 arm controller is still planned.
+**Current code status:** the repository contains single-servo Arduino tests. The Pi camera program, STM32 voice model, IK solver and complete arm controller are still planned. The UART and peripheral pin map needs CubeMX verification before wiring.
