@@ -1,0 +1,231 @@
+raw_path,word,label,outcome,first_detection,detections,max_avg_p_true,peak_top3,channels_used,max_snr_db
+raw/supanut/S1/pick/pick_01_raw.wav,pick,pick,hit,pick,pick@1.01s 0.72,0.965,pick 0.97 | _unknown_ 0.01 | hand 0.00,ch0,15.8
+raw/supanut/S1/drop/drop_01_raw.wav,drop,drop,hit,drop,drop@1.31s 0.80,0.808,drop 0.81 | grab 0.11 | _unknown_ 0.03,ch0,22.7
+raw/supanut/S1/left/left_01_raw.wav,left,left,hit,left,left@1.01s 0.99,0.99,left 0.99 | move 0.00 | black box 0.00,ch0,17.7
+raw/supanut/S1/stop/stop_01_raw.wav,stop,stop,hit,stop,stop@1.01s 0.93,0.99,stop 0.99 | _unknown_ 0.00 | drop 0.00,ch0,23.4
+raw/supanut/S1/_unknown_/arm_01_raw.wav,arm,_unknown_,false_alarm,home,home@1.11s 0.74,0.071,home 0.83 | _unknown_ 0.05 | hand 0.03,ch0,17.5
+raw/supanut/S1/stop/stop_02_raw.wav,stop,stop,hit,stop,stop@1.31s 0.98,0.995,stop 1.00 | _unknown_ 0.00 | left 0.00,ch0,21.9
+raw/supanut/S1/no/no_01_raw.wav,no,no,hit,no,no@1.01s 0.98,0.988,no 0.99 | move 0.00 | _unknown_ 0.00,ch0,17.3
+raw/supanut/S1/base/base_01_raw.wav,base,base,miss,,,0.48,place 0.59 | base 0.38 | move 0.01,ch0,16.8
+raw/supanut/S1/stop/stop_03_raw.wav,stop,stop,hit,stop,stop@1.01s 0.92,0.989,stop 0.99 | _unknown_ 0.00 | left 0.00,ch0,22.5
+raw/supanut/S1/home/home_01_raw.wav,home,home,hit,home,home@1.01s 0.87,0.872,home 0.87 | right 0.04 | move 0.02,ch0,14.3
+raw/supanut/S1/station/station_01_raw.wav,station,station,hit,station,station@1.21s 0.70,0.944,station 0.94 | base 0.03 | _unknown_ 0.01,ch0,21.0
+raw/supanut/S1/place/place_01_raw.wav,place,place,hit,place,place@1.41s 0.86,0.877,place 0.88 | base 0.06 | _unknown_ 0.02,ch0,22.8
+raw/supanut/S1/no/no_02_raw.wav,no,no,hit,no,no@1.01s 0.96,0.969,no 0.97 | _unknown_ 0.01 | move 0.00,ch0,15.9
+raw/supanut/S1/base/base_02_raw.wav,base,base,miss,,,0.682,base 0.68 | place 0.29 | move 0.01,ch0,17.5
+raw/supanut/S1/hand/hand_01_raw.wav,hand,hand,hit,hand,hand@1.01s 0.78,0.926,hand 0.93 | pick 0.04 | _unknown_ 0.01,ch0,19.2
+raw/supanut/S1/move/move_01_raw.wav,move,move,hit,move,move@1.01s 0.83,0.827,move 0.83 | no 0.07 | _unknown_ 0.02,ch0,11.6
+raw/supanut/S1/black_box/black_box_01_raw.wav,black box,black box,miss,,,0.631,black box 0.63 | yes 0.11 | backward 0.08,ch0,20.9
+raw/supanut/S1/move/move_02_raw.wav,move,move,hit,move,move@1.01s 0.89,0.902,move 0.90 | home 0.02 | no 0.02,ch0,10.8
+raw/supanut/S1/station/station_02_raw.wav,station,station,hit,station,station@1.31s 0.92,0.963,station 0.96 | base 0.03 | place 0.00,ch0,19.3
+raw/supanut/S1/forward/forward_01_raw.wav,forward,forward,hit,forward,forward@1.31s 0.94,0.95,forward 0.95 | _unknown_ 0.03 | home 0.00,ch0,17.3
+raw/supanut/S1/black_box/black_box_02_raw.wav,black box,black box,miss,,,0.581,backward 0.62 | no 0.08 | left 0.07,ch0,22.7
+raw/supanut/S1/forward/forward_02_raw.wav,forward,forward,hit,forward,forward@1.31s 0.71,0.973,forward 0.97 | _unknown_ 0.02 | home 0.00,ch0,17.5
+raw/supanut/S1/blue_box/blue_box_01_raw.wav,blue box,blue box,miss,,,0.452,move 0.48 | no 0.31 | blue box 0.06,ch0,17.2
+raw/supanut/S1/red_box/red_box_01_raw.wav,red box,red box,hit,red box,red box@1.31s 0.92,0.962,red box 0.96 | green box 0.03 | grab 0.01,ch0,20.4
+raw/supanut/S1/grab/grab_01_raw.wav,grab,grab,miss,,,0.587,grab 0.59 | right 0.25 | left 0.06,ch0,23.5
+raw/supanut/S1/place/place_02_raw.wav,place,place,hit,place,place@1.31s 0.71,0.721,place 0.72 | base 0.21 | _unknown_ 0.01,ch0,22.7
+raw/supanut/S1/forward/forward_03_raw.wav,forward,forward,hit,forward,forward@1.41s 0.92,0.928,forward 0.93 | _unknown_ 0.04 | home 0.01,ch0,16.0
+raw/supanut/S1/place/place_03_raw.wav,place,place,miss,,,0.63,place 0.63 | base 0.28 | _unknown_ 0.02,ch0,20.3
+raw/supanut/S1/forward/forward_04_raw.wav,forward,forward,hit,forward,forward@1.31s 0.93,0.938,forward 0.94 | _unknown_ 0.03 | home 0.01,ch0,17.7
+raw/supanut/S1/_unknown_/moon_01_raw.wav,moon,_unknown_,rejected,,,0.098,forward 0.45 | home 0.23 | move 0.10,ch0,12.7
+raw/supanut/S1/no/no_03_raw.wav,no,no,hit,no,no@1.01s 0.99,0.986,no 0.99 | move 0.00 | _unknown_ 0.00,ch0,16.9
+raw/supanut/S1/right/right_01_raw.wav,right,right,hit,right,right@1.01s 1.00,0.999,right 1.00 | _unknown_ 0.00 | grab 0.00,ch0,23.7
+raw/supanut/S1/hand/hand_02_raw.wav,hand,hand,hit,hand,hand@1.01s 0.94,0.963,hand 0.96 | pick 0.01 | _unknown_ 0.01,ch0,20.7
+raw/supanut/S1/drop/drop_02_raw.wav,drop,drop,hit,drop,drop@1.81s 0.72,0.716,drop 0.72 | grab 0.17 | _unknown_ 0.02,ch0,18.2
+raw/supanut/S1/place/place_04_raw.wav,place,place,hit,place,place@1.31s 0.70,0.707,place 0.71 | base 0.17 | _unknown_ 0.03,ch0,20.0
+raw/supanut/S1/red_box/red_box_02_raw.wav,red box,red box,hit,red box,red box@1.01s 0.78,0.975,red box 0.98 | green box 0.01 | grab 0.00,ch0,20.3
+raw/supanut/S1/_unknown_/hold_01_raw.wav,hold,_unknown_,rejected,,,0.082,home 0.28 | right 0.18 | base 0.08,ch0,13.9
+raw/supanut/S1/green_box/green_box_01_raw.wav,green box,green box,hit,green box,green box@1.31s 0.75,0.905,green box 0.90 | _unknown_ 0.03 | red box 0.01,ch0,19.4
+raw/supanut/S1/_unknown_/books_01_raw.wav,books,_unknown_,rejected,,,0.044,pick 0.46 | red box 0.09 | blue box 0.06,ch0,14.6
+raw/supanut/S1/place/place_05_raw.wav,place,place,hit,place,place@1.31s 0.74,0.758,place 0.76 | base 0.17 | right 0.02,ch0,22.1
+raw/supanut/S1/green_box/green_box_02_raw.wav,green box,green box,hit,green box,green box@1.41s 0.88,0.946,green box 0.95 | blue box 0.01 | red box 0.01,ch0,17.0
+raw/supanut/S1/drop/drop_03_raw.wav,drop,drop,hit,drop,drop@1.01s 0.82,0.825,drop 0.82 | grab 0.08 | stop 0.01,ch0,21.5
+raw/supanut/S1/_unknown_/close_01_raw.wav,close,_unknown_,false_alarm,no,no@1.01s 0.84,0.045,no 0.84 | drop 0.02 | stop 0.02,ch0,17.5
+raw/supanut/S1/grab/grab_02_raw.wav,grab,grab,miss,,,0.685,grab 0.69 | left 0.12 | right 0.07,ch0,22.7
+raw/supanut/S1/base/base_03_raw.wav,base,base,hit,base,base@1.01s 0.91,0.914,base 0.91 | place 0.07 | move 0.01,ch0,18.1
+raw/supanut/S1/move/move_03_raw.wav,move,move,hit,move,move@1.01s 0.88,0.921,move 0.92 | home 0.02 | hand 0.02,ch0,11.5
+raw/supanut/S1/backward/backward_01_raw.wav,backward,backward,hit,backward,backward@1.01s 0.95,0.998,backward 1.00 | left 0.00 | black box 0.00,ch0,21.5
+raw/supanut/S1/grab/grab_03_raw.wav,grab,grab,miss,,,0.521,grab 0.52 | right 0.28 | left 0.09,ch0,21.2
+raw/supanut/S1/green_box/green_box_03_raw.wav,green box,green box,hit,green box,green box@1.41s 0.87,0.943,green box 0.94 | _unknown_ 0.02 | place 0.00,ch0,17.8
+raw/supanut/S1/_unknown_/nose_01_raw.wav,nose,_unknown_,false_alarm,no,no@1.01s 0.94,0.044,no 0.94 | _unknown_ 0.01 | move 0.01,ch0,15.5
+raw/supanut/S1/green_box/green_box_04_raw.wav,green box,green box,hit,green box,green box@1.31s 0.85,0.944,green box 0.94 | _unknown_ 0.02 | base 0.00,ch0,15.9
+raw/supanut/S1/black_box/black_box_03_raw.wav,black box,black box,miss,,,0.427,backward 0.48 | no 0.13 | left 0.11,ch0,20.7
+raw/supanut/S1/red_box/red_box_03_raw.wav,red box,red box,hit,red box,red box@1.41s 0.76,0.85,red box 0.85 | green box 0.09 | grab 0.03,ch0,21.0
+raw/supanut/S1/black_box/black_box_04_raw.wav,black box,black box,wrong,backward,backward@1.01s 0.71,0.787,black box 0.79 | left 0.06 | yes 0.04,ch0,23.4
+raw/supanut/S1/right/right_02_raw.wav,right,right,hit,right,right@1.01s 1.00,0.997,right 1.00 | grab 0.00 | _unknown_ 0.00,ch0,21.4
+raw/supanut/S1/base/base_04_raw.wav,base,base,hit,base,base@1.31s 0.85,0.873,base 0.87 | place 0.10 | move 0.01,ch0,16.9
+raw/supanut/S1/drop/drop_04_raw.wav,drop,drop,hit,drop,drop@1.01s 0.73,0.756,drop 0.76 | grab 0.15 | _unknown_ 0.03,ch0,19.9
+raw/supanut/S1/red_box/red_box_04_raw.wav,red box,red box,hit,red box,red box@1.01s 0.76,0.959,red box 0.96 | green box 0.01 | grab 0.01,ch0,18.7
+raw/supanut/S1/blue_box/blue_box_02_raw.wav,blue box,blue box,miss,,,0.47,blue box 0.47 | green box 0.22 | red box 0.14,ch0,16.4
+raw/supanut/S1/_unknown_/groove_01_raw.wav,groove,_unknown_,rejected,,,0.054,move 0.52 | home 0.19 | hand 0.11,ch0,11.4
+raw/supanut/S1/grab/grab_04_raw.wav,grab,grab,hit,grab,grab@1.01s 0.80,0.868,grab 0.87 | left 0.03 | _unknown_ 0.02,ch0,22.1
+raw/supanut/S1/station/station_03_raw.wav,station,station,wrong,base,base@1.01s 0.85,0.947,station 0.95 | base 0.04 | _unknown_ 0.00,ch0,19.3
+raw/supanut/S1/hand/hand_03_raw.wav,hand,hand,hit,hand,hand@1.01s 0.98,0.984,hand 0.98 | pick 0.01 | _unknown_ 0.00,ch0,19.0
+raw/supanut/S1/blue_box/blue_box_03_raw.wav,blue box,blue box,miss,,,0.331,move 0.38 | no 0.28 | blue box 0.09,ch0,17.7
+raw/supanut/S1/black_box/black_box_05_raw.wav,black box,black box,miss,,,0.567,black box 0.57 | red box 0.10 | left 0.07,ch0,24.0
+raw/supanut/S1/red_box/red_box_05_raw.wav,red box,red box,hit,red box,red box@1.41s 0.73,0.756,red box 0.76 | green box 0.16 | blue box 0.02,ch0,18.1
+raw/supanut/S1/base/base_05_raw.wav,base,base,hit,base,base@1.01s 0.91,0.921,base 0.92 | place 0.06 | _unknown_ 0.00,ch0,13.9
+raw/supanut/S1/black_box/black_box_06_raw.wav,black box,black box,miss,,,0.34,backward 0.43 | left 0.20 | no 0.07,ch0,20.8
+raw/supanut/S1/base/base_06_raw.wav,base,base,hit,base,base@1.01s 0.93,0.945,base 0.95 | place 0.04 | move 0.00,ch0,16.2
+raw/supanut/S1/move/move_04_raw.wav,move,move,miss,,,0.382,move 0.38 | no 0.24 | hand 0.11,ch0,12.3
+raw/supanut/S1/_unknown_/wait_01_raw.wav,wait,_unknown_,rejected,,,0.083,right 0.41 | place 0.32 | _unknown_ 0.08,ch0,17.6
+raw/supanut/S1/no/no_04_raw.wav,no,no,hit,no,no@1.01s 0.99,0.991,no 0.99 | home 0.00 | _unknown_ 0.00,ch0,14.4
+raw/supanut/S1/right/right_03_raw.wav,right,right,hit,right,right@1.01s 1.00,0.999,right 1.00 | _unknown_ 0.00 | grab 0.00,ch0,16.9
+raw/supanut/S1/forward/forward_05_raw.wav,forward,forward,hit,forward,forward@1.61s 0.70,0.704,forward 0.70 | _unknown_ 0.14 | home 0.07,ch0,17.1
+raw/supanut/S1/yes/yes_01_raw.wav,yes,yes,hit,yes,yes@1.01s 0.96,0.96,yes 0.96 | left 0.02 | place 0.00,ch0,17.5
+raw/supanut/S1/_unknown_/now_01_raw.wav,now,_unknown_,rejected,,,0.068,no 0.56 | left 0.13 | _unknown_ 0.06,ch0,19.6
+raw/supanut/S1/move/move_05_raw.wav,move,move,miss,,,0.378,move 0.38 | no 0.14 | hand 0.12,ch0,10.2
+raw/supanut/S1/_unknown_/pink_01_raw.wav,pink,_unknown_,rejected,,,0.166,hand 0.39 | pick 0.23 | _unknown_ 0.13,ch0,11.5
+raw/supanut/S1/_unknown_/bright_01_raw.wav,bright,_unknown_,false_alarm,right,right@1.11s 0.76,0.02,right 1.00 | grab 0.00 | _unknown_ 0.00,ch0,19.3
+raw/supanut/S1/right/right_04_raw.wav,right,right,hit,right,right@1.21s 0.70,0.993,right 0.99 | grab 0.00 | _unknown_ 0.00,ch0,22.2
+raw/supanut/S1/red_box/red_box_06_raw.wav,red box,red box,hit,red box,red box@1.31s 0.77,0.924,red box 0.92 | green box 0.05 | grab 0.01,ch0,18.1
+raw/supanut/S1/_unknown_/back_01_raw.wav,back,_unknown_,false_alarm,left,left@1.01s 0.84,0.015,left 0.95 | backward 0.02 | black box 0.01,ch0,20.0
+raw/supanut/S1/pick/pick_02_raw.wav,pick,pick,hit,pick,pick@1.01s 0.93,0.948,pick 0.95 | _unknown_ 0.02 | hand 0.01,ch0,14.9
+raw/supanut/S1/left/left_02_raw.wav,left,left,hit,left,left@1.01s 0.97,0.975,left 0.97 | move 0.01 | yes 0.00,ch0,16.6
+raw/supanut/S1/drop/drop_05_raw.wav,drop,drop,hit,drop,drop@1.01s 0.89,0.927,drop 0.93 | grab 0.04 | right 0.01,ch0,18.5
+raw/supanut/S1/place/place_06_raw.wav,place,place,miss,,,0.34,base 0.66 | place 0.29 | _unknown_ 0.01,ch0,18.2
+raw/supanut/S1/drop/drop_06_raw.wav,drop,drop,hit,drop,drop@1.01s 0.86,0.865,drop 0.87 | grab 0.08 | _unknown_ 0.02,ch0,19.6
+raw/supanut/S1/home/home_02_raw.wav,home,home,miss,,,0.403,home 0.40 | hand 0.13 | move 0.13,ch0,14.5
+raw/supanut/S1/pick/pick_03_raw.wav,pick,pick,hit,pick,pick@1.01s 0.97,0.972,pick 0.97 | _unknown_ 0.01 | hand 0.00,ch0,19.0
+raw/supanut/S1/station/station_04_raw.wav,station,station,wrong,base,base@1.01s 0.78,0.944,station 0.94 | base 0.04 | _unknown_ 0.00,ch0,20.4
+raw/supanut/S1/_unknown_/grape_01_raw.wav,grape,_unknown_,false_alarm,right,right@1.01s 0.70,0.115,right 0.72 | _unknown_ 0.10 | pick 0.03,ch0,21.8
+raw/supanut/S1/blue_box/blue_box_04_raw.wav,blue box,blue box,miss,,,0.537,blue box 0.54 | green box 0.16 | _unknown_ 0.05,ch0,17.0
+raw/supanut/S1/_unknown_/phone_01_raw.wav,phone,_unknown_,rejected,,,0.077,home 0.67 | hand 0.11 | _unknown_ 0.05,ch0,16.7
+raw/supanut/S1/left/left_03_raw.wav,left,left,hit,left,left@1.01s 0.98,0.982,left 0.98 | yes 0.01 | move 0.00,ch0,16.4
+raw/supanut/S1/grab/grab_05_raw.wav,grab,grab,hit,grab,grab@1.01s 0.88,0.891,grab 0.89 | drop 0.02 | left 0.02,ch0,24.0
+raw/supanut/S1/place/place_07_raw.wav,place,place,miss,,,0.569,base 0.63 | place 0.32 | _unknown_ 0.01,ch0,17.6
+raw/supanut/S1/grab/grab_06_raw.wav,grab,grab,hit,grab,grab@1.01s 0.82,0.931,grab 0.93 | _unknown_ 0.01 | drop 0.01,ch0,23.0
+raw/supanut/S1/_unknown_/black_01_raw.wav,black,_unknown_,false_alarm,left,left@1.01s 0.96,0.013,left 0.96 | yes 0.01 | backward 0.01,ch0,24.1
+raw/supanut/S1/place/place_08_raw.wav,place,place,miss,,,0.516,base 0.53 | place 0.37 | yes 0.02,ch0,19.9
+raw/supanut/S1/blue_box/blue_box_05_raw.wav,blue box,blue box,hit,blue box,blue box@1.41s 0.71,0.714,blue box 0.71 | move 0.09 | _unknown_ 0.04,ch0,18.2
+raw/supanut/S1/left/left_04_raw.wav,left,left,hit,left,left@1.01s 0.89,0.906,left 0.91 | pick 0.02 | move 0.02,ch0,19.9
+raw/supanut/S1/yes/yes_02_raw.wav,yes,yes,hit,yes,yes@1.01s 1.00,0.997,yes 1.00 | left 0.00 | _unknown_ 0.00,ch0,18.3
+raw/supanut/S1/left/left_05_raw.wav,left,left,hit,left,left@1.01s 0.95,0.958,left 0.96 | black box 0.01 | yes 0.01,ch0,18.3
+raw/supanut/S1/_unknown_/box_01_raw.wav,box,_unknown_,rejected,,,0.015,black box 0.40 | red box 0.30 | blue box 0.10,ch0,18.1
+raw/supanut/S1/home/home_03_raw.wav,home,home,hit,home,home@1.01s 0.84,0.863,home 0.86 | forward 0.06 | move 0.02,ch0,12.9
+raw/supanut/S1/station/station_05_raw.wav,station,station,hit,station,station@1.41s 0.78,0.775,station 0.78 | base 0.17 | _unknown_ 0.02,ch0,20.0
+raw/supanut/S1/black_box/black_box_07_raw.wav,black box,black box,hit,black box,black box@1.21s 0.74,0.883,black box 0.88 | red box 0.05 | yes 0.02,ch0,21.0
+raw/supanut/S1/hand/hand_04_raw.wav,hand,hand,hit,hand,hand@1.01s 0.98,0.981,hand 0.98 | pick 0.01 | _unknown_ 0.00,ch0,18.8
+raw/supanut/S1/stop/stop_04_raw.wav,stop,stop,hit,stop,stop@1.01s 0.98,0.989,stop 0.99 | _unknown_ 0.00 | left 0.00,ch0,19.7
+raw/supanut/S1/yes/yes_03_raw.wav,yes,yes,hit,yes,yes@1.01s 0.96,0.958,yes 0.96 | left 0.03 | place 0.00,ch0,17.5
+raw/supanut/S1/red_box/red_box_07_raw.wav,red box,red box,hit,red box,red box@1.31s 0.74,0.745,red box 0.75 | green box 0.17 | blue box 0.02,ch0,17.7
+raw/supanut/S1/yes/yes_04_raw.wav,yes,yes,hit,yes,yes@1.01s 0.97,0.974,yes 0.97 | left 0.01 | place 0.01,ch0,17.1
+raw/supanut/S1/stop/stop_05_raw.wav,stop,stop,hit,stop,stop@1.01s 0.95,0.952,stop 0.95 | left 0.01 | drop 0.01,ch0,17.2
+raw/supanut/S1/blue_box/blue_box_06_raw.wav,blue box,blue box,hit,blue box,blue box@1.51s 0.73,0.771,blue box 0.77 | move 0.06 | no 0.06,ch0,15.3
+raw/supanut/S1/_unknown_/mood_01_raw.wav,mood,_unknown_,rejected,,,0.055,move 0.52 | home 0.13 | forward 0.08,ch0,10.6
+raw/supanut/S1/right/right_05_raw.wav,right,right,hit,right,right@1.01s 0.99,0.988,right 0.99 | grab 0.00 | left 0.00,ch0,19.7
+raw/supanut/S1/green_box/green_box_05_raw.wav,green box,green box,hit,green box,green box@1.11s 0.71,0.934,green box 0.93 | _unknown_ 0.02 | base 0.01,ch0,15.4
+raw/supanut/S1/base/base_07_raw.wav,base,base,hit,base,base@1.01s 0.91,0.907,base 0.91 | place 0.06 | move 0.01,ch0,16.4
+raw/supanut/S1/yes/yes_05_raw.wav,yes,yes,hit,yes,yes@1.01s 0.98,0.982,yes 0.98 | left 0.01 | place 0.00,ch0,15.7
+raw/supanut/S1/home/home_04_raw.wav,home,home,hit,home,home@1.11s 0.70,0.711,home 0.71 | move 0.12 | hand 0.04,ch0,12.1
+raw/supanut/S1/_unknown_/blue_01_raw.wav,blue,_unknown_,rejected,,,0.033,no 0.64 | move 0.32 | _unknown_ 0.02,ch0,14.7
+raw/supanut/S1/stop/stop_06_raw.wav,stop,stop,hit,stop,stop@1.01s 0.98,0.985,stop 0.98 | _unknown_ 0.00 | drop 0.00,ch0,21.3
+raw/supanut/S1/green_box/green_box_06_raw.wav,green box,green box,hit,green box,green box@1.41s 0.73,0.871,green box 0.87 | _unknown_ 0.03 | base 0.02,ch0,17.1
+raw/supanut/S1/grab/grab_07_raw.wav,grab,grab,hit,grab,grab@1.01s 0.76,0.889,grab 0.89 | right 0.02 | left 0.02,ch0,22.3
+raw/supanut/S1/green_box/green_box_07_raw.wav,green box,green box,hit,green box,green box@1.41s 0.82,0.949,green box 0.95 | _unknown_ 0.01 | red box 0.01,ch0,16.7
+raw/supanut/S1/yes/yes_06_raw.wav,yes,yes,hit,yes,yes@1.01s 0.97,0.984,yes 0.98 | left 0.01 | place 0.00,ch0,16.9
+raw/supanut/S1/move/move_06_raw.wav,move,move,hit,move,move@1.01s 0.75,0.746,move 0.75 | home 0.09 | hand 0.03,ch0,10.9
+raw/supanut/S1/hand/hand_05_raw.wav,hand,hand,hit,hand,hand@1.01s 0.98,0.981,hand 0.98 | pick 0.01 | _unknown_ 0.00,ch0,17.6
+raw/supanut/S1/move/move_07_raw.wav,move,move,miss,,,0.51,move 0.51 | hand 0.16 | _unknown_ 0.06,ch0,12.8
+raw/supanut/S1/home/home_05_raw.wav,home,home,hit,home,home@1.01s 0.80,0.809,home 0.81 | move 0.06 | right 0.03,ch0,11.5
+raw/supanut/S1/yes/yes_07_raw.wav,yes,yes,hit,yes,yes@1.01s 0.99,0.99,yes 0.99 | left 0.01 | place 0.00,ch0,15.8
+raw/supanut/S1/right/right_06_raw.wav,right,right,hit,right,right@1.01s 1.00,0.999,right 1.00 | _unknown_ 0.00 | grab 0.00,ch0,21.1
+raw/supanut/S1/forward/forward_06_raw.wav,forward,forward,hit,forward,forward@1.01s 0.83,0.854,forward 0.85 | _unknown_ 0.07 | home 0.03,ch0,17.6
+raw/supanut/S1/pick/pick_04_raw.wav,pick,pick,hit,pick,pick@1.01s 0.99,0.99,pick 0.99 | _unknown_ 0.00 | right 0.00,ch0,13.2
+raw/supanut/S1/no/no_05_raw.wav,no,no,hit,no,no@1.01s 0.99,0.989,no 0.99 | _unknown_ 0.00 | yes 0.00,ch0,16.6
+raw/supanut/S1/right/right_07_raw.wav,right,right,hit,right,right@1.01s 1.00,0.998,right 1.00 | _unknown_ 0.00 | grab 0.00,ch0,18.8
+raw/supanut/S1/grab/grab_08_raw.wav,grab,grab,hit,grab,grab@1.01s 0.77,0.786,grab 0.79 | right 0.07 | left 0.05,ch0,21.0
+raw/supanut/S1/hand/hand_06_raw.wav,hand,hand,hit,hand,hand@1.01s 0.93,0.931,hand 0.93 | pick 0.03 | _unknown_ 0.01,ch0,16.9
+raw/supanut/S1/home/home_06_raw.wav,home,home,hit,home,home@1.01s 0.87,0.874,home 0.87 | right 0.02 | forward 0.02,ch0,14.0
+raw/supanut/S1/hand/hand_07_raw.wav,hand,hand,hit,hand,hand@1.01s 0.99,0.99,hand 0.99 | _unknown_ 0.00 | pick 0.00,ch0,20.5
+raw/supanut/S1/blue_box/blue_box_07_raw.wav,blue box,blue box,miss,,,0.397,move 0.45 | no 0.32 | blue box 0.08,ch0,16.9
+raw/supanut/S1/_unknown_/go_01_raw.wav,go,_unknown_,false_alarm,home,home@1.01s 0.72,0.033,home 0.78 | move 0.03 | forward 0.03,ch0,16.6
+raw/supanut/S1/hand/hand_08_raw.wav,hand,hand,hit,hand,hand@1.01s 0.98,0.98,hand 0.98 | pick 0.01 | _unknown_ 0.00,ch0,20.6
+raw/supanut/S1/_unknown_/write_01_raw.wav,write,_unknown_,false_alarm,right,right@1.01s 0.99,0.024,right 0.99 | grab 0.00 | drop 0.00,ch0,19.3
+raw/supanut/S1/drop/drop_07_raw.wav,drop,drop,hit,drop,drop@1.01s 0.85,0.874,drop 0.87 | grab 0.07 | _unknown_ 0.01,ch0,21.5
+raw/supanut/S1/backward/backward_02_raw.wav,backward,backward,hit,backward,backward@1.01s 1.00,0.998,backward 1.00 | black box 0.00 | _unknown_ 0.00,ch0,22.6
+raw/supanut/S1/home/home_07_raw.wav,home,home,hit,home,home@1.01s 0.95,0.956,home 0.96 | move 0.01 | hand 0.01,ch0,11.5
+raw/supanut/S1/pick/pick_05_raw.wav,pick,pick,hit,pick,pick@1.01s 0.97,0.973,pick 0.97 | _unknown_ 0.01 | undo 0.00,ch0,12.2
+raw/supanut/S1/green_box/green_box_08_raw.wav,green box,green box,hit,green box,green box@1.01s 0.80,0.959,green box 0.96 | blue box 0.01 | _unknown_ 0.01,ch0,16.0
+raw/supanut/S1/pick/pick_06_raw.wav,pick,pick,hit,pick,pick@1.01s 0.96,0.961,pick 0.96 | _unknown_ 0.01 | yes 0.00,ch0,13.1
+raw/supanut/S1/_unknown_/sick_01_raw.wav,sick,_unknown_,rejected,,,0.145,pick 0.50 | station 0.16 | _unknown_ 0.09,ch0,17.0
+raw/supanut/S1/base/base_08_raw.wav,base,base,hit,base,base@1.01s 0.88,0.877,base 0.88 | place 0.09 | _unknown_ 0.01,ch0,15.5
+raw/supanut/S1/red_box/red_box_08_raw.wav,red box,red box,hit,red box,red box@1.01s 0.73,0.992,red box 0.99 | green box 0.00 | grab 0.00,ch0,18.1
+raw/supanut/S1/left/left_06_raw.wav,left,left,hit,left,left@1.01s 0.83,0.833,left 0.83 | pick 0.04 | yes 0.03,ch0,19.6
+raw/supanut/S1/forward/forward_07_raw.wav,forward,forward,hit,forward,forward@1.31s 0.79,0.827,forward 0.83 | _unknown_ 0.09 | home 0.03,ch0,16.9
+raw/supanut/S1/home/home_08_raw.wav,home,home,hit,home,home@1.01s 0.95,0.962,home 0.96 | forward 0.01 | _unknown_ 0.01,ch0,12.2
+raw/supanut/S1/blue_box/blue_box_08_raw.wav,blue box,blue box,miss,,,0.259,move 0.59 | no 0.13 | _unknown_ 0.09,ch0,14.7
+raw/supanut/S1/right/right_08_raw.wav,right,right,hit,right,right@1.01s 0.98,0.981,right 0.98 | grab 0.01 | left 0.00,ch0,18.8
+raw/supanut/S1/forward/forward_08_raw.wav,forward,forward,hit,forward,forward@1.01s 0.87,0.895,forward 0.90 | _unknown_ 0.05 | backward 0.02,ch0,18.5
+raw/supanut/S1/backward/backward_03_raw.wav,backward,backward,hit,backward,backward@1.01s 1.00,0.998,backward 1.00 | black box 0.00 | left 0.00,ch0,18.5
+raw/supanut/S1/pick/pick_07_raw.wav,pick,pick,hit,pick,pick@1.01s 0.98,0.988,pick 0.99 | _unknown_ 0.00 | hand 0.00,ch0,18.0
+raw/supanut/S1/left/left_07_raw.wav,left,left,hit,left,left@1.01s 0.95,0.953,left 0.95 | yes 0.01 | move 0.01,ch0,16.7
+raw/supanut/S1/drop/drop_08_raw.wav,drop,drop,miss,,,0.47,drop 0.47 | grab 0.31 | _unknown_ 0.06,ch0,19.3
+raw/supanut/S1/home/home_09_raw.wav,home,home,hit,home,home@1.01s 0.81,0.813,home 0.81 | move 0.04 | hand 0.03,ch0,12.6
+raw/supanut/S1/_unknown_/open_01_raw.wav,open,_unknown_,rejected,,,0.303,pick 0.61 | hand 0.07 | _unknown_ 0.05,ch0,14.5
+raw/supanut/S1/black_box/black_box_08_raw.wav,black box,black box,miss,,,0.647,black box 0.65 | yes 0.17 | left 0.05,ch0,21.9
+raw/supanut/S1/pick/pick_08_raw.wav,pick,pick,hit,pick,pick@1.01s 0.98,0.976,pick 0.98 | _unknown_ 0.01 | hand 0.00,ch0,13.5
+raw/supanut/S1/yes/yes_08_raw.wav,yes,yes,hit,yes,yes@1.01s 0.99,0.992,yes 0.99 | left 0.00 | place 0.00,ch0,19.3
+raw/supanut/S1/hand/hand_09_raw.wav,hand,hand,hit,hand,hand@1.01s 0.98,0.981,hand 0.98 | pick 0.01 | _unknown_ 0.00,ch0,17.2
+raw/supanut/S1/station/station_06_raw.wav,station,station,hit,station,station@1.11s 0.71,0.914,station 0.91 | base 0.05 | _unknown_ 0.02,ch0,19.9
+raw/supanut/S1/backward/backward_04_raw.wav,backward,backward,hit,backward,backward@1.01s 0.99,0.991,backward 0.99 | left 0.00 | black box 0.00,ch0,19.5
+raw/supanut/S1/pick/pick_09_raw.wav,pick,pick,hit,pick,pick@1.01s 0.96,0.963,pick 0.96 | _unknown_ 0.01 | hand 0.00,ch0,16.0
+raw/supanut/S1/left/left_08_raw.wav,left,left,hit,left,left@1.01s 0.99,0.989,left 0.99 | yes 0.00 | black box 0.00,ch0,19.5
+raw/supanut/S1/pick/pick_10_raw.wav,pick,pick,hit,pick,pick@1.01s 0.98,0.983,pick 0.98 | _unknown_ 0.00 | hand 0.00,ch0,14.6
+raw/supanut/S1/backward/backward_05_raw.wav,backward,backward,hit,backward,backward@1.01s 0.99,0.994,backward 0.99 | left 0.00 | _unknown_ 0.00,ch0,17.6
+raw/supanut/S1/home/home_10_raw.wav,home,home,hit,home,home@1.01s 0.89,0.902,home 0.90 | move 0.03 | forward 0.02,ch0,12.6
+raw/supanut/S1/station/station_07_raw.wav,station,station,miss,,,0.427,base 0.65 | station 0.24 | place 0.05,ch0,18.6
+raw/supanut/S1/_unknown_/hope_01_raw.wav,hope,_unknown_,rejected,,,0.066,home 0.53 | forward 0.11 | _unknown_ 0.06,ch0,14.6
+raw/supanut/S1/grab/grab_09_raw.wav,grab,grab,hit,grab,grab@1.01s 0.77,0.807,grab 0.81 | left 0.05 | right 0.04,ch0,23.1
+raw/supanut/S1/left/left_09_raw.wav,left,left,hit,left,left@1.01s 0.94,0.955,left 0.96 | pick 0.01 | move 0.01,ch0,19.6
+raw/supanut/S1/hand/hand_10_raw.wav,hand,hand,hit,hand,hand@1.01s 0.99,0.992,hand 0.99 | pick 0.00 | _unknown_ 0.00,ch0,17.0
+raw/supanut/S1/_unknown_/grass_01_raw.wav,grass,_unknown_,rejected,,,0.066,grab 0.42 | drop 0.20 | right 0.15,ch0,21.9
+raw/supanut/S1/grab/grab_10_raw.wav,grab,grab,hit,grab,grab@1.01s 0.92,0.92,grab 0.92 | _unknown_ 0.01 | left 0.01,ch0,23.8
+raw/supanut/S1/yes/yes_09_raw.wav,yes,yes,hit,yes,yes@1.01s 0.99,0.991,yes 0.99 | left 0.00 | place 0.00,ch0,17.3
+raw/supanut/S1/_unknown_/bag_01_raw.wav,bag,_unknown_,false_alarm,left,left@1.01s 0.95,0.022,left 0.95 | pick 0.01 | backward 0.01,ch0,22.4
+raw/supanut/S1/green_box/green_box_09_raw.wav,green box,green box,hit,green box,green box@1.11s 0.79,0.972,green box 0.97 | _unknown_ 0.01 | blue box 0.00,ch0,16.7
+raw/supanut/S1/station/station_08_raw.wav,station,station,hit,station,station@1.01s 0.86,0.985,station 0.99 | base 0.01 | _unknown_ 0.00,ch0,16.9
+raw/supanut/S1/stop/stop_07_raw.wav,stop,stop,hit,stop,stop@1.01s 0.97,0.971,stop 0.97 | _unknown_ 0.00 | red box 0.00,ch0,20.8
+raw/supanut/S1/drop/drop_09_raw.wav,drop,drop,hit,drop,drop@1.01s 0.73,0.796,drop 0.80 | grab 0.12 | _unknown_ 0.03,ch0,19.6
+raw/supanut/S1/stop/stop_08_raw.wav,stop,stop,hit,stop,stop@1.01s 0.97,0.969,stop 0.97 | _unknown_ 0.01 | red box 0.00,ch0,18.6
+raw/supanut/S1/base/base_09_raw.wav,base,base,hit,base,base@1.01s 0.77,0.799,base 0.80 | place 0.17 | yes 0.01,ch0,15.5
+raw/supanut/S1/no/no_06_raw.wav,no,no,hit,no,no@1.01s 0.98,0.987,no 0.99 | move 0.00 | _unknown_ 0.00,ch0,17.0
+raw/supanut/S1/black_box/black_box_09_raw.wav,black box,black box,hit,black box,black box@1.31s 0.76,0.805,black box 0.80 | yes 0.06 | backward 0.04,ch0,19.9
+raw/supanut/S1/place/place_09_raw.wav,place,place,hit,place,place@1.01s 0.87,0.873,place 0.87 | base 0.08 | _unknown_ 0.01,ch0,18.3
+raw/supanut/S1/_unknown_/more_01_raw.wav,more,_unknown_,false_alarm,no,no@1.01s 0.94,0.056,no 0.94 | _unknown_ 0.02 | move 0.01,ch0,12.1
+raw/supanut/S1/move/move_08_raw.wav,move,move,miss,,,0.483,move 0.48 | undo 0.17 | hand 0.09,ch0,7.9
+raw/supanut/S1/base/base_10_raw.wav,base,base,hit,base,base@1.01s 0.75,0.747,base 0.75 | place 0.18 | move 0.03,ch0,15.1
+raw/supanut/S1/blue_box/blue_box_09_raw.wav,blue box,blue box,miss,,,0.567,no 0.69 | move 0.08 | blue box 0.07,ch0,17.9
+raw/supanut/S1/stop/stop_09_raw.wav,stop,stop,hit,stop,stop@1.01s 0.98,0.984,stop 0.98 | _unknown_ 0.00 | drop 0.00,ch0,19.4
+raw/supanut/S1/no/no_07_raw.wav,no,no,hit,no,no@1.01s 0.98,0.983,no 0.98 | move 0.00 | _unknown_ 0.00,ch0,15.7
+raw/supanut/S1/left/left_10_raw.wav,left,left,hit,left,left@1.01s 0.96,0.968,left 0.97 | yes 0.01 | grab 0.00,ch0,19.0
+raw/supanut/S1/right/right_09_raw.wav,right,right,hit,right,right@1.01s 1.00,0.999,right 1.00 | _unknown_ 0.00 | grab 0.00,ch0,22.3
+raw/supanut/S1/no/no_08_raw.wav,no,no,hit,no,no@1.01s 0.98,0.987,no 0.99 | move 0.00 | _unknown_ 0.00,ch0,15.9
+raw/supanut/S1/blue_box/blue_box_10_raw.wav,blue box,blue box,miss,,,0.497,move 0.68 | no 0.19 | blue box 0.04,ch0,17.5
+raw/supanut/S1/backward/backward_06_raw.wav,backward,backward,hit,backward,backward@1.01s 1.00,0.998,backward 1.00 | black box 0.00 | left 0.00,ch0,18.6
+raw/supanut/S1/right/right_10_raw.wav,right,right,hit,right,right@1.01s 1.00,0.998,right 1.00 | grab 0.00 | _unknown_ 0.00,ch0,19.4
+raw/supanut/S1/_unknown_/foam_01_raw.wav,foam,_unknown_,false_alarm,home,home@1.71s 0.72,0.073,home 0.72 | hand 0.06 | no 0.05,ch0,15.4
+raw/supanut/S1/backward/backward_07_raw.wav,backward,backward,hit,backward,backward@1.01s 1.00,0.998,backward 1.00 | left 0.00 | _unknown_ 0.00,ch0,22.9
+raw/supanut/S1/place/place_10_raw.wav,place,place,hit,place,place@1.01s 0.78,0.802,place 0.80 | base 0.16 | _unknown_ 0.01,ch0,18.7
+raw/supanut/S1/green_box/green_box_10_raw.wav,green box,green box,hit,green box,green box@1.01s 0.84,0.964,green box 0.96 | red box 0.01 | _unknown_ 0.01,ch0,17.9
+raw/supanut/S1/no/no_09_raw.wav,no,no,hit,no,no@1.01s 0.99,0.993,no 0.99 | _unknown_ 0.00 | move 0.00,ch0,17.1
+raw/supanut/S1/backward/backward_08_raw.wav,backward,backward,hit,backward,backward@1.01s 1.00,0.996,backward 1.00 | left 0.00 | black box 0.00,ch0,21.5
+raw/supanut/S1/_unknown_/up_01_raw.wav,up,_unknown_,rejected,,,0.055,stop 0.60 | drop 0.09 | _unknown_ 0.05,ch0,21.5
+raw/supanut/S1/backward/backward_09_raw.wav,backward,backward,hit,backward,backward@1.01s 1.00,0.999,backward 1.00 | _unknown_ 0.00 | black box 0.00,ch0,21.1
+raw/supanut/S1/_unknown_/robot_01_raw.wav,robot,_unknown_,rejected,,,0.09,red box 0.54 | green box 0.24 | blue box 0.08,ch0,16.7
+raw/supanut/S1/backward/backward_10_raw.wav,backward,backward,hit,backward,backward@1.01s 0.99,0.991,backward 0.99 | left 0.00 | _unknown_ 0.00,ch0,20.4
+raw/supanut/S1/station/station_09_raw.wav,station,station,hit,station,station@1.01s 0.71,0.817,station 0.82 | base 0.14 | _unknown_ 0.02,ch0,20.4
+raw/supanut/S1/forward/forward_09_raw.wav,forward,forward,hit,forward,forward@1.01s 0.81,0.82,forward 0.82 | _unknown_ 0.09 | home 0.04,ch0,19.3
+raw/supanut/S1/red_box/red_box_09_raw.wav,red box,red box,hit,red box,red box@1.01s 0.88,0.981,red box 0.98 | green box 0.01 | _unknown_ 0.00,ch0,20.1
+raw/supanut/S1/stop/stop_10_raw.wav,stop,stop,hit,stop,stop@1.01s 0.99,0.988,stop 0.99 | _unknown_ 0.00 | red box 0.00,ch0,17.5
+raw/supanut/S1/red_box/red_box_10_raw.wav,red box,red box,hit,red box,red box@1.01s 0.86,0.978,red box 0.98 | green box 0.01 | _unknown_ 0.00,ch0,21.2
+raw/supanut/S1/drop/drop_10_raw.wav,drop,drop,hit,drop,drop@1.01s 0.86,0.886,drop 0.89 | grab 0.06 | _unknown_ 0.02,ch0,19.8
+raw/supanut/S1/_unknown_/ride_01_raw.wav,ride,_unknown_,false_alarm,right,right@1.01s 0.72,0.051,right 0.80 | grab 0.13 | drop 0.04,ch0,21.8
+raw/supanut/S1/no/no_10_raw.wav,no,no,hit,no,no@1.01s 0.97,0.979,no 0.98 | move 0.00 | _unknown_ 0.00,ch0,15.9
+raw/supanut/S1/forward/forward_10_raw.wav,forward,forward,hit,forward,forward@1.01s 0.90,0.901,forward 0.90 | home 0.04 | _unknown_ 0.04,ch0,17.5
+raw/supanut/S1/move/move_09_raw.wav,move,move,miss,,,0.592,move 0.59 | no 0.13 | _unknown_ 0.06,ch0,11.2
+raw/supanut/S1/station/station_10_raw.wav,station,station,hit,station,station@1.41s 0.77,0.773,station 0.77 | base 0.18 | _unknown_ 0.02,ch0,18.5
+raw/supanut/S1/move/move_10_raw.wav,move,move,hit,move,move@1.01s 0.78,0.781,move 0.78 | _unknown_ 0.04 | no 0.03,ch0,9.5
+raw/supanut/S1/black_box/black_box_10_raw.wav,black box,black box,miss,,,0.237,yes 0.26 | black box 0.21 | red box 0.20,ch0,19.4
+raw/supanut/S1/yes/yes_10_raw.wav,yes,yes,hit,yes,yes@1.01s 0.99,0.996,yes 1.00 | left 0.00 | place 0.00,ch0,15.2

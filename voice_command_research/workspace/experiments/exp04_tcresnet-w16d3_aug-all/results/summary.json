@@ -1,0 +1,12 @@
+{
+  "epochs": 82,
+  "minutes": 28.6,
+  "S0_clip_macro_f1": 0.855,
+  "S0_command_accuracy": 0.9681,
+  "S0_stream_detected": 0.3191,
+  "S0_unknown_false_alarms": 6,
+  "S1_clip_macro_f1": 0.8925,
+  "S1_command_accuracy": 0.99,
+  "S1_stream_detected": 0.925,
+  "S1_unknown_false_alarms": 16
+}

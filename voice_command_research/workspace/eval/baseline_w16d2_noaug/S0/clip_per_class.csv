@@ -1,0 +1,23 @@
+cls,support,correct,recall,precision,f1,mean_p_true,confused_with
+move,5,0,0.0,0.0,0.0,0.007,no 5
+pick,2,2,1.0,1.0,1.0,0.471,
+grab,7,0,0.0,0.0,0.0,0.002,"right 6, left 1"
+blue box,7,0,0.0,0.0,0.0,0.023,no 7
+green box,6,1,0.167,1.0,0.286,0.215,"_unknown_ 4, stop 1"
+red box,3,0,0.0,0.0,0.0,0.19,"backward 1, right 1, _unknown_ 1"
+black box,4,0,0.0,0.0,0.0,0.006,"backward 3, no 1"
+hand,5,4,0.8,1.0,0.889,0.645,_unknown_ 1
+station,6,6,1.0,1.0,1.0,0.85,
+base,5,2,0.4,1.0,0.571,0.293,_unknown_ 3
+forward,4,4,1.0,0.333,0.5,0.972,
+backward,7,7,1.0,0.538,0.7,1.0,
+left,5,5,1.0,0.833,0.909,0.739,
+right,3,3,1.0,0.214,0.353,0.997,
+place,7,3,0.429,1.0,0.6,0.286,"yes 3, right 1"
+drop,2,0,0.0,0.0,0.0,0.127,stop 2
+yes,2,1,0.5,0.25,0.333,0.565,_silence_ 1
+no,4,4,1.0,0.182,0.308,0.986,
+home,5,1,0.2,1.0,0.333,0.216,forward 4
+stop,5,5,1.0,0.625,0.769,0.995,
+_unknown_,15,1,0.067,0.1,0.08,0.149,"no 5, forward 4, right 3"
+_silence_,0,0,nan,0.0,0.0,nan,

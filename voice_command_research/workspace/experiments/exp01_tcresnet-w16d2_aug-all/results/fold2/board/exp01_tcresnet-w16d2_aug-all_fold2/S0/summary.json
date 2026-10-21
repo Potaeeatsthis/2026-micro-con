@@ -1,0 +1,49 @@
+{
+  "meta": {
+    "tag": "exp01_tcresnet-w16d2_aug-all_fold2",
+    "model": "D:\\Microcon69\\ProjectRoboticArm\\ProjectSpace\\2026-micro-con\\voice_command_research\\workspace\\experiments\\exp01_tcresnet-w16d2_aug-all\\runs\\fold2\\best.pth",
+    "model_kind": "pytorch TC-ResNet w16 d2, 23 classes",
+    "gain_db": 15.0,
+    "features": "librosa 0.11.0 (features.py)",
+    "stream_cfg": {
+      "stride": 10,
+      "avg": 3,
+      "thr": 0.7,
+      "refractory_ms": 1500,
+      "channel": "auto"
+    },
+    "quality_only": false,
+    "when": "2026-10-21 17:35"
+  },
+  "session": "S0",
+  "clip": {
+    "n": 109,
+    "accuracy": 0.8349,
+    "macro_f1": 0.8428,
+    "macro_f1_note": "mean F1 over the classes present in this set (true labels)",
+    "command_accuracy": 0.9681,
+    "unknown_accuracy": 0.0,
+    "silence_accuracy": null,
+    "commands_rejected": 0,
+    "speech_peak_db_median": -32.4,
+    "accuracy_quality_ok_only": 0.8132
+  },
+  "stream": {
+    "command_takes": 94,
+    "hit": 26,
+    "hit_extra": 0,
+    "wrong": 4,
+    "miss": 64,
+    "detected_rate": 0.2766,
+    "first_detection_correct": 0.2766,
+    "unknown_takes": 15,
+    "unknown_false_alarms": 3,
+    "noise_minutes": 0.0,
+    "noise_false_alarms": 0,
+    "channel_use": {
+      "ch1": 27,
+      "ch0/ch1": 16,
+      "ch0": 66
+    }
+  }
+}

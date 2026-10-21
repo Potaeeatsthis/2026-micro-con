@@ -9,6 +9,26 @@ build/
 
 resources
 
+# Voice research data, generated audio and weights
+voice_command_research/dataset/recordings/
+voice_command_research/dataset/synthetic/
+voice_command_research/dataset/built/
+voice_command_research/**/runs/
+voice_command_research/**/runs_test/
+voice_command_research/**/results_test/
+voice_command_research/**/*.wav
+voice_command_research/**/*.opus
+voice_command_research/**/*.npy
+voice_command_research/**/*.pt
+voice_command_research/**/*.pth
+voice_command_research/**/*.onnx
+voice_command_research/**/*.zip
+voice_command_research/**/eval_windows.csv
+# released models for the board are tracked (small: ONNX + C headers)
+!voice_command_research/final_model/**/*.onnx
+__pycache__/
+.ipynb_checkpoints/
+
 # Accidental duplicate
 study/Kinematic-Slide.pdf
 study/robotic-arm-budget.xlsx

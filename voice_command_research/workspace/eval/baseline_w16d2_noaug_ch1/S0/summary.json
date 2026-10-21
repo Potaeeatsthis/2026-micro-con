@@ -1,0 +1,36 @@
+{
+  "meta": {
+    "tag": "baseline_w16d2_noaug_ch1",
+    "model": "/sessions/rcw-ac6fce39038343a9b68f42328258/mnt/prefer/onnx_out/kws.onnx",
+    "model_kind": "onnx (input logmel [1, 40, 101])",
+    "gain_db": 15.0,
+    "features": "numpy",
+    "stream_cfg": {
+      "stride": 10,
+      "avg": 3,
+      "thr": 0.7,
+      "refractory_ms": 1500,
+      "channel": "1"
+    },
+    "quality_only": false,
+    "when": "2026-10-18 11:07"
+  },
+  "session": "S0",
+  "clip": null,
+  "stream": {
+    "command_takes": 94,
+    "hit": 38,
+    "hit_extra": 0,
+    "wrong": 25,
+    "miss": 31,
+    "detected_rate": 0.4043,
+    "first_detection_correct": 0.4043,
+    "unknown_takes": 15,
+    "unknown_false_alarms": 9,
+    "noise_minutes": 0.0,
+    "noise_false_alarms": 0,
+    "channel_use": {
+      "ch1": 109
+    }
+  }
+}

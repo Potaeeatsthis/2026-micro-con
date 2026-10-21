@@ -1,0 +1,47 @@
+{
+  "meta": {
+    "tag": "baseline_w16d2_noaug",
+    "model": "/sessions/rcw-ac6fce39038343a9b68f42328258/mnt/prefer/onnx_out/kws.onnx",
+    "model_kind": "onnx (input logmel [1, 40, 101])",
+    "gain_db": 15.0,
+    "features": "numpy",
+    "stream_cfg": {
+      "stride": 10,
+      "avg": 3,
+      "thr": 0.7,
+      "refractory_ms": 1500,
+      "channel": "auto"
+    },
+    "quality_only": false,
+    "when": "2026-10-18 11:07"
+  },
+  "session": "S1",
+  "clip": {
+    "n": 290,
+    "accuracy": 0.5414,
+    "macro_f1": 0.3801,
+    "macro_f1_note": "mean F1 over the classes present in this set (true labels)",
+    "command_accuracy": 0.47,
+    "unknown_accuracy": 0.1,
+    "silence_accuracy": 1.0,
+    "commands_rejected": 30,
+    "speech_peak_db_median": -34.7,
+    "accuracy_quality_ok_only": 0.5507
+  },
+  "stream": {
+    "command_takes": 200,
+    "hit": 76,
+    "hit_extra": 0,
+    "wrong": 45,
+    "miss": 79,
+    "detected_rate": 0.38,
+    "first_detection_correct": 0.38,
+    "unknown_takes": 30,
+    "unknown_false_alarms": 15,
+    "noise_minutes": 1.0,
+    "noise_false_alarms": 0,
+    "channel_use": {
+      "ch0": 230
+    }
+  }
+}

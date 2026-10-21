@@ -1,0 +1,7 @@
+source,n,recall
+open_mswc,12118,0.6776
+open_mswc_joined,322,0.7453
+open_sc_noise_gain,132,0.9167
+open_speech_commands,6301,0.7583
+open_synthetic,70,0.9714
+piper,6839,0.7606
