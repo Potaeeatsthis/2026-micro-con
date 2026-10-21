@@ -1,0 +1,22 @@
+cls,takes,hit,hit_extra,wrong,miss,false_alarm,rejected,detected_rate,wrong_as,mean_max_p_true
+move,5,0,0,2,3,0,0,0.0,no 2,0.003
+pick,2,0,0,0,2,0,0,0.0,,0.181
+grab,7,0,0,5,2,0,0,0.0,"right 3, left 2",0.003
+blue box,7,0,0,4,3,0,0,0.0,"no 3, left 1",0.004
+green box,6,0,0,4,2,0,0,0.0,left 4,0.0
+red box,3,0,0,1,2,0,0,0.0,right 1,0.17
+black box,4,0,0,2,2,0,0,0.0,"backward 1, left 1",0.004
+hand,5,1,0,4,0,0,0,0.2,left 4,0.182
+station,6,2,0,3,1,0,0,0.333,left 3,0.279
+base,5,0,0,0,5,0,0,0.0,,0.057
+forward,4,2,0,1,1,0,0,0.5,left 1,0.483
+backward,7,1,0,3,3,0,0,0.143,left 3,0.265
+left,5,1,0,0,4,0,0,0.2,,0.565
+right,3,0,0,2,1,0,0,0.0,left 2,0.001
+place,7,0,0,3,4,0,0,0.0,left 3,0.134
+drop,2,0,0,0,2,0,0,0.0,,0.287
+yes,2,2,0,0,0,0,0,1.0,,0.994
+no,4,1,0,2,1,0,0,0.25,left 2,0.253
+home,5,0,0,1,4,0,0,0.0,forward 1,0.041
+stop,5,2,0,0,3,0,0,0.4,,0.515
+_unknown_,15,0,0,0,0,11,4,,"left 6, forward 2, right 1",0.202

@@ -1,0 +1,14 @@
+{
+  "fold": 0,
+  "val_accuracy": 0.6961,
+  "val_macro_f1": 0.7195,
+  "macro_f1_clean": 0.8909,
+  "macro_f1_20": 0.8669,
+  "macro_f1_10": 0.7828,
+  "macro_f1_5": 0.6788,
+  "best_epoch": 53,
+  "minutes": 20.7,
+  "S0_clip_macro_f1": 0.8126,
+  "S0_stream_detected": 0.2553,
+  "S0_unknown_false_alarms": 7
+}

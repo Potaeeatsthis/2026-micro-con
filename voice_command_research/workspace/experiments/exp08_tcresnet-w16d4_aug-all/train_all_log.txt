@@ -1,0 +1,91 @@
+exp08_tcresnet-w16d4_aug-all: all training clips, 82 epochs
+  epoch 1 | loss 3.0471 | lr 0.000175 | seconds 38.9
+  epoch 2 | loss 2.2748 | lr 0.000503 | seconds 16.8
+  epoch 3 | loss 1.4945 | lr 0.000841 | seconds 17.0
+  epoch 4 | loss 1.2334 | lr 0.000999 | seconds 16.2
+  epoch 5 | loss 1.1172 | lr 0.001 | seconds 20.7
+  epoch 6 | loss 1.0531 | lr 0.000999 | seconds 23.3
+  epoch 7 | loss 1.0046 | lr 0.000997 | seconds 23.1
+  epoch 8 | loss 0.9816 | lr 0.000994 | seconds 24.2
+  epoch 9 | loss 0.9525 | lr 0.00099 | seconds 20.8
+  epoch 10 | loss 0.9272 | lr 0.000986 | seconds 20.5
+  epoch 11 | loss 0.9051 | lr 0.000981 | seconds 20.5
+  epoch 12 | loss 0.8943 | lr 0.000975 | seconds 21.1
+  epoch 13 | loss 0.8825 | lr 0.000968 | seconds 21.0
+  epoch 14 | loss 0.8695 | lr 0.000961 | seconds 24.1
+  epoch 15 | loss 0.8713 | lr 0.000952 | seconds 21.4
+  epoch 16 | loss 0.8447 | lr 0.000943 | seconds 17.4
+  epoch 17 | loss 0.839 | lr 0.000934 | seconds 16.8
+  epoch 18 | loss 0.8288 | lr 0.000923 | seconds 17.1
+  epoch 19 | loss 0.8168 | lr 0.000912 | seconds 17.0
+  epoch 20 | loss 0.8124 | lr 0.000901 | seconds 16.4
+  epoch 21 | loss 0.8085 | lr 0.000888 | seconds 20.2
+  epoch 22 | loss 0.8066 | lr 0.000875 | seconds 20.6
+  epoch 23 | loss 0.8001 | lr 0.000862 | seconds 21.0
+  epoch 24 | loss 0.7911 | lr 0.000847 | seconds 16.5
+  epoch 25 | loss 0.7912 | lr 0.000833 | seconds 16.0
+  epoch 26 | loss 0.7817 | lr 0.000817 | seconds 16.5
+  epoch 27 | loss 0.7742 | lr 0.000801 | seconds 16.3
+  epoch 28 | loss 0.7706 | lr 0.000785 | seconds 16.4
+  epoch 29 | loss 0.7617 | lr 0.000768 | seconds 16.5
+  epoch 30 | loss 0.7671 | lr 0.000751 | seconds 16.0
+  epoch 31 | loss 0.7537 | lr 0.000733 | seconds 17.2
+  epoch 32 | loss 0.7612 | lr 0.000715 | seconds 23.0
+  epoch 33 | loss 0.7477 | lr 0.000697 | seconds 26.4
+  epoch 34 | loss 0.7457 | lr 0.000678 | seconds 24.7
+  epoch 35 | loss 0.7436 | lr 0.000659 | seconds 22.3
+  epoch 36 | loss 0.7356 | lr 0.00064 | seconds 25.4
+  epoch 37 | loss 0.7345 | lr 0.000621 | seconds 23.1
+  epoch 38 | loss 0.7313 | lr 0.000601 | seconds 23.0
+  epoch 39 | loss 0.7342 | lr 0.000581 | seconds 22.4
+  epoch 40 | loss 0.7206 | lr 0.000561 | seconds 22.0
+  epoch 41 | loss 0.7226 | lr 0.000541 | seconds 21.6
+  epoch 42 | loss 0.7177 | lr 0.000521 | seconds 21.2
+  epoch 43 | loss 0.7158 | lr 0.000501 | seconds 20.2
+  epoch 44 | loss 0.7079 | lr 0.000481 | seconds 20.4
+  epoch 45 | loss 0.706 | lr 0.000461 | seconds 20.2
+  epoch 46 | loss 0.7064 | lr 0.000441 | seconds 17.6
+  epoch 47 | loss 0.7033 | lr 0.000421 | seconds 21.9
+  epoch 48 | loss 0.701 | lr 0.000401 | seconds 25.3
+  epoch 49 | loss 0.6962 | lr 0.000381 | seconds 23.7
+  epoch 50 | loss 0.6968 | lr 0.000362 | seconds 21.6
+  epoch 51 | loss 0.69 | lr 0.000342 | seconds 21.6
+  epoch 52 | loss 0.6893 | lr 0.000323 | seconds 22.1
+  epoch 53 | loss 0.687 | lr 0.000305 | seconds 21.3
+  epoch 54 | loss 0.6882 | lr 0.000286 | seconds 23.9
+  epoch 55 | loss 0.686 | lr 0.000268 | seconds 20.8
+  epoch 56 | loss 0.6815 | lr 0.00025 | seconds 20.7
+  epoch 57 | loss 0.6771 | lr 0.000233 | seconds 21.1
+  epoch 58 | loss 0.6701 | lr 0.000216 | seconds 22.0
+  epoch 59 | loss 0.6711 | lr 0.0002 | seconds 20.8
+  epoch 60 | loss 0.6671 | lr 0.000184 | seconds 21.1
+  epoch 61 | loss 0.6669 | lr 0.000169 | seconds 20.6
+  epoch 62 | loss 0.6646 | lr 0.000154 | seconds 20.6
+  epoch 63 | loss 0.665 | lr 0.00014 | seconds 21.1
+  epoch 64 | loss 0.6672 | lr 0.000126 | seconds 21.0
+  epoch 65 | loss 0.6692 | lr 0.000113 | seconds 20.9
+  epoch 66 | loss 0.6596 | lr 0.0001 | seconds 20.7
+  epoch 67 | loss 0.6686 | lr 8.9e-05 | seconds 20.5
+  epoch 68 | loss 0.6611 | lr 7.8e-05 | seconds 20.4
+  epoch 69 | loss 0.6643 | lr 6.7e-05 | seconds 20.7
+  epoch 70 | loss 0.6598 | lr 5.7e-05 | seconds 20.3
+  epoch 71 | loss 0.6581 | lr 4.8e-05 | seconds 20.7
+  epoch 72 | loss 0.6607 | lr 4e-05 | seconds 20.5
+  epoch 73 | loss 0.6531 | lr 3.3e-05 | seconds 21.1
+  epoch 74 | loss 0.6551 | lr 2.6e-05 | seconds 28.7
+  epoch 75 | loss 0.6596 | lr 2e-05 | seconds 24.1
+  epoch 76 | loss 0.6566 | lr 1.5e-05 | seconds 21.9
+  epoch 77 | loss 0.6534 | lr 1e-05 | seconds 20.5
+  epoch 78 | loss 0.6523 | lr 6e-06 | seconds 20.4
+  epoch 79 | loss 0.6568 | lr 4e-06 | seconds 20.3
+  epoch 80 | loss 0.6585 | lr 2e-06 | seconds 20.3
+  epoch 81 | loss 0.6539 | lr 0.0 | seconds 20.2
+  epoch 82 | loss 0.6537 | lr 0.0 | seconds 20.1
+  {"epochs": 82, "minutes": 29.2, "S0_clip_macro_f1": 0.8782, "S0_command_accuracy": 0.9787, "S0_stream_detected": 0.2872, "S0_unknown_false_alarms": 5, "S1_clip_macro_f1": 0.8763, "S1_command_accuracy": 0.97, "S1_stream_detected": 0.94, "S1_unknown_false_alarms": 17}
+                               experiment trained_on architecture  width  depth  params  stream_positions  noise  babble  reverb  specaug mswc_cap  S0_clip_macro_f1  S0_command_accuracy  S0_stream_detected  S0_unknown_false_alarms  S1_clip_macro_f1  S1_command_accuracy  S1_stream_detected  S1_unknown_false_alarms
+             exp08_tcresnet-w16d4_aug-all   all data     tcresnet     16      4   96967              True   True    True    True     True                     0.8782               0.9787              0.2872                        5            0.8763                0.970               0.940                       17
+             exp05_tcresnet-w24d2_aug-all   all data     tcresnet     24      2   62831              True   True    True    True     True                     0.8623               0.9681              0.3085                        4            0.8715                0.960               0.835                       18
+             exp04_tcresnet-w16d3_aug-all   all data     tcresnet     16      3   56559              True   True    True    True     True                     0.8550               0.9681              0.3191                        6            0.8925                0.990               0.925                       16
+             exp01_tcresnet-w16d2_aug-all   all data     tcresnet     16      2   28935              True   True    True    True     True                     0.8384               0.9574              0.2872                        5            0.8719                0.965               0.825                       13
+           exp02_tcresnet-w16d2_aug-basic   all data     tcresnet     16      2   28935              True   True   False   False     True                     0.8265               0.9362              0.2660                        3            0.8245                0.915               0.770                       13
+exp03_tcresnet-w16d2_aug-all_mswc-cap1000   all data     tcresnet     16      2   28935              True   True    True    True     True     1000            0.8195               0.9255              0.2979                        3            0.8522                0.945               0.815                       16
