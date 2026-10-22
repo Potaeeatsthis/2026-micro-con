@@ -1,0 +1,19 @@
+# build output (cubeide rebuilds these)
+Debug/
+Release/
+
+# per-user ide files
+.settings/
+*.launch
+.metadata/
+
+# cubemx temp files and the X-CUBE-AI analyze cache (rebuilt on every Analyze)
+MXTmpFiles/
+.ai/
+
+# per-developer feature flags (see docs/TEAM_GUIDE.md section 4)
+App/common/app_config_local.h
+
+# os junk
+Thumbs.db
+.DS_Store

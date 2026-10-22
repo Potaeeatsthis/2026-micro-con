@@ -1,0 +1,410 @@
+ST Edge AI Core v2.2.0-20266 2adc00962
+Created date          : 2026-10-23 01:28:14
+Parameters            : generate --target stm32f7 --name network -m D:/Microcon69/ProjectRoboticArm/ProjectSpace/2026-micro-con/RoboticArmMain/Models/kws.onnx --compression none --verbosity 1 --workspace C:/Users/ASUS/AppData/Local/Temp/mxAI_workspace2382252677980014460227301549914776 --output C:/Users/ASUS/.stm32cubemx/network_output
+
+Exec/report summary (generate)
+--------------------------------------------------------------------------------------------------------------------
+model file         :   D:\Microcon69\ProjectRoboticArm\ProjectSpace\2026-micro-con\RoboticArmMain\Models\kws.onnx   
+type               :   onnx                                                                                         
+c_name             :   network                                                                                      
+compression        :   none                                                                                         
+options            :   allocate-inputs, allocate-outputs                                                            
+optimization       :   balanced                                                                                     
+target/series      :   stm32f7                                                                                      
+workspace dir      :   C:\Users\ASUS\AppData\Local\Temp\mxAI_workspace2382252677980014460227301549914776            
+output dir         :   C:\Users\ASUS\.stm32cubemx\network_output                                                    
+model_fmt          :   float                                                                                        
+model_name         :   kws                                                                                          
+model_hash         :   0x0c1932640d6f3dbdfff54dbc818de05f                                                           
+params #           :   56,351 items (220.12 KiB)                                                                    
+--------------------------------------------------------------------------------------------------------------------
+input 1/1          :   'logmel', f32(1x40x101), 15.78 KBytes, activations                                           
+output 1/1         :   'probs', f32(1x23), 92 Bytes, activations                                                    
+macc               :   1,483,140                                                                                    
+weights (ro)       :   225,468 B (220.18 KiB) (1 segment) / +64(+0.0%) vs float model                               
+activations (rw)   :   32,320 B (31.56 KiB) (1 segment) *                                                           
+ram (total)        :   32,320 B (31.56 KiB) = 32,320 + 0 + 0                                                        
+--------------------------------------------------------------------------------------------------------------------
+(*) 'input'/'output' buffers are allocated in the activations buffer
+
+Model name - kws
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+m_id   layer (type,original)                                      oshape             param/size           macc                     connected to   | c_size         c_macc             c_type                          
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+1      net_0_mean (Placeholder, Sub)                              [b:1,h:1,c:40]     40/160                                                       |                +4,040(+100.0%)    Eltwise/sub_[1]                 
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+2      net_0_std (Placeholder, Div)                               [b:1,h:1,c:40]     40/160                                                       |                +22,220(+100.0%)   Transpose_/Eltwise/div_[0, 2]   
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+24     net_1_head_3_weight (Placeholder, Gemm)                    [b:23,c:40]        920/3,680                                                    | +92(+2.5%)     +943(+100.0%)      Dense_[23]                      
+       net_1_head_3_bias (Placeholder, Gemm)                      [b:23]             23/92                                                        | -92(-100.0%)                      
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+0      logmel (Input, )                                           [b:1,h:101,c:40]                                                                |                                   
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+1      _net_net_0_Sub_output_0 (Eltwise, Sub)                     [b:1,h:101,c:40]                       4,040                           logmel   |                -4,040(-100.0%)    
+                                                                                                                                     net_0_mean   | 
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+2      _net_net_0_Div_output_0 (Eltwise, Div)                     [b:1,h:101,c:40]                      20,200          _net_net_0_Sub_output_0   |                -20,200(-100.0%)   
+                                                                                                                                      net_0_std   | 
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+3      _net_net_1_stem_Conv_output_0 (Conv2D, Conv)               [b:1,h:101,c:16]   1,920/7,680       193,920          _net_net_0_Div_output_0   | +64(+0.8%)     +16(+0.0%)         Conv2D_[3]                      
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+4      _net_net_1_blocks_..v_output_0 (Conv2D, Conv)              [b:1,h:51,c:24]    3,480/13,920      176,280    _net_net_1_stem_Conv_output_0   |                                   Conv2D_[5]                      
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+5      _net_net_1_blocks_..u_output_0 (Nonlinearity, Relu)        [b:1,h:51,c:24]                        1,224   _net_net_1_blocks_..v_output_0   |                                   Nonlinearity_[6]                
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+6      _net_net_1_blocks_..v_output_0 (Conv2D, Conv)              [b:1,h:51,c:24]    5,208/20,832      264,408   _net_net_1_blocks_..u_output_0   |                                   Conv2D_[7]                      
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+7      _net_net_1_blocks_..v_output_0 (Conv2D, Conv)              [b:1,h:51,c:24]    408/1,632          19,608    _net_net_1_stem_Conv_output_0   |                                   Conv2D_[4]                      
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+8      _net_net_1_blocks_..d_output_0 (Eltwise, Add)              [b:1,h:51,c:24]                        1,224   _net_net_1_blocks_..v_output_0   |                                   Eltwise/add_[8]                 
+                                                                                                                 _net_net_1_blocks_..v_output_0   | 
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+9      _net_net_1_blocks_..u_output_0 (Nonlinearity, Relu)        [b:1,h:51,c:24]                        1,224   _net_net_1_blocks_..d_output_0   |                                   Nonlinearity_[9]                
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+10     _net_net_1_blocks_..v_output_0 (Conv2D, Conv)              [b:1,h:26,c:32]    6,944/27,776      179,744   _net_net_1_blocks_..u_output_0   |                                   Conv2D_[11]                     
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+11     _net_net_1_blocks_..u_output_0 (Nonlinearity, Relu)        [b:1,h:26,c:32]                          832   _net_net_1_blocks_..v_output_0   |                                   Nonlinearity_[12]               
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+12     _net_net_1_blocks_..v_output_0 (Conv2D, Conv)              [b:1,h:26,c:32]    9,248/36,992      239,648   _net_net_1_blocks_..u_output_0   |                                   Conv2D_[13]                     
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+13     _net_net_1_blocks_..v_output_0 (Conv2D, Conv)              [b:1,h:26,c:32]    800/3,200          20,000   _net_net_1_blocks_..u_output_0   |                                   Conv2D_[10]                     
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+14     _net_net_1_blocks_..d_output_0 (Eltwise, Add)              [b:1,h:26,c:32]                          832   _net_net_1_blocks_..v_output_0   |                                   Eltwise/add_[14]                
+                                                                                                                 _net_net_1_blocks_..v_output_0   | 
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+15     _net_net_1_blocks_..u_output_0 (Nonlinearity, Relu)        [b:1,h:26,c:32]                          832   _net_net_1_blocks_..d_output_0   |                                   Nonlinearity_[15]               
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+16     _net_net_1_blocks_..v_output_0 (Conv2D, Conv)              [b:1,h:13,c:40]    11,560/46,240     149,800   _net_net_1_blocks_..u_output_0   |                                   Conv2D_[17]                     
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+17     _net_net_1_blocks_..u_output_0 (Nonlinearity, Relu)        [b:1,h:13,c:40]                          520   _net_net_1_blocks_..v_output_0   |                                   Nonlinearity_[18]               
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+18     _net_net_1_blocks_..v_output_0 (Conv2D, Conv)              [b:1,h:13,c:40]    14,440/57,760     187,240   _net_net_1_blocks_..u_output_0   |                                   Conv2D_[19]                     
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+19     _net_net_1_blocks_..v_output_0 (Conv2D, Conv)              [b:1,h:13,c:40]    1,320/5,280        16,680   _net_net_1_blocks_..u_output_0   |                                   Conv2D_[16]                     
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+20     _net_net_1_blocks_..d_output_0 (Eltwise, Add)              [b:1,h:13,c:40]                          520   _net_net_1_blocks_..v_output_0   |                                   Eltwise/add_[20]                
+                                                                                                                 _net_net_1_blocks_..v_output_0   | 
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+21     _net_net_1_blocks_..u_output_0 (Nonlinearity, Relu)        [b:1,h:13,c:40]                          520   _net_net_1_blocks_..d_output_0   |                                   Nonlinearity_[21]               
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+22     _net_net_1_head_he..l_output_0 (Pool, GlobalAveragePool)   [b:1,h:1,c:40]                           520   _net_net_1_blocks_..u_output_0   |                                   Pool_[22]                       
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+23     _net_net_1_head_he..n_output_0 (Reshape, Flatten)          [b:1,c:40]                                     _net_net_1_head_he..l_output_0   |                                   
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+24     _net_net_1_head_he..m_output_0 (Gemm, Gemm)                [b:1,c:23]                               943   _net_net_1_head_he..n_output_0   |                -943(-100.0%)      
+                                                                                                                            net_1_head_3_weight   | 
+                                                                                                                              net_1_head_3_bias   | 
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+25     probs (Nonlinearity, Softmax)                              [b:1,c:23]                               345   _net_net_1_head_he..m_output_0   |                                   Nonlinearity_[o][24]            
+------ ---------------------------------------------------------- ------------------ --------------- --------- -------------------------------- --- -------------- ------------------ ------------------------------- 
+model/c-model: macc=1,481,104/1,483,140 +2,036(+0.1%) weights=225,404/225,468 +64(+0.0%) activations=--/32,320 io=--/0
+
+
+
+Generated C-graph summary
+------------------------------------------------------------------------------------------------------------------------
+model name            : kws
+c-name                : network
+c-node #              : 25
+c-array #             : 60
+activations size      : 32320 (1 segment)
+weights size          : 225468 (1 segment)
+macc                  : 1483140
+inputs                : ['logmel_output']
+outputs               : ['probs_output']
+
+C-Arrays (60)
+------ ----------------------------------------------------------------------- ------------- ------------------------- ------------- --------- 
+c_id   name (*_array)                                                          item/size     domain/mem-pool           c-type        comment   
+------ ----------------------------------------------------------------------- ------------- ------------------------- ------------- --------- 
+0      _net_net_0_Div_output_0_output                                          4040/16160    activations/**default**   float                   
+1      _net_net_0_Sub_output_0_output                                          4040/16160    activations/**default**   float                   
+2      _net_net_1_blocks_blocks_0_Add_output_0_output                          1224/4896     activations/**default**   float                   
+3      _net_net_1_blocks_blocks_0_main_main_0_Conv_output_0_bias               24/96         weights/weights           const float             
+4      _net_net_1_blocks_blocks_0_main_main_0_Conv_output_0_output             1224/4896     activations/**default**   float                   
+5      _net_net_1_blocks_blocks_0_main_main_0_Conv_output_0_scratch0           144/576       activations/**default**   float                   
+6      _net_net_1_blocks_blocks_0_main_main_0_Conv_output_0_weights            3456/13824    weights/weights           const float             
+7      _net_net_1_blocks_blocks_0_main_main_2_Relu_output_0_output             1224/4896     activations/**default**   float                   
+8      _net_net_1_blocks_blocks_0_main_main_3_Conv_output_0_bias               24/96         weights/weights           const float             
+9      _net_net_1_blocks_blocks_0_main_main_3_Conv_output_0_output             1224/4896     activations/**default**   float                   
+10     _net_net_1_blocks_blocks_0_main_main_3_Conv_output_0_scratch0           216/864       activations/**default**   float                   
+11     _net_net_1_blocks_blocks_0_main_main_3_Conv_output_0_weights            5184/20736    weights/weights           const float             
+12     _net_net_1_blocks_blocks_0_relu_Relu_output_0_output                    1224/4896     activations/**default**   float                   
+13     _net_net_1_blocks_blocks_0_shortcut_shortcut_0_Conv_output_0_bias       24/96         weights/weights           const float             
+14     _net_net_1_blocks_blocks_0_shortcut_shortcut_0_Conv_output_0_output     1224/4896     activations/**default**   float                   
+15     _net_net_1_blocks_blocks_0_shortcut_shortcut_0_Conv_output_0_scratch0   16/64         activations/**default**   float                   
+16     _net_net_1_blocks_blocks_0_shortcut_shortcut_0_Conv_output_0_weights    384/1536      weights/weights           const float             
+17     _net_net_1_blocks_blocks_1_Add_output_0_output                          832/3328      activations/**default**   float                   
+18     _net_net_1_blocks_blocks_1_main_main_0_Conv_output_0_bias               32/128        weights/weights           const float             
+19     _net_net_1_blocks_blocks_1_main_main_0_Conv_output_0_output             832/3328      activations/**default**   float                   
+20     _net_net_1_blocks_blocks_1_main_main_0_Conv_output_0_scratch0           216/864       activations/**default**   float                   
+21     _net_net_1_blocks_blocks_1_main_main_0_Conv_output_0_weights            6912/27648    weights/weights           const float             
+22     _net_net_1_blocks_blocks_1_main_main_2_Relu_output_0_output             832/3328      activations/**default**   float                   
+23     _net_net_1_blocks_blocks_1_main_main_3_Conv_output_0_bias               32/128        weights/weights           const float             
+24     _net_net_1_blocks_blocks_1_main_main_3_Conv_output_0_output             832/3328      activations/**default**   float                   
+25     _net_net_1_blocks_blocks_1_main_main_3_Conv_output_0_scratch0           288/1152      activations/**default**   float                   
+26     _net_net_1_blocks_blocks_1_main_main_3_Conv_output_0_weights            9216/36864    weights/weights           const float             
+27     _net_net_1_blocks_blocks_1_relu_Relu_output_0_output                    832/3328      activations/**default**   float                   
+28     _net_net_1_blocks_blocks_1_shortcut_shortcut_0_Conv_output_0_bias       32/128        weights/weights           const float             
+29     _net_net_1_blocks_blocks_1_shortcut_shortcut_0_Conv_output_0_output     832/3328      activations/**default**   float                   
+30     _net_net_1_blocks_blocks_1_shortcut_shortcut_0_Conv_output_0_scratch0   24/96         activations/**default**   float                   
+31     _net_net_1_blocks_blocks_1_shortcut_shortcut_0_Conv_output_0_weights    768/3072      weights/weights           const float             
+32     _net_net_1_blocks_blocks_2_Add_output_0_output                          520/2080      activations/**default**   float                   
+33     _net_net_1_blocks_blocks_2_main_main_0_Conv_output_0_bias               40/160        weights/weights           const float             
+34     _net_net_1_blocks_blocks_2_main_main_0_Conv_output_0_output             520/2080      activations/**default**   float                   
+35     _net_net_1_blocks_blocks_2_main_main_0_Conv_output_0_scratch0           288/1152      activations/**default**   float                   
+36     _net_net_1_blocks_blocks_2_main_main_0_Conv_output_0_weights            11520/46080   weights/weights           const float             
+37     _net_net_1_blocks_blocks_2_main_main_2_Relu_output_0_output             520/2080      activations/**default**   float                   
+38     _net_net_1_blocks_blocks_2_main_main_3_Conv_output_0_bias               40/160        weights/weights           const float             
+39     _net_net_1_blocks_blocks_2_main_main_3_Conv_output_0_output             520/2080      activations/**default**   float                   
+40     _net_net_1_blocks_blocks_2_main_main_3_Conv_output_0_scratch0           360/1440      activations/**default**   float                   
+41     _net_net_1_blocks_blocks_2_main_main_3_Conv_output_0_weights            14400/57600   weights/weights           const float             
+42     _net_net_1_blocks_blocks_2_relu_Relu_output_0_output                    520/2080      activations/**default**   float                   
+43     _net_net_1_blocks_blocks_2_shortcut_shortcut_0_Conv_output_0_bias       40/160        weights/weights           const float             
+44     _net_net_1_blocks_blocks_2_shortcut_shortcut_0_Conv_output_0_output     520/2080      activations/**default**   float                   
+45     _net_net_1_blocks_blocks_2_shortcut_shortcut_0_Conv_output_0_scratch0   32/128        activations/**default**   float                   
+46     _net_net_1_blocks_blocks_2_shortcut_shortcut_0_Conv_output_0_weights    1280/5120     weights/weights           const float             
+47     _net_net_1_head_head_0_GlobalAveragePool_output_0_output                40/160        activations/**default**   float                   
+48     _net_net_1_head_head_3_Gemm_output_0_bias                               23/92         weights/weights           const float             
+49     _net_net_1_head_head_3_Gemm_output_0_output                             23/92         activations/**default**   float                   
+50     _net_net_1_head_head_3_Gemm_output_0_weights                            920/3680      weights/weights           const float             
+51     _net_net_1_stem_Conv_output_0_bias                                      16/64         weights/weights           const float             
+52     _net_net_1_stem_Conv_output_0_output                                    1616/6464     activations/**default**   float                   
+53     _net_net_1_stem_Conv_output_0_scratch0                                  120/480       activations/**default**   float                   
+54     _net_net_1_stem_Conv_output_0_weights                                   1920/7680     weights/weights           const float             
+55     logmel_Transpose_output                                                 4040/16160    activations/**default**   float                   
+56     logmel_output                                                           4040/16160    activations/**default**   float         /input    
+57     net_0_mean                                                              40/160        weights/weights           const float             
+58     net_0_std                                                               40/160        weights/weights           const float             
+59     probs_output                                                            23/92         activations/**default**   float         /output   
+------ ----------------------------------------------------------------------- ------------- ------------------------- ------------- --------- 
+
+C-Layers (25)
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+c_id   name (*_layer)                                                 id   layer_type      macc     rom     tensors                                                                    shape (array id)      
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+0      logmel_Transpose                                               2    Transpose       2020     0       I: logmel_output                                                           f32(1x40x101) (56)    
+                                                                                                            O: logmel_Transpose_output                                                 f32(1x101x40) (55)    
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+1      _net_net_0_Sub_output_0                                        1    Eltwise/sub     4040     160     I: logmel_Transpose_output                                                 f32(1x101x40) (55)    
+                                                                                                            W: net_0_mean                                                              f32(1x40) (57)        
+                                                                                                            O: _net_net_0_Sub_output_0_output                                          f32(1x101x40) (1)     
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+2      _net_net_0_Div_output_0                                        2    Eltwise/div     20200    160     I: _net_net_0_Sub_output_0_output                                          f32(1x101x40) (1)     
+                                                                                                            W: net_0_std                                                               f32(1x40) (58)        
+                                                                                                            O: _net_net_0_Div_output_0_output                                          f32(1x101x40) (0)     
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+3      _net_net_1_stem_Conv_output_0                                  3    Conv2D          193936   7744    I: _net_net_0_Div_output_0_output                                          f32(1x101x40) (0)     
+                                                                                                            S: _net_net_1_stem_Conv_output_0_scratch0                                                        
+                                                                                                            W: _net_net_1_stem_Conv_output_0_weights                                   f32(16x3x1x40) (54)   
+                                                                                                            W: _net_net_1_stem_Conv_output_0_bias                                      f32(16) (51)          
+                                                                                                            O: _net_net_1_stem_Conv_output_0_output                                    f32(1x101x16) (52)    
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+4      _net_net_1_blocks_blocks_0_shortcut_shortcut_0_Conv_output_0   7    Conv2D          19608    1632    I: _net_net_1_stem_Conv_output_0_output                                    f32(1x101x16) (52)    
+                                                                                                            S: _net_net_1_blocks_blocks_0_shortcut_shortcut_0_Conv_output_0_scratch0                         
+                                                                                                            W: _net_net_1_blocks_blocks_0_shortcut_shortcut_0_Conv_output_0_weights    f32(24x1x1x16) (16)   
+                                                                                                            W: _net_net_1_blocks_blocks_0_shortcut_shortcut_0_Conv_output_0_bias       f32(24) (13)          
+                                                                                                            O: _net_net_1_blocks_blocks_0_shortcut_shortcut_0_Conv_output_0_output     f32(1x51x24) (14)     
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+5      _net_net_1_blocks_blocks_0_main_main_0_Conv_output_0           4    Conv2D          176280   13920   I: _net_net_1_stem_Conv_output_0_output                                    f32(1x101x16) (52)    
+                                                                                                            S: _net_net_1_blocks_blocks_0_main_main_0_Conv_output_0_scratch0                                 
+                                                                                                            W: _net_net_1_blocks_blocks_0_main_main_0_Conv_output_0_weights            f32(24x9x1x16) (6)    
+                                                                                                            W: _net_net_1_blocks_blocks_0_main_main_0_Conv_output_0_bias               f32(24) (3)           
+                                                                                                            O: _net_net_1_blocks_blocks_0_main_main_0_Conv_output_0_output             f32(1x51x24) (4)      
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+6      _net_net_1_blocks_blocks_0_main_main_2_Relu_output_0           5    Nonlinearity    1224     0       I: _net_net_1_blocks_blocks_0_main_main_0_Conv_output_0_output             f32(1x51x24) (4)      
+                                                                                                            O: _net_net_1_blocks_blocks_0_main_main_2_Relu_output_0_output             f32(1x51x24) (7)      
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+7      _net_net_1_blocks_blocks_0_main_main_3_Conv_output_0           6    Conv2D          264408   20832   I: _net_net_1_blocks_blocks_0_main_main_2_Relu_output_0_output             f32(1x51x24) (7)      
+                                                                                                            S: _net_net_1_blocks_blocks_0_main_main_3_Conv_output_0_scratch0                                 
+                                                                                                            W: _net_net_1_blocks_blocks_0_main_main_3_Conv_output_0_weights            f32(24x9x1x24) (11)   
+                                                                                                            W: _net_net_1_blocks_blocks_0_main_main_3_Conv_output_0_bias               f32(24) (8)           
+                                                                                                            O: _net_net_1_blocks_blocks_0_main_main_3_Conv_output_0_output             f32(1x51x24) (9)      
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+8      _net_net_1_blocks_blocks_0_Add_output_0                        8    Eltwise/add     1224     0       I: _net_net_1_blocks_blocks_0_main_main_3_Conv_output_0_output             f32(1x51x24) (9)      
+                                                                                                            I: _net_net_1_blocks_blocks_0_shortcut_shortcut_0_Conv_output_0_output     f32(1x51x24) (9)      
+                                                                                                            O: _net_net_1_blocks_blocks_0_Add_output_0_output                          f32(1x51x24) (2)      
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+9      _net_net_1_blocks_blocks_0_relu_Relu_output_0                  9    Nonlinearity    1224     0       I: _net_net_1_blocks_blocks_0_Add_output_0_output                          f32(1x51x24) (2)      
+                                                                                                            O: _net_net_1_blocks_blocks_0_relu_Relu_output_0_output                    f32(1x51x24) (12)     
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+10     _net_net_1_blocks_blocks_1_shortcut_shortcut_0_Conv_output_0   13   Conv2D          20000    3200    I: _net_net_1_blocks_blocks_0_relu_Relu_output_0_output                    f32(1x51x24) (12)     
+                                                                                                            S: _net_net_1_blocks_blocks_1_shortcut_shortcut_0_Conv_output_0_scratch0                         
+                                                                                                            W: _net_net_1_blocks_blocks_1_shortcut_shortcut_0_Conv_output_0_weights    f32(32x1x1x24) (31)   
+                                                                                                            W: _net_net_1_blocks_blocks_1_shortcut_shortcut_0_Conv_output_0_bias       f32(32) (28)          
+                                                                                                            O: _net_net_1_blocks_blocks_1_shortcut_shortcut_0_Conv_output_0_output     f32(1x26x32) (29)     
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+11     _net_net_1_blocks_blocks_1_main_main_0_Conv_output_0           10   Conv2D          179744   27776   I: _net_net_1_blocks_blocks_0_relu_Relu_output_0_output                    f32(1x51x24) (12)     
+                                                                                                            S: _net_net_1_blocks_blocks_1_main_main_0_Conv_output_0_scratch0                                 
+                                                                                                            W: _net_net_1_blocks_blocks_1_main_main_0_Conv_output_0_weights            f32(32x9x1x24) (21)   
+                                                                                                            W: _net_net_1_blocks_blocks_1_main_main_0_Conv_output_0_bias               f32(32) (18)          
+                                                                                                            O: _net_net_1_blocks_blocks_1_main_main_0_Conv_output_0_output             f32(1x26x32) (19)     
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+12     _net_net_1_blocks_blocks_1_main_main_2_Relu_output_0           11   Nonlinearity    832      0       I: _net_net_1_blocks_blocks_1_main_main_0_Conv_output_0_output             f32(1x26x32) (19)     
+                                                                                                            O: _net_net_1_blocks_blocks_1_main_main_2_Relu_output_0_output             f32(1x26x32) (22)     
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+13     _net_net_1_blocks_blocks_1_main_main_3_Conv_output_0           12   Conv2D          239648   36992   I: _net_net_1_blocks_blocks_1_main_main_2_Relu_output_0_output             f32(1x26x32) (22)     
+                                                                                                            S: _net_net_1_blocks_blocks_1_main_main_3_Conv_output_0_scratch0                                 
+                                                                                                            W: _net_net_1_blocks_blocks_1_main_main_3_Conv_output_0_weights            f32(32x9x1x32) (26)   
+                                                                                                            W: _net_net_1_blocks_blocks_1_main_main_3_Conv_output_0_bias               f32(32) (23)          
+                                                                                                            O: _net_net_1_blocks_blocks_1_main_main_3_Conv_output_0_output             f32(1x26x32) (24)     
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+14     _net_net_1_blocks_blocks_1_Add_output_0                        14   Eltwise/add     832      0       I: _net_net_1_blocks_blocks_1_main_main_3_Conv_output_0_output             f32(1x26x32) (24)     
+                                                                                                            I: _net_net_1_blocks_blocks_1_shortcut_shortcut_0_Conv_output_0_output     f32(1x26x32) (24)     
+                                                                                                            O: _net_net_1_blocks_blocks_1_Add_output_0_output                          f32(1x26x32) (17)     
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+15     _net_net_1_blocks_blocks_1_relu_Relu_output_0                  15   Nonlinearity    832      0       I: _net_net_1_blocks_blocks_1_Add_output_0_output                          f32(1x26x32) (17)     
+                                                                                                            O: _net_net_1_blocks_blocks_1_relu_Relu_output_0_output                    f32(1x26x32) (27)     
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+16     _net_net_1_blocks_blocks_2_shortcut_shortcut_0_Conv_output_0   19   Conv2D          16680    5280    I: _net_net_1_blocks_blocks_1_relu_Relu_output_0_output                    f32(1x26x32) (27)     
+                                                                                                            S: _net_net_1_blocks_blocks_2_shortcut_shortcut_0_Conv_output_0_scratch0                         
+                                                                                                            W: _net_net_1_blocks_blocks_2_shortcut_shortcut_0_Conv_output_0_weights    f32(40x1x1x32) (46)   
+                                                                                                            W: _net_net_1_blocks_blocks_2_shortcut_shortcut_0_Conv_output_0_bias       f32(40) (43)          
+                                                                                                            O: _net_net_1_blocks_blocks_2_shortcut_shortcut_0_Conv_output_0_output     f32(1x13x40) (44)     
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+17     _net_net_1_blocks_blocks_2_main_main_0_Conv_output_0           16   Conv2D          149800   46240   I: _net_net_1_blocks_blocks_1_relu_Relu_output_0_output                    f32(1x26x32) (27)     
+                                                                                                            S: _net_net_1_blocks_blocks_2_main_main_0_Conv_output_0_scratch0                                 
+                                                                                                            W: _net_net_1_blocks_blocks_2_main_main_0_Conv_output_0_weights            f32(40x9x1x32) (36)   
+                                                                                                            W: _net_net_1_blocks_blocks_2_main_main_0_Conv_output_0_bias               f32(40) (33)          
+                                                                                                            O: _net_net_1_blocks_blocks_2_main_main_0_Conv_output_0_output             f32(1x13x40) (34)     
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+18     _net_net_1_blocks_blocks_2_main_main_2_Relu_output_0           17   Nonlinearity    520      0       I: _net_net_1_blocks_blocks_2_main_main_0_Conv_output_0_output             f32(1x13x40) (34)     
+                                                                                                            O: _net_net_1_blocks_blocks_2_main_main_2_Relu_output_0_output             f32(1x13x40) (37)     
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+19     _net_net_1_blocks_blocks_2_main_main_3_Conv_output_0           18   Conv2D          187240   57760   I: _net_net_1_blocks_blocks_2_main_main_2_Relu_output_0_output             f32(1x13x40) (37)     
+                                                                                                            S: _net_net_1_blocks_blocks_2_main_main_3_Conv_output_0_scratch0                                 
+                                                                                                            W: _net_net_1_blocks_blocks_2_main_main_3_Conv_output_0_weights            f32(40x9x1x40) (41)   
+                                                                                                            W: _net_net_1_blocks_blocks_2_main_main_3_Conv_output_0_bias               f32(40) (38)          
+                                                                                                            O: _net_net_1_blocks_blocks_2_main_main_3_Conv_output_0_output             f32(1x13x40) (39)     
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+20     _net_net_1_blocks_blocks_2_Add_output_0                        20   Eltwise/add     520      0       I: _net_net_1_blocks_blocks_2_main_main_3_Conv_output_0_output             f32(1x13x40) (39)     
+                                                                                                            I: _net_net_1_blocks_blocks_2_shortcut_shortcut_0_Conv_output_0_output     f32(1x13x40) (39)     
+                                                                                                            O: _net_net_1_blocks_blocks_2_Add_output_0_output                          f32(1x13x40) (32)     
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+21     _net_net_1_blocks_blocks_2_relu_Relu_output_0                  21   Nonlinearity    520      0       I: _net_net_1_blocks_blocks_2_Add_output_0_output                          f32(1x13x40) (32)     
+                                                                                                            O: _net_net_1_blocks_blocks_2_relu_Relu_output_0_output                    f32(1x13x40) (42)     
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+22     _net_net_1_head_head_0_GlobalAveragePool_output_0              22   Pool            520      0       I: _net_net_1_blocks_blocks_2_relu_Relu_output_0_output                    f32(1x13x40) (42)     
+                                                                                                            O: _net_net_1_head_head_0_GlobalAveragePool_output_0_output                f32(1x1x40) (47)      
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+23     _net_net_1_head_head_3_Gemm_output_0                           24   Dense           943      3772    I: _net_net_1_head_head_0_GlobalAveragePool_output_0_output                f32(1x1x40) (47)      
+                                                                                                            W: _net_net_1_head_head_3_Gemm_output_0_weights                            f32(23x40) (50)       
+                                                                                                            W: _net_net_1_head_head_3_Gemm_output_0_bias                               f32(23) (48)          
+                                                                                                            O: _net_net_1_head_head_3_Gemm_output_0_output                             f32(1x23) (49)        
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+24     probs                                                          25   Nonlinearity    345      0       I: _net_net_1_head_head_3_Gemm_output_0_output                             f32(1x23) (49)        
+                                                                                                            O: probs_output                                                            f32(1x23) (59)        
+------ -------------------------------------------------------------- ---- --------------- -------- ------- -------------------------------------------------------------------------- --------------------- 
+
+
+
+Number of operations per c-layer
+------- ------ ----------------------------------------------- ----------- -------------- 
+c_id    m_id   name (type)                                             #op           type 
+------- ------ ----------------------------------------------- ----------- -------------- 
+0       2      logmel_Transpose (Transpose)                          2,020   smul_f32_f32 
+1       1      _net_net_0_Sub_output_0 (Eltwise/sub)                 4,040     op_f32_f32 
+2       2      _net_net_0_Div_output_0 (Eltwise/div)                20,200     op_f32_f32 
+3       3      _net_net_1_stem_Conv_output_0 (Conv2D)              193,936   smul_f32_f32 
+4       7      _net_net_1_blocks_..v_output_0 (Conv2D)              19,608   smul_f32_f32 
+5       4      _net_net_1_blocks_..v_output_0 (Conv2D)             176,280   smul_f32_f32 
+6       5      _net_net_1_blocks_..u_output_0 (Nonlinearity)         1,224     op_f32_f32 
+7       6      _net_net_1_blocks_..v_output_0 (Conv2D)             264,408   smul_f32_f32 
+8       8      _net_net_1_blocks_..d_output_0 (Eltwise/add)          1,224     op_f32_f32 
+9       9      _net_net_1_blocks_..u_output_0 (Nonlinearity)         1,224     op_f32_f32 
+10      13     _net_net_1_blocks_..v_output_0 (Conv2D)              20,000   smul_f32_f32 
+11      10     _net_net_1_blocks_..v_output_0 (Conv2D)             179,744   smul_f32_f32 
+12      11     _net_net_1_blocks_..u_output_0 (Nonlinearity)           832     op_f32_f32 
+13      12     _net_net_1_blocks_..v_output_0 (Conv2D)             239,648   smul_f32_f32 
+14      14     _net_net_1_blocks_..d_output_0 (Eltwise/add)            832     op_f32_f32 
+15      15     _net_net_1_blocks_..u_output_0 (Nonlinearity)           832     op_f32_f32 
+16      19     _net_net_1_blocks_..v_output_0 (Conv2D)              16,680   smul_f32_f32 
+17      16     _net_net_1_blocks_..v_output_0 (Conv2D)             149,800   smul_f32_f32 
+18      17     _net_net_1_blocks_..u_output_0 (Nonlinearity)           520     op_f32_f32 
+19      18     _net_net_1_blocks_..v_output_0 (Conv2D)             187,240   smul_f32_f32 
+20      20     _net_net_1_blocks_..d_output_0 (Eltwise/add)            520     op_f32_f32 
+21      21     _net_net_1_blocks_..u_output_0 (Nonlinearity)           520     op_f32_f32 
+22      22     _net_net_1_head_he..l_output_0 (Pool)                   520   smul_f32_f32 
+23      24     _net_net_1_head_he..m_output_0 (Dense)                  943   smul_f32_f32 
+24      25     probs (Nonlinearity)                                    345     op_f32_f32 
+------- ------ ----------------------------------------------- ----------- -------------- 
+total                                                            1,483,140 
+
+Number of operation types
+---------------- ----------- ----------- 
+operation type             #           % 
+---------------- ----------- ----------- 
+smul_f32_f32       1,450,827       97.8% 
+op_f32_f32            32,313        2.2% 
+
+Complexity report (model)
+------ ------------------------------------------ ------------------------- ------------------------- -------- 
+m_id   name                                       c_macc                    c_rom                     c_id     
+------ ------------------------------------------ ------------------------- ------------------------- -------- 
+1      net_0_mean                                 |                  0.3%   |                  0.1%   [1]      
+2      net_0_std                                  ||                 1.5%   |                  0.1%   [0, 2]   
+24     net_1_head_3_weight                        |                  0.1%   |                  1.7%   [23]     
+3      _net_net_1_stem_Conv_output_0              ||||||||||||      13.1%   |||                3.4%   [3]      
+4      _net_net_1_blocks_blocks_0_m..v_output_0   |||||||||||       11.9%   ||||               6.2%   [5]      
+5      _net_net_1_blocks_blocks_0_m..u_output_0   |                  0.1%   |                  0.0%   [6]      
+6      _net_net_1_blocks_blocks_0_m..v_output_0   ||||||||||||||||  17.8%   ||||||             9.2%   [7]      
+7      _net_net_1_blocks_blocks_0_s..v_output_0   ||                 1.3%   |                  0.7%   [4]      
+8      _net_net_1_blocks_blocks_0_Add_output_0    |                  0.1%   |                  0.0%   [8]      
+9      _net_net_1_blocks_blocks_0_r..u_output_0   |                  0.1%   |                  0.0%   [9]      
+10     _net_net_1_blocks_blocks_1_m..v_output_0   |||||||||||       12.1%   ||||||||          12.3%   [11]     
+11     _net_net_1_blocks_blocks_1_m..u_output_0   |                  0.1%   |                  0.0%   [12]     
+12     _net_net_1_blocks_blocks_1_m..v_output_0   ||||||||||||||    16.2%   ||||||||||        16.4%   [13]     
+13     _net_net_1_blocks_blocks_1_s..v_output_0   ||                 1.3%   |                  1.4%   [10]     
+14     _net_net_1_blocks_blocks_1_Add_output_0    |                  0.1%   |                  0.0%   [14]     
+15     _net_net_1_blocks_blocks_1_r..u_output_0   |                  0.1%   |                  0.0%   [15]     
+16     _net_net_1_blocks_blocks_2_m..v_output_0   |||||||||         10.1%   |||||||||||||     20.5%   [17]     
+17     _net_net_1_blocks_blocks_2_m..u_output_0   |                  0.0%   |                  0.0%   [18]     
+18     _net_net_1_blocks_blocks_2_m..v_output_0   |||||||||||       12.6%   ||||||||||||||||  25.6%   [19]     
+19     _net_net_1_blocks_blocks_2_s..v_output_0   |                  1.1%   ||                 2.3%   [16]     
+20     _net_net_1_blocks_blocks_2_Add_output_0    |                  0.0%   |                  0.0%   [20]     
+21     _net_net_1_blocks_blocks_2_r..u_output_0   |                  0.0%   |                  0.0%   [21]     
+22     _net_net_1_head_head_0_Globa..l_output_0   |                  0.0%   |                  0.0%   [22]     
+25     probs                                      |                  0.0%   |                  0.0%   [24]     
+------ ------------------------------------------ ------------------------- ------------------------- -------- 
+macc=1,483,140 weights=225,468 act=32,320 ram_io=0
+ 
+ Requested memory size by section - "stm32f7" target
+ ------------------------------ -------- --------- ------- -------- 
+ module                             text    rodata    data      bss 
+ ------------------------------ -------- --------- ------- -------- 
+ NetworkRuntime1020_CM7_GCC.a     11,816         0       0        0 
+ network.o                         1,332       200   7,752      292 
+ network_data.o                       48        16      88        0 
+ lib (toolchain)*                    712        24       0        0 
+ ------------------------------ -------- --------- ------- -------- 
+ RT total**                       13,908       240   7,840      292 
+ ------------------------------ -------- --------- ------- -------- 
+ weights                               0   225,472       0        0 
+ activations                           0         0       0   32,320 
+ io                                    0         0       0        0 
+ ------------------------------ -------- --------- ------- -------- 
+ TOTAL                            13,908   225,712   7,840   32,612 
+ ------------------------------ -------- --------- ------- -------- 
+ *  toolchain objects (libm/libgcc*)
+ ** RT AI runtime objects (kernels+infrastructure)
+  
+  Summary - "stm32f7" target
+  --------------------------------------------------
+               FLASH (ro)     %*   RAM (rw)       % 
+  --------------------------------------------------
+  RT total         21,988   8.9%      8,132   20.1% 
+  --------------------------------------------------
+  TOTAL           247,460            40,452         
+  --------------------------------------------------
+  *  rt/total
+
+
+Generated files (7)
+----------------------------------------------------------------- 
+C:\Users\ASUS\.stm32cubemx\network_output\network_data_params.h   
+C:\Users\ASUS\.stm32cubemx\network_output\network_data_params.c   
+C:\Users\ASUS\.stm32cubemx\network_output\network_data.h          
+C:\Users\ASUS\.stm32cubemx\network_output\network_data.c          
+C:\Users\ASUS\.stm32cubemx\network_output\network_config.h        
+C:\Users\ASUS\.stm32cubemx\network_output\network.h               
+C:\Users\ASUS\.stm32cubemx\network_output\network.c               

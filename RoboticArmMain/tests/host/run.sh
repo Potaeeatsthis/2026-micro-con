@@ -1,0 +1,14 @@
+#!/bin/sh
+# host behaviour tests for safety / motion / modes / mode_voice / pi_link / events.
+# needs gcc on a pc (linux, mac, or git-bash/msys2 on windows). run from anywhere:
+#   sh RoboticArmMain/tests/host/run.sh
+set -e
+HERE=$(cd "$(dirname "$0")" && pwd)
+A="$HERE/../../App"
+gcc -std=gnu11 -O1 -g -Wall -Wextra -Wshadow -Wno-unused-parameter \
+  -DAPP_USE_INPUT=0 -DAPP_USE_VOICE=1 -DAPP_USE_PI=1 -DAPP_USE_LCD=1 -DAPP_USE_MODES=1 \
+  -I"$HERE/fake" -I"$A" -o "$HERE/test_app" "$HERE/test_app.c" \
+  "$A/common/app_events.c" "$A/common/app_fault.c" "$A/safety/safety.c" \
+  "$A/motion/motion.c" "$A/motion/servo.c" "$A/motion/servo_cal.c" "$A/kinematics/kinematics.c" \
+  "$A"/modes/*.c "$A/lcd/lcd.c" "$A/lcd/lcd_port.c"
+"$HERE/test_app" | grep -E "^==|FAIL|passed"
