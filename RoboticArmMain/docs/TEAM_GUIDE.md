@@ -1,7 +1,8 @@
 # RoboticArmMain — Team Guide
 
 How the firmware is split so five people can work in parallel without breaking each other.
-Read this once before your first branch. Pins, clocks and DMA are in `core-config.md`.
+Read this once before your first branch. Pins, clocks, timers, DMA and interrupts are in
+[`core-config.md`](core-config.md). Using an AI assistant? Give it [`../AGENTS.md`](../AGENTS.md) first.
 
 ---
 

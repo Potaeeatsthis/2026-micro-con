@@ -14,7 +14,7 @@ wrong include path), this build breaks exactly like CubeIDE does.
 
 Fails (exit 1) on:
   - any compile or link error (this includes FLASH / RAM overflow, the linker reports it)
-  - any warning in our own code under App/ (third-party KISS FFT files are exempt)
+  - any warning in our own code under App/ (third-party KISS FFT and App/lcd/driver/ are exempt)
 Warnings in generated code (Core/, Drivers/, X-CUBE-AI/) are printed but do not fail.
 """
 import argparse
@@ -31,8 +31,9 @@ EXPECTED_MCU = "STM32F767ZITx"
 DMA_REGION_START = 0x2007C000   # MPU region 1 + RAM_DMA in the linker script (core-config)
 DMA_REGION_SIZE = 16 * 1024
 
-# third-party code in App/ that we do not edit, so its warnings do not fail the build
-APP_WARNING_EXEMPT = re.compile(r"App/voice/(kiss_fft|kiss_fftr|_kiss_fft_guts|kiss_fft_log)\.[ch]")
+# third-party code in App/ that we do not write ourselves, so its warnings do not fail the build:
+# KISS FFT (voice) and the Lab08 ILI9341 driver copied into App/lcd/driver/. Our own code must stay warning-free.
+APP_WARNING_EXEMPT = re.compile(r"App/voice/(kiss_fft|kiss_fftr|_kiss_fft_guts|kiss_fft_log)\.[ch]|App/lcd/driver/")
 
 OPT_LEVELS = {  # CubeIDE option value suffix -> gcc flag
     "none": "-O0", "more": "-O2", "most": "-O3", "size": "-Os", "debug": "-Og", "optimize": "-O1",
