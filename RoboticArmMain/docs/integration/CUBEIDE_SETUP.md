@@ -1,54 +1,51 @@
-# Adding `App/` to the CubeIDE project (core owner, once)
+# RoboticArmMain in STM32CubeIDE
 
-Done once by Supanut after the first `Generate Code`. Everything here is saved in `.cproject`,
-which is committed, so teammates get it automatically on import.
+The CubeIDE project settings are stored in `.cproject`, which is committed, so a clone is ready to build.
+Section 1 is all a teammate needs. Sections 2–3 describe how `App/` is wired in; repeat them only if a
+regenerate ever loses a setting (CI fails the build if one is missing).
 
-## 1. Copy the files in
+## 1. Open, build, run (everyone)
 
-```text
-RoboticArmMain/
-├── App/                     ← the whole App/ folder from this package
-├── docs/                    ← TEAM_GUIDE.md, core-config.md, robotic-arm-guide.md, integration/, module_template/
-├── .gitignore               ← from this package
-└── (generated: Core/ Drivers/ Middlewares/ X-CUBE-AI/ RoboticArmMain.ioc ...)
-```
+1. Use a CubeIDE (2.2.0) workspace **outside** the repo, e.g. `D:\...\ide_workspace`.
+2. File → Import → General → **Existing Projects into Workspace** → root directory
+   `2026-micro-con\RoboticArmMain` → **untick "Copy projects into workspace"** → Finish.
+3. Do **not** open `RoboticArmMain.ioc` or generate code (only the `.ioc` owner does that).
+4. Select **RoboticArmMain** in Project Explorer → hammer. Expected: 0 errors; the only warnings are
+   `"DEBUG" redefined` from the KISS FFT files (harmless).
+5. **Run As → STM32 C/C++ Application** flashes and starts the program.
+   **Debug As** flashes and **stops at `main()`**: nothing runs (no LED, no log) until you press Resume (F8).
+   Either way the program stays in flash and runs alone after RESET or power-up.
+6. `git status` must stay clean after building (build output is gitignored).
 
-Voice files (the package already has `App/voice/kws_classes.h` from the exp04 release):
-- **before the X-CUBE-AI step:** `voice_command_research/final_model/exp04_tcresnet-w16d3/onnx_out/kws.onnx`
-  → `RoboticArmMain/Models/kws.onnx`. The firmware keeps its own copy so a new research release
-  cannot change the firmware until you deliberately copy it and regenerate.
-- **after generating:** from the live project (`RA\realtime_detect\model_realtime_code`) into `App/voice/`:
-  `kws_features.c/.h`, `kws_stream.c/.h`, `kws_feature_tables.h`, `kiss_fft.c/.h`, `_kiss_fft_guts.h`
-  (unchanged since the 22-class model). Their own `#include "kws_features.h"` lines work unchanged.
-- **a new model later:** copy its `kws.onnx` and `kws_c/kws_classes.h` together, regenerate, rebuild.
-  `voice_init()` refuses to start if the network outputs and `N_CLASSES` disagree.
-
-## 2. Make `App/` a source folder
+## 2. How `App/` is wired in (core owner; already done)
 
 Project → Properties → C/C++ General → **Paths and Symbols**:
 
-1. **Source Location** tab → *Add Folder…* → `App` → OK.
-2. **Includes** tab → language **GNU C** → *Add…* → type **`App`** (not `../App`)
-   - tick **Add to all configurations**; leave "Is a workspace path" unticked
-   - this dialog adds `../` itself (it shows `Core/Inc` for `../Core/Inc`), so `App` is stored
-     in `.cproject` as `../App` and the compile line gets `-I../App`. Typing `../App` here gives
-     `-I../../App` and every `App/` include fails with "No such file or directory".
+1. **Source Location:** `App` is a source folder in **both** configurations. Pick Debug, then Release, in the
+   Configuration list; for each: *Add Folder…* → `App` → OK.
+2. **Includes** → language **GNU C**, Configuration **[All configurations]**: the entry is typed as **`App`**
+   (not `../App`), "Is a workspace path" unticked.
+   - this dialog adds `../` itself (it shows `Core/Inc` for `../Core/Inc`), so `App` is stored in `.cproject`
+     as `../App` and the compile line gets `-I../App`. Typing `../App` there gives `-I../../App` and every
+     `App/` include fails with "No such file or directory".
    - this is the **only** include path App needs: every include is written from the App root,
      e.g. `#include "motion/motion.h"`.
 3. Apply and Close → Project → Clean → Build.
 
-After every later regenerate, check once that `App` is still a source folder and `App` (stored as `../App`) is
-still an include path. CubeMX normally keeps user-added paths; if one is gone, re-add it. CI fails the
-build if it is missing, so it cannot slip into `master` unnoticed.
+## 3. Generated files that hold our code (core owner)
 
-## 3. Paste the user code
+- `Core/Src/main.c`: `#include "app.h"`, `app_init()` in USER CODE 2, `app_loop()` in USER CODE 3
+  (template: `docs/integration/main_USER_CODE.c`; USER CODE 3 also holds the `}` of `while(1)`).
+- `X-CUBE-AI/App/app_x-cube-ai.c`: the 4 `kws_model_*` accessors, `ai_boostrap` in USER CODE 5, **USER CODE 6
+  empty** (template: `docs/integration/app_x-cube-ai_USER_CODE.c`).
+- `STM32F767ZITX_FLASH.ld`: `RAM` 496K + `RAM_DMA` 16K at 0x2007C000 + the `.dma_buffer` section.
+- The model is `Models/kws.onnx` (exp04). A new model = copy its `kws.onnx` **and** `kws_classes.h`
+  (into `App/voice/`) together, regenerate, rebuild. `voice_init()` refuses to start if the network outputs and
+  `N_CLASSES` disagree.
 
-- `docs/integration/main_USER_CODE.c` → `Core/Src/main.c` (3 lines)
-- `docs/integration/app_x-cube-ai_USER_CODE.c` → `X-CUBE-AI/App/app_x-cube-ai.c` (accessors, `ai_boostrap`, **empty** USER CODE 6)
+After every regenerate, check these three files and section 2, build, run on the board, then open a PR.
 
-## 4. One-time checks on the board (USART3, 921600 baud)
-
-Expected boot log:
+## 4. Boot log (USART3 = ST-LINK COM port, 921600 8N1)
 
 ```text
 === RoboticArmMain 0.1.0 ===
@@ -61,10 +58,13 @@ pi: link on USART6, timeout 3000 ms
 lcd: init
 modes: -> VOICE
 app: running
-input: joystick centre 2041 / 2052
+fault: code 7 (1 total)
+input: joystick centre 2048 / 2048
 ```
 
-- `ERROR dma_buf: ...` → the linker edit or the MPU region is missing (core-config §7). Motion is blocked until fixed.
+- `fault: code 7` without a Pi connected: USART6 RX (PG9) floats and the UART sees noise once at boot. Harmless.
+- `ERROR dma_buf: ...` → the linker edit or the MPU region is missing. Motion is blocked until fixed.
 - `__io_putchar` defined twice → delete the copy outside `App/common/app_log.c`.
 - `HAL_..._Callback` defined twice → delete the copy outside `App/app_callbacks.c`.
-- LD1 must blink twice per second (main loop alive).
+- LD1 blinks twice per second = main loop alive; LD3 on = fatal fault.
+- A spoken command prints `>>> word NN% (chX, snr NN dB)`.
