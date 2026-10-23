@@ -1,0 +1,62 @@
+# firmware-ci - checks every PR into master before it can be merged.
+#
+#   build (Debug), build (Release)  RoboticArmMain compiles and links with the settings in .cproject,
+#                                   fits in flash/RAM, DMA buffers in the non-cacheable region,
+#                                   no new warnings in App/
+#   host-tests                      safety / motion / modes / voice-mode logic tests on a PC (gcc)
+#   repo-rules                      project rules a build cannot see (tools/ci/check_rules.py)
+#
+# Run the same checks locally before pushing (from the repo root):
+#   python3 tools/ci/build_firmware.py
+#   sh RoboticArmMain/tests/host/run.sh
+#   python3 tools/ci/check_rules.py
+#
+# No path filters on purpose: a required check that is skipped stays "pending" and blocks the PR.
+# The whole run takes about a minute.
+
+name: firmware-ci
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firmware-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build (${{ matrix.config }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install arm-none-eabi-gcc
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-arm-none-eabi libnewlib-arm-none-eabi
+      - name: Build RoboticArmMain
+        run: python3 tools/ci/build_firmware.py RoboticArmMain --config ${{ matrix.config }}
+
+  host-tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run host tests
+        run: sh RoboticArmMain/tests/host/run.sh
+
+  repo-rules:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check project rules
+        run: python3 tools/ci/check_rules.py

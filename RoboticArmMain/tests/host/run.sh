@@ -11,4 +11,8 @@ gcc -std=gnu11 -O1 -g -Wall -Wextra -Wshadow -Wno-unused-parameter \
   "$A/common/app_events.c" "$A/common/app_fault.c" "$A/safety/safety.c" \
   "$A/motion/motion.c" "$A/motion/servo.c" "$A/motion/servo_cal.c" "$A/kinematics/kinematics.c" \
   "$A"/modes/*.c "$A/lcd/lcd.c" "$A/lcd/lcd_port.c"
-"$HERE/test_app" | grep -E "^==|FAIL|passed"
+# keep the test's own exit code (a pipe into grep would hide a failure)
+rc=0
+"$HERE/test_app" > "$HERE/test_app.log" || rc=$?
+grep -E "^==|FAIL|passed" "$HERE/test_app.log"
+exit $rc

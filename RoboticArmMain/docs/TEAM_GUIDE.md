@@ -100,7 +100,7 @@ Turning a flag off means the module is not started or called; its code still com
 - **A fatal fault** (`app_fault_raise(x, true)`) freezes motion until reset and lights LD3 (red).
 - **LEDs:** LD1 blinking = main loop alive; LD2 = voice word detected; LD3 = fatal fault.
 
-These are covered by host tests (49 checks). If you change `safety/`, `motion/` or `modes/`, say so in the PR so the tests are re-run.
+These are covered by host tests (49 checks). CI runs them on every PR; run them yourself with `sh RoboticArmMain/tests/host/run.sh` (gcc on a PC; on Windows use Git Bash).
 
 ---
 
@@ -163,3 +163,13 @@ Every placeholder that still needs real values is marked `TODO(<area>)`. Search 
 - [ ] No `.ioc`, `Core/`, `Drivers/`, `Middlewares/`, `X-CUBE-AI/` changes (unless you are Supanut)
 - [ ] No `HAL_*Callback` outside `app_callbacks.c`, no `printf` in ISR code
 - [ ] Tested on the board? Which flags were on? Write it in the PR description
+
+CI (`firmware-ci`, `.github/workflows/firmware-ci.yml`) runs on every PR into `master` and must be green before merging:
+**build (Debug)**, **build (Release)**, **host-tests**, **repo-rules**. If one is red, open it on the PR page, the log
+says what and where. Run the same checks before pushing, from the repo root (Python 3, gcc and arm-none-eabi-gcc on PATH):
+
+```text
+python tools/ci/build_firmware.py        # firmware builds with the .cproject settings, no warnings in App/
+sh RoboticArmMain/tests/host/run.sh      # host tests
+python tools/ci/check_rules.py           # project rules (callbacks, USER CODE, .cproject, committed files)
+```
