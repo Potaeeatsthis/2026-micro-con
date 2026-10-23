@@ -1,10 +1,18 @@
 #include <Arduino.h>
-#include <Servo.h>
 #include <errno.h>
 #include <limits.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+// The console is shared by the Arduino Uno sketch and the STM32 PlatformIO
+// project. Each entry point includes its own small hardware backend first; the
+// console itself only calls attach/write/detach and pin-description functions.
+#if defined(ARDUINO_ARCH_STM32)
+#include "servo_backend_stm32.h"
+#else
+#include "servo_backend_uno.h"
+#endif
 
 // Bench calibration for six positional servos (3 x MG996R, 3 x SG92R).
 // One physical servo is connected at a time. Nothing is attached at startup.
@@ -12,7 +20,6 @@
 // no physical position feedback.
 
 static const uint8_t SERVO_COUNT = 6;
-static const uint8_t SERVO_PIN = 9;
 static const uint8_t MAX_POINTS = 9;
 
 static const int16_t HARD_MIN_US = 500;
@@ -42,7 +49,6 @@ struct ServoRecord {
   Point points[MAX_POINTS];
 };
 
-static Servo servos[SERVO_COUNT];
 static ServoRecord records[SERVO_COUNT];
 // Unit labels only; this sketch does not assign units to arm joints.
 static const char *const LABELS[SERVO_COUNT] = {
@@ -135,7 +141,7 @@ static void printBounds(const ServoRecord &record) {
 
 static void detachCurrent() {
   if (attachedIndex >= 0) {
-    servos[attachedIndex].detach();
+    servoBackendDetach(attachedIndex);
     attachedIndex = -1;
     currentPulseUs = 0;
   }
@@ -204,6 +210,8 @@ static void printTable() {
 }
 
 static void printHelp() {
+  Serial.print(F("Output map: "));
+  Serial.println(servoBackendPinSummary());
   Serial.println(F("Commands (lowercase, one line at a time):"));
   Serial.println(F("  select 1..6          detach signal, select unit, reset test window"));
   Serial.println(F("  off                  detach signal; not a power cut or brake"));
@@ -310,17 +318,18 @@ static void processCommand() {
       return;
     }
 
-    Serial.print(F("WARNING: attach pin "));
-    Serial.print(SERVO_PIN);
+    Serial.print(F("WARNING: attach "));
+    Serial.print(servoBackendPinName(selectedIndex));
     Serial.print(F(" and jump to "));
     Serial.print(targetUs);
     Serial.println(F(" us; support the unloaded servo/arm. No safe pose is assumed."));
-    // This sketch runs with AVR loop interrupts enabled. Keep the servo timer
-    // ISR out of attach + first write so no default or stale pulse is emitted.
-    noInterrupts();
-    servos[selectedIndex].attach(SERVO_PIN, HARD_MIN_US, HARD_MAX_US);
-    servos[selectedIndex].writeMicroseconds(targetUs);
-    interrupts();
+    // The AVR backend keeps attach + first write between noInterrupts() and
+    // interrupts(). The STM32 backend ignores these hooks and sets the compare
+    // value before starting the channel.
+    servoBackendEnterCritical();
+    servoBackendAttach(selectedIndex, HARD_MIN_US, HARD_MAX_US);
+    servoBackendWrite(selectedIndex, targetUs);
+    servoBackendExitCritical();
     attachedIndex = selectedIndex;
     currentPulseUs = targetUs;
     Serial.print(F("Armed "));
@@ -364,7 +373,7 @@ static void processCommand() {
       Serial.println(F(" us while armed"));
       return;
     }
-    servos[attachedIndex].writeMicroseconds(targetUs);
+    servoBackendWrite(attachedIndex, targetUs);
     currentPulseUs = targetUs;
     Serial.print(F("Pulse "));
     Serial.print(targetUs);
@@ -621,8 +630,13 @@ static void processLine() {
 }
 
 void setup() {
+  servoBackendBegin();
   Serial.begin(115200);
-  Serial.println(F("Servo calibration console (pin 9, 115200)."));
+  Serial.print(F("Servo calibration console ("));
+  Serial.print(servoBackendBoardName());
+  Serial.println(F(", 115200)."));
+  Serial.print(F("Output map: "));
+  Serial.println(servoBackendPinSummary());
   Serial.println(F("RAM only: reset loses all six records. Nothing attached or moved at startup."));
   Serial.println(F("Type 'help'."));
 }

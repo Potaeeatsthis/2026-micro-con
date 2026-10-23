@@ -1,7 +1,8 @@
 # Robotic Arm Kinematics — To-Do
 
-Offline kinematics plan for the Omartronics arm. The current bench code is
-Arduino-only; the final controller is planned on the STM32 NUCLEO-F767ZI.
+Offline kinematics plan for the Omartronics arm. Calibration bench code now runs
+on the STM32 NUCLEO-F767ZI through PlatformIO and the Arduino core, without
+CubeMX or STM32CubeIDE. The earlier Arduino Uno version is still available.
 The six servos are **brand-new and not calibrated**. Work in this order:
 
 1. Calibrate all six servo units unloaded.
@@ -14,10 +15,31 @@ measured pose.
 
 ## 0. Current code and software status
 
-Bench setup for every sketch below: **Arduino Uno**, servo signal on **pin 9**,
+Legacy Uno bench setup: **Arduino Uno**, servo signal on **pin 9**,
 Serial Monitor at **115200 baud**, line ending **Newline** (or Both NL & CR),
 one physical servo at a time, external regulated servo supply, common ground.
-These are bench tools, not the final STM32 controller.
+These are bench tools, not the full arm controller. For your STM32, follow
+[`code/stm32-servos/README.md`](../code/stm32-servos/README.md): the commands
+below are shared, but the STM32 uses its own physical pins, not Uno pin 9.
+
+| STM32 unit | Output pin |
+|---|---|
+| 1 / MG996R-1 | PC6 |
+| 2 / MG996R-2 | PC7 |
+| 3 / MG996R-3 | PD12 |
+| 4 / SG92R-1 | PD13 |
+| 5 / SG92R-2 | PD14 |
+| 6 / SG92R-3 | PD15 |
+
+- [ ] Install the PlatformIO extension in VS Code and open `code/stm32-servos`.
+- [ ] Build the `nucleo_f767zi` environment, then connect the ST-LINK USB port.
+- [ ] With servo power disconnected, upload and open the 115200-baud monitor.
+- [ ] Follow the STM32 README's buffer wiring, input pulldowns, and supply checks.
+- [ ] Test one positional servo at a time with the shared calibration commands.
+
+The Uno setup/upload instructions below are alternatives only: skip those
+board-specific steps if using STM32. Calibration and measurement steps apply
+to both. No CubeMX or CubeIDE is needed for this STM32 bench project.
 
 | File | Purpose / status |
 |------|------------------|
@@ -475,9 +497,11 @@ measured TCP positions at several poses.
 | J4 | | | | |
 | J5 | | | | |
 
-## 9. Final controller plan (not yet in this repository)
+## 9. Full arm controller plan (not yet implemented)
 
-The Arduino sketches are bench tools. The final controller is planned as:
+The Uno sketches and STM32 calibration project are bench tools. Six-joint
+trajectory control and IK are not implemented by this calibration console.
+The final controller is planned as:
 
 - **STM32 NUCLEO-F767ZI** generating six **direct hardware PWM** signals,
   not the Arduino Servo library.
@@ -485,8 +509,8 @@ The Arduino sketches are bench tools. The final controller is planned as:
   logic. VCC = 5 V, common ground, `/1OE` and `/2OE` held LOW, 100 nF decoupling.
 - Separate regulated servo supply. Servo power must not pass through the STM32
   or the SN74AHCT244N. All devices share one signal ground.
-- Verify the complete pin/timer map against the system guide and STM32CubeMX
-  before wiring.
+- Verify the complete pin/timer map against the board documentation, system
+  guide, and STM32 Arduino core pin definitions before wiring.
 
 - [ ] Port the calibrated per-unit data into the final firmware: installed
       min/max pulse, joint zero, sign and unit-to-joint map.
@@ -494,7 +518,7 @@ The Arduino sketches are bench tools. The final controller is planned as:
       console.
 - [ ] Verify the STM32 pin/timer map and buffer wiring on the real board before
       connecting servos.
-- [ ] The 115200-baud Newline console is only the Arduino bench interface. The
+- [ ] The 115200-baud Newline console is the Uno/STM32 calibration interface. The
       final controller uses calibrated values internally, not this text
       protocol.
 
@@ -506,9 +530,9 @@ final firmware is not in this repository yet; do not treat the plan as tested.
 
 | Item | Current bench | Planned final | Notes |
 |------|---------------|---------------|-------|
-| Board model | Arduino Uno | STM32 NUCLEO-F767ZI | Bench code only on the Uno |
-| Servo signal | Pin 9 | TIM3/TIM4 via SN74AHCT244N | Final PWM needs CubeMX verification |
-| Driver model | Arduino Servo library | Direct hardware PWM + SN74AHCT244N | Buffer carries signals only |
+| Board model | Arduino Uno or STM32 NUCLEO-F767ZI | STM32 NUCLEO-F767ZI | Choose the matching bench project |
+| Servo signal | Uno pin 9 or STM32 pins listed above | TIM3/TIM4 via SN74AHCT244N | Bench build verified; final peripheral integration still needs checking |
+| Driver model | Uno Servo library or STM32 HardwareTimer | Direct hardware PWM + SN74AHCT244N | Buffer carries signals only |
 | Number of channels | 1 at a time | 6 | One unit at a time on the bench |
 | Channel-to-joint map | | | Fill after Section 4 |
 | Calibrated command format | `arm`/`pulse` in us | Calibrated angle/pulse plus limits | Final firmware converts |

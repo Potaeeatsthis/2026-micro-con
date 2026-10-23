@@ -6,6 +6,7 @@ Thumbs.db
 Debug/
 Release/
 build/
+.pio/
 
 resources
 

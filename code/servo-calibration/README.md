@@ -1,10 +1,13 @@
 # Servo calibration console
 
-Bench sketch for six **positional** servos: three MG996R and three SG92R. It uses
-the Arduino Serial Monitor on **pin 9 at 115200 baud** and connects to **one
-physical servo at a time**. The fixed unit labels are `MG996R-1`, `MG996R-2`,
-`MG996R-3`, `SG92R-1`, `SG92R-2`, and `SG92R-3`. They identify physical units
-only; they do **not** assign a unit to an arm joint.
+Bench console for six **positional** servos: three MG996R and three SG92R. On
+the **Arduino Uno** it uses the `Servo` library on **pin 9 at 115200 baud** and
+connects to **one physical servo at a time**. The same console source is also
+built for the **STM32 NUCLEO-F767ZI** with hardware-timer PWM on PC6, PC7, and
+PD12-PD15; see [`../stm32-servos/README.md`](../stm32-servos/README.md). The
+fixed unit labels are `MG996R-1`, `MG996R-2`, `MG996R-3`, `SG92R-1`,
+`SG92R-2`, and `SG92R-3`. They identify physical units only; they do **not**
+assign a unit to an arm joint.
 
 This sketch does **not**:
 
@@ -19,7 +22,11 @@ All records are in RAM. **Reset or power loss loses all six records.** Use
 
 ## Hardware
 
-- Signal wire to **pin 9**. Connect servo ground to Arduino ground.
+- **Arduino Uno:** signal wire to **pin 9**; connect servo ground to Arduino
+  ground. For the STM32 NUCLEO-F767ZI, use the physical pins PC6, PC7, PD12,
+  PD13, PD14, and PD15 through the SN74AHCT244N buffer described in the
+  [STM32 README](../stm32-servos/README.md). Do not use Arduino pin 9 on the
+  STM32.
 - Use a suitable external regulated servo supply, not the Arduino 5 V pin.
 - **Do not assume a blanket 6 V is acceptable for every SG92R.** Check the
   voltage rating of the exact SG92R you have and start conservatively.
@@ -38,15 +45,18 @@ overflowing numbers, non-finite angles, invalid control/non-ASCII bytes, and
 overlong lines are rejected without moving the servo. Tabs are allowed as
 separators.
 
-Open `servo-calibration.ino` in Arduino IDE. Set Serial Monitor to **115200 baud**
-and **Newline** (or Both NL & CR). This is an Arduino bench sketch, not STM32
-firmware; the verified board target is Arduino Uno.
+Open `servo-calibration.ino` in Arduino IDE for the Arduino Uno build. Set
+Serial Monitor to **115200 baud** and **Newline** (or Both NL & CR). The
+verified Uno target uses the `Servo` library on pin 9. For the STM32
+NUCLEO-F767ZI, do not open the `.ino` in Arduino IDE: build the PlatformIO
+project in [`../stm32-servos`](../stm32-servos/README.md), which reuses this
+console with the `HardwareTimer` backend.
 
 | Command | Meaning |
 |---|---|
 | `select 1..6` | Detach the signal, select a unit, and reset the test window to 1400..1600 when switching units. Does not command movement. |
 | `off` | Detach the signal. This is not a power cut and does not hold or guarantee the arm position. |
-| `arm <pulse_us>` | Attach pin 9 and command the pulse. Warns because this can jump. |
+| `arm <pulse_us>` | Attach the selected unit's output (pin 9 on Uno; PC6/PC7/PD12-PD15 on STM32) and command the pulse. Warns because this can jump. |
 | `pulse <pulse_us>` | Move while armed. Maximum change is 20 us per command. |
 | `record <measured_deg>` | Store the measured angle and current pulse for the selected unit. Up to 9 points. |
 | `reference` | Store the current pulse as this unit's reference pulse. |
@@ -125,15 +135,15 @@ servo,label,measured_deg,pulse_us
 ...
 ```
 
-Copy or save this output before resetting the Arduino.
+Copy or save this output before resetting or powering off the board.
 
 ## Host test
 
-The host test compiles this exact `.ino` file with small Arduino/Servo stubs and
-checks startup, strict parsing and invalid-byte rejection, recording/printing,
-per-servo isolation, range enforcement, the explicit 500/2500 us attach range,
-window reset when switching units, and detach behaviour. It needs `python3` and
-`g++`, not Arduino.
+The host test compiles this exact `.ino` file with the real Uno backend header
+and small Arduino/Servo stubs. It checks startup, strict parsing and
+invalid-byte rejection, recording/printing, per-servo isolation, range
+enforcement, the explicit 500/2500 us attach range, window reset when switching
+units, and detach behaviour. It needs `python3` and `g++`, not Arduino.
 
 ```sh
 python3 code/servo-calibration/test_host.py

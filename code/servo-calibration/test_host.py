@@ -616,6 +616,8 @@ def main() -> int:
             "-Wextra",
             "-I",
             str(temp_path),
+            "-I",
+            str(HERE),
             str(temp_path / "harness.cpp"),
             str(temp_path / "sketch.cpp"),
             "-o",
