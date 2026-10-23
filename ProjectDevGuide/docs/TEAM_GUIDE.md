@@ -2,7 +2,9 @@
 
 How the firmware is split so five people can work in parallel without breaking each other.
 Read this once before your first branch. Pins, clocks, timers, DMA and interrupts are in
-[`core-config.md`](core-config.md). Using an AI assistant? Give it [`../AGENTS.md`](../AGENTS.md) first.
+[`core-config.md`](core-config.md). Using an AI assistant? Give it [`AGENTS.md`](../../AGENTS.md) (repo root) first.
+Paths like `App/...` below are inside `RoboticArmMain/`; this guide, the tests and the CI scripts live in
+`ProjectDevGuide/`, so `RoboticArmMain/` holds only the CubeIDE project.
 
 ---
 
@@ -101,7 +103,7 @@ Turning a flag off means the module is not started or called; its code still com
 - **A fatal fault** (`app_fault_raise(x, true)`) freezes motion until reset and lights LD3 (red).
 - **LEDs:** LD1 blinking = main loop alive; LD2 = voice word detected; LD3 = fatal fault.
 
-These are covered by host tests (49 checks). CI runs them on every PR; run them yourself with `sh RoboticArmMain/tests/host/run.sh` (gcc on a PC; on Windows use Git Bash).
+These are covered by host tests (49 checks). CI runs them on every PR; run them yourself with `sh ProjectDevGuide/tests/host/run.sh` (gcc on a PC; on Windows use Git Bash).
 
 ---
 
@@ -122,7 +124,7 @@ If the linker edit or the MPU region is missing, `dma_buf_check()` stops all mot
 ## 7. Recipes: extending without breaking anything
 
 **A new module (feature folder)**
-1. Copy `docs/module_template/` to `App/<name>/`, rename `feature` → `<name>`.
+1. Copy `ProjectDevGuide/docs/module_template/` to `RoboticArmMain/App/<name>/`, rename `feature` → `<name>`.
 2. Add `APP_USE_<NAME>` (default 0 until it works) to `app_config.h`.
 3. In `app.c`, add one line at **EXTENSION POINT 1** (init) and one at **EXTENSION POINT 3** (step), each inside `#if APP_USE_<NAME>`.
 4. Put all of this in one PR.
@@ -170,7 +172,7 @@ CI (`firmware-ci`, `.github/workflows/firmware-ci.yml`) runs on every PR into `m
 says what and where. Run the same checks before pushing, from the repo root (Python 3, gcc and arm-none-eabi-gcc on PATH):
 
 ```text
-python tools/ci/build_firmware.py        # firmware builds with the .cproject settings, no warnings in App/
-sh RoboticArmMain/tests/host/run.sh      # host tests
-python tools/ci/check_rules.py           # project rules (callbacks, USER CODE, .cproject, committed files)
+python ProjectDevGuide/ci/build_firmware.py       # firmware builds with the .cproject settings, no warnings in App/
+sh ProjectDevGuide/tests/host/run.sh              # host tests
+python ProjectDevGuide/ci/check_rules.py          # project rules (callbacks, USER CODE, .cproject, committed files)
 ```

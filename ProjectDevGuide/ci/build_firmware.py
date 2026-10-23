@@ -3,8 +3,8 @@
 
 Used by CI (.github/workflows/firmware-ci.yml). Anyone can run it locally too:
 
-    python3 tools/ci/build_firmware.py                # Debug configuration
-    python3 tools/ci/build_firmware.py --config Release
+    python3 ProjectDevGuide/ci/build_firmware.py                   # Debug configuration
+    python3 ProjectDevGuide/ci/build_firmware.py --config Release
 
 Needs arm-none-eabi-gcc on PATH (Ubuntu: apt install gcc-arm-none-eabi libnewlib-arm-none-eabi).
 

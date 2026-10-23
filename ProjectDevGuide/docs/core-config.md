@@ -10,7 +10,7 @@ and guarded by CI. This file describes that `.ioc`. Open items (§12) do not aff
 
 This file is the single source of truth for pins, clocks, timers, DMA and interrupt
 priorities. If code and this file disagree, fix one of them in the same commit.
-Its main copy is `RoboticArmMain/docs/core-config.md` in the repo; change it there, through a PR.
+Its main copy is `ProjectDevGuide/docs/core-config.md` in the repo; change it there, through a PR.
 
 **v1.2 (23 Oct 2026) vs v1.1:** CRC on (X-CUBE-AI); HSE startup timeout 5000 ms; final power only through the
 ST-LINK USB (§11); heap and stack 0x2000 each; the SRAM2 MPU region is **region 1** (region 0 = CubeMX's
@@ -301,8 +301,12 @@ So the LCD redraws only the parts that changed, never the whole screen in every 
 ├── .github/
 │   ├── workflows/firmware-ci.yml   CI (§15)
 │   └── pull_request_template.md
-├── tools/ci/                       build_firmware.py, check_rules.py
-└── RoboticArmMain/
+├── AGENTS.md                       short rules for AI assistants (read first)
+├── ProjectDevGuide/                everything for developing the firmware that is NOT firmware
+│   ├── docs/                       core-config.md (this file), TEAM_GUIDE.md, integration/, module_template/
+│   ├── tests/host/                 host behaviour tests (gcc on a PC)
+│   └── ci/                         build_firmware.py, check_rules.py (used by CI)
+└── RoboticArmMain/                 ONLY the CubeIDE project (this folder is what gets built and submitted)
     ├── RoboticArmMain.ioc          only the .ioc owner edits this
     ├── Core/ Drivers/ Middlewares/ X-CUBE-AI/   generated; main.c only calls App/
     ├── STM32F767ZITX_FLASH.ld      with the .dma_buffer edit (§7)
@@ -319,9 +323,7 @@ So the LCD redraws only the parts that changed, never the whole screen in every 
     │   ├── pi_link/                USART6 protocol
     │   ├── lcd/                    status screen + touch, lcd_port.c → Lab08 ILI9341 driver
     │   └── modes/                  mode state machine, one file per mode
-    ├── AGENTS.md                   short rules for AI assistants (read first)
-    ├── docs/                       core-config.md (this file), TEAM_GUIDE.md, integration/, module_template/
-    └── tests/host/                 host behaviour tests (gcc on a PC)
+    └── .gitignore
 ```
 
 1. `main.c` contains only `#include "app.h"`, `app_init()` in USER CODE 2 and `app_loop()` in USER CODE 3
@@ -408,7 +410,7 @@ function there, then set the mode. Afterwards check every pin against §3.
     first) → Analyze. Then re-check USART3 is still generated (§4.8).
 16. **Project Manager:** stack/heap §7, code generator options §8.
 17. **Generate code.** Edit the linker script once (§7). Paste the USER CODE (§10 rules 1 and 4;
-    templates in `docs/integration/`).
+    templates in `ProjectDevGuide/docs/integration/`).
 18. Search the `.ioc` for `D:\` or `C:\` in model paths — an absolute model path breaks teammates' builds.
 
 **After any later regenerate:** the `.ld` edit is still there, `App` is still a source folder and include path
@@ -435,7 +437,7 @@ function there, then set the mode. Afterwards check every pin against §3.
   **stops at `main()`** until Resume (F8) — nothing runs, no LED, no log, until you press it. After either, the
   program stays in flash and runs alone after RESET or power-up.
 - **Boot log:** USART3 via the ST-LINK COM port, 921600 8N1. Expected log and fault meanings:
-  `docs/integration/CUBEIDE_SETUP.md`. LD1 blinks twice per second = main loop alive; LD3 on = fatal fault.
+  `ProjectDevGuide/docs/integration/CUBEIDE_SETUP.md`. LD1 blinks twice per second = main loop alive; LD3 on = fatal fault.
 
 ---
 
@@ -446,16 +448,16 @@ Checks:
 
 | Check | What it proves |
 |---|---|
-| `build (Debug)`, `build (Release)` | `tools/ci/build_firmware.py` compiles and links RoboticArmMain with the source folders, defines, include paths, libraries and linker script **read from `.cproject`** (Ubuntu `arm-none-eabi-gcc`). Fails on any error, flash/RAM overflow, `.dma_buffer` not at 0x2007C000 or over 16 KB, and any warning in `App/` (third-party code exempt: KISS FFT, `App/lcd/driver/`) |
-| `host-tests` | `RoboticArmMain/tests/host/run.sh`: safety / motion / modes / voice-mode / pi_link / screen-logic behaviour on a PC (49 checks). The real `lcd_port.c` (ILI9341 driver, HAL) is replaced by `tests/host/fake/lcd_port_fake.c` |
-| `repo-rules` | `tools/ci/check_rules.py`: no build output / IDE state / `app_config_local.h` committed; no file over 3 MB; `.cproject` source folders, `../App`, AI library and linker script in both configurations; `main.c` and `app_x-cube-ai.c` USER CODE as in §10; USER CODE markers paired; callbacks and `__io_putchar` in one place; the `.ioc` model file committed |
+| `build (Debug)`, `build (Release)` | `ProjectDevGuide/ci/build_firmware.py` compiles and links RoboticArmMain with the source folders, defines, include paths, libraries and linker script **read from `.cproject`** (Ubuntu `arm-none-eabi-gcc`). Fails on any error, flash/RAM overflow, `.dma_buffer` not at 0x2007C000 or over 16 KB, and any warning in `App/` (third-party code exempt: KISS FFT, `App/lcd/driver/`) |
+| `host-tests` | `ProjectDevGuide/tests/host/run.sh`: safety / motion / modes / voice-mode / pi_link / screen-logic behaviour on a PC (49 checks). The real `lcd_port.c` (ILI9341 driver, HAL) is replaced by `ProjectDevGuide/tests/host/fake/lcd_port_fake.c` |
+| `repo-rules` | `ProjectDevGuide/ci/check_rules.py`: `RoboticArmMain/` holds only the project (no build output, IDE state, `app_config_local.h`, `.md` notes, `docs/` or `tests/`); no file over 3 MB; `.cproject` source folders, `../App`, AI library and linker script in both configurations; `main.c` and `app_x-cube-ai.c` USER CODE as in §10; USER CODE markers paired; callbacks and `__io_putchar` in one place; the `.ioc` model file committed |
 
 Run the same checks locally from the repo root before pushing:
 
 ```text
-python tools/ci/build_firmware.py        (needs arm-none-eabi-gcc on PATH)
-sh RoboticArmMain/tests/host/run.sh      (needs gcc; on Windows use Git Bash)
-python tools/ci/check_rules.py
+python ProjectDevGuide/ci/build_firmware.py       (needs arm-none-eabi-gcc on PATH)
+sh ProjectDevGuide/tests/host/run.sh              (needs gcc; on Windows use Git Bash)
+python ProjectDevGuide/ci/check_rules.py
 ```
 
 CI's compiler is not CubeIDE's, so its size numbers differ a little (Debug text 328,444 B in CI vs 324,300 B in

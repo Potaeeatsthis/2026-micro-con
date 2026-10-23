@@ -35,9 +35,9 @@ Project → Properties → C/C++ General → **Paths and Symbols**:
 ## 3. Generated files that hold our code (core owner)
 
 - `Core/Src/main.c`: `#include "app.h"`, `app_init()` in USER CODE 2, `app_loop()` in USER CODE 3
-  (template: `docs/integration/main_USER_CODE.c`; USER CODE 3 also holds the `}` of `while(1)`).
+  (template: `main_USER_CODE.c` next to this file; USER CODE 3 also holds the `}` of `while(1)`).
 - `X-CUBE-AI/App/app_x-cube-ai.c`: the 4 `kws_model_*` accessors, `ai_boostrap` in USER CODE 5, **USER CODE 6
-  empty** (template: `docs/integration/app_x-cube-ai_USER_CODE.c`).
+  empty** (template: `app_x-cube-ai_USER_CODE.c` next to this file).
 - `STM32F767ZITX_FLASH.ld`: `RAM` 496K + `RAM_DMA` 16K at 0x2007C000 + the `.dma_buffer` section.
 - The model is `Models/kws.onnx` (exp04). A new model = copy its `kws.onnx` **and** `kws_classes.h`
   (into `App/voice/`) together, regenerate, rebuild. `voice_init()` refuses to start if the network outputs and

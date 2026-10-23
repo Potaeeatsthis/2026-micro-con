@@ -1,7 +1,7 @@
 /* app.c - start-up order, main-loop order, control-tick order
  *
  * owner: core. a feature never edits this file except at the three EXTENSION POINT
- * lines, and only for a NEW module (see docs/TEAM_GUIDE.md "adding a module").
+ * lines, and only for a NEW module (see ProjectDevGuide/docs/TEAM_GUIDE.md "adding a module").
  */
 #include "app.h"
 #include "common/app_config.h"

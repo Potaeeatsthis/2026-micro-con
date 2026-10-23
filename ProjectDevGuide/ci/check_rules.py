@@ -3,7 +3,7 @@
 
 Used by CI (.github/workflows/firmware-ci.yml). Run it locally from the repo root:
 
-    python3 tools/ci/check_rules.py
+    python3 ProjectDevGuide/ci/check_rules.py
 
 Every rule prints PASS or FAIL with the reason. Exit code 1 if any rule fails.
 To change a rule, open a PR that edits this file (core owner reviews it).
@@ -27,6 +27,8 @@ FORBIDDEN = [
     (r"(^|/)MXTmpFiles/", "CubeMX temp files"),
     (r"(^|/)\.ai/", "X-CUBE-AI analyze cache"),
     (r"App/common/app_config_local\.h$", "your local feature flags (gitignored on purpose)"),
+    (r"^RoboticArmMain/(docs|tests)/", "docs and tests live in ProjectDevGuide/"),
+    (r"\.md$", "notes and docs live in ProjectDevGuide/ (RoboticArmMain/ holds only the CubeIDE project)"),
     (r"\.(elf|hex|bin|map|o|su|cyclo)$", "build output"),
 ]
 
@@ -84,7 +86,7 @@ def main():
             if re.search(pat, f):
                 bad.append(f"{f} ({why})")
                 break
-    rule("no build output / IDE state / local config committed", not bad,
+    rule("RoboticArmMain/ holds only the project (no build output, IDE state, local config, docs)", not bad,
          "remove with 'git rm --cached <file>': " + ", ".join(bad[:10]))
 
     # 2. no huge files

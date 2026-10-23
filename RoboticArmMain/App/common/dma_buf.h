@@ -8,7 +8,7 @@
  *     static uint16_t adc_buf[60] DMA_BUF;      // correct, no cache maintenance needed
  *
  * rule: every buffer handed to a HAL_..._DMA() call uses DMA_BUF. budget: 16 KB total,
- * add your buffer to the table in docs/TEAM_GUIDE.md.
+ * add your buffer to the table in ProjectDevGuide/docs/TEAM_GUIDE.md.
  */
 #ifndef APP_DMA_BUF_H
 #define APP_DMA_BUF_H
