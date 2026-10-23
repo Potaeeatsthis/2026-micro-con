@@ -23,7 +23,7 @@ Edit **your** folder freely. Anything outside it goes through a PR that its owne
 | `App/modes/mode_joint_group.c` | *TODO name* | Joint Group mode |
 | `App/modes/mode_single_joint.c` | *TODO name* | Single-Joint Service mode |
 
-Fill in the names here and in `.github/CODEOWNERS` in the same PR.
+Fill in your name in this table in your first PR.
 
 ---
 
