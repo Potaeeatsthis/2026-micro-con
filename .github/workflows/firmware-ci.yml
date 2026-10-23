@@ -12,7 +12,8 @@
 #   python3 tools/ci/check_rules.py
 #
 # No path filters on purpose: a required check that is skipped stays "pending" and blocks the PR.
-# The whole run takes about a minute.
+# The whole run takes about a minute. Every job has a time limit, so a hang fails fast instead of
+# waiting GitHub's 6-hour default.
 
 name: firmware-ci
 
@@ -34,6 +35,7 @@ jobs:
   build:
     name: build (${{ matrix.config }})
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -41,14 +43,28 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Install arm-none-eabi-gcc
+        # Ubuntu package mirrors sometimes stall. Short network timeouts turn a stall into an error,
+        # and the loop tries again (3 attempts) instead of hanging.
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc-arm-none-eabi libnewlib-arm-none-eabi
+          APT="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
+          for i in 1 2 3; do
+            if timeout 180 sudo apt-get $APT update -qq &&
+               timeout 300 sudo apt-get $APT install -y -qq --no-install-recommends \
+                 gcc-arm-none-eabi libnewlib-arm-none-eabi; then
+              arm-none-eabi-gcc --version | head -1
+              exit 0
+            fi
+            echo "apt attempt $i failed, retrying in 15 s"
+            sleep 15
+          done
+          echo "::error::could not install arm-none-eabi-gcc (Ubuntu mirror problem) - re-run the job"
+          exit 1
       - name: Build RoboticArmMain
         run: python3 tools/ci/build_firmware.py RoboticArmMain --config ${{ matrix.config }}
 
   host-tests:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
       - name: Run host tests
@@ -56,6 +72,7 @@ jobs:
 
   repo-rules:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
       - name: Check project rules
