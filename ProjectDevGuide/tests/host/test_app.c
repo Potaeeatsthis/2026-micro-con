@@ -1,6 +1,6 @@
 /* host behaviour test (gcc on a pc, NOT built by CubeIDE): fake HAL with controllable
  * pins and clock, then drives the real App/ code through the safety-relevant scenarios.
- * run: sh tests/host/run.sh. if a test fails after your change, the change broke a safety rule. */
+ * run: sh ProjectDevGuide/tests/host/run.sh. if a test fails after your change, the change broke a safety rule. */
 /* host behaviour test of the RoboticArmMain App/ skeleton (not part of the deliverable) */
 #include <stdio.h>
 #include <string.h>

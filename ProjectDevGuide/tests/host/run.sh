@@ -3,10 +3,10 @@
 # the screen logic (lcd.c) is tested; the real lcd_port.c talks to the ILI9341 driver (HAL), so a fake
 # in fake/lcd_port_fake.c stands in for it here.
 # needs gcc on a pc (linux, mac, or git-bash/msys2 on windows). run from anywhere:
-#   sh RoboticArmMain/tests/host/run.sh
+#   sh ProjectDevGuide/tests/host/run.sh
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
-A="$HERE/../../App"
+A="$HERE/../../../RoboticArmMain/App"
 gcc -std=gnu11 -O1 -g -Wall -Wextra -Wshadow -Wno-unused-parameter \
   -DAPP_USE_INPUT=0 -DAPP_USE_VOICE=1 -DAPP_USE_PI=1 -DAPP_USE_LCD=1 -DAPP_USE_MODES=1 \
   -I"$HERE/fake" -I"$A" -o "$HERE/test_app" "$HERE/test_app.c" \

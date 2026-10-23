@@ -4,7 +4,7 @@
 ## How I tested it
 - [ ] Built in STM32CubeIDE: 0 errors, no new warnings in `App/`
 - [ ] Flashed and ran on the board (paste the relevant part of the boot log / serial output below)
-- [ ] Host tests pass: `sh RoboticArmMain/tests/host/run.sh` (if I changed safety / motion / modes / pi_link)
+- [ ] Host tests pass: `sh ProjectDevGuide/tests/host/run.sh` (if I changed safety / motion / modes / pi_link)
 - [ ] Servo signal wires were disconnected for the first run of new motion code
 
 ```text

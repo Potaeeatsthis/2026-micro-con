@@ -1,6 +1,6 @@
 /* mode_joint_group.c - joystick moves two joints, encoder picks the group (guide 7.2)
  *
- * owner: TODO(team) - write the owner's name here and in docs/TEAM_GUIDE.md section 1
+ * owner: TODO(team) - write the owner's name here and in ProjectDevGuide/docs/TEAM_GUIDE.md section 1
  *   group 1: X = J1 base,      Y = J2 shoulder
  *   group 2: X = J3 elbow,     Y = J4 wrist pitch
  *   group 3: X = J5 wrist rot, Y = J6 gripper

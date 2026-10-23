@@ -1,10 +1,13 @@
 /* lcd_port.h - the only bridge between our screen code and the Lab08 ILI9341 driver
  *
  * owner: lcd member.
- * copy the Lab08 driver into App/lcd/driver/ (ILI9341_STM32_Driver.c/.h, ILI9341_GFX.c/.h,
- * ILI9341_Touchscreen.c/.h, 5x5_font.h), rename CS_Pin/DC_Pin/RST_Pin to the new labels
- * LCD_CS / LCD_DC / LCD_RST and the touch port defines to the new pins, then fill in
- * lcd_port.c. lcd.c never includes the driver directly, so the driver can be
+ * copy the Lab08 driver (from the Lab08 class project) into App/lcd/driver/:
+ * ILI9341_STM32_Driver.c/.h, ILI9341_GFX.c/.h, ILI9341_Touchscreen.c/.h, 5x5_font.h. then
+ *   - rename CS_Pin / DC_Pin / RST_Pin (and their _GPIO_Port) to the labels LCD_CS / LCD_DC / LCD_RST
+ *   - change the touch port defines from GPIOE to the labels T_CLK, T_CS, T_MOSI, T_MISO, T_IRQ
+ *   - make sure the driver uses hspi5
+ *   - fill in lcd_port.c; nothing else in App/ includes the driver directly.
+ * CI does not count warnings inside App/lcd/driver/ (third-party code); lcd_port.c and lcd.c must have none. lcd.c never includes the driver directly, so the driver can be
  * swapped (e.g. for a DMA version) without touching the screen logic.
  */
 #ifndef APP_LCD_PORT_H

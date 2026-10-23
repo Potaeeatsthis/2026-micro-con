@@ -11,7 +11,7 @@ Release/
 MXTmpFiles/
 .ai/
 
-# per-developer feature flags (see docs/TEAM_GUIDE.md section 4)
+# per-developer feature flags (see ProjectDevGuide/docs/TEAM_GUIDE.md section 4)
 App/common/app_config_local.h
 
 # os junk

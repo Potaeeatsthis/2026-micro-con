@@ -3,7 +3,7 @@
  * owner: voice (Supanut).
  * implemented in X-CUBE-AI/App/app_x-cube-ai.c inside its USER CODE blocks, because the
  * template keeps the network handle and buffers `static` there
- * (paste block: docs/integration/app_x-cube-ai_USER_CODE.c).
+ * (paste block: ProjectDevGuide/docs/integration/app_x-cube-ai_USER_CODE.c).
  * regenerating the .ioc keeps those blocks, so this interface survives model updates.
  */
 #ifndef APP_KWS_MODEL_H
