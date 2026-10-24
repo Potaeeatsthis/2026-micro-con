@@ -60,17 +60,65 @@ What the numbers mean:
   `pi_link_cancel()` forgets the pending request (mode change, stop).
 - Bad lines never become events; they are logged with a reason (`pi: bad line (...)`).
 
-**Current status (2026-10-24):** the camera → base calibration (`calib_T.npy`) is not done yet, so the bench
-bridge runs with `--camera-frame` and the x y z are **camera-frame** mm. After calibration the same bridge
-sends robot-base mm, with no change on the STM32. Colour detection quality (which colours are found in
-which light) belongs to the Pi / camera owner.
+**Current status (2026-10-24):** colours re-taught (all four found, confidence 70–87). The camera → base
+calibration (`calib_T.npy`) is not done yet, so the bridge runs with `--camera-frame` and the x y z are
+**camera-frame** mm. As soon as `calib_T.npy` appears in `~/arm`, the running bridge switches to robot-base mm
+by itself, with no change on the STM32. Colour detection quality belongs to the Pi / camera owner.
 
-## 3. Where each part lives
+## 3. Running the Pi side (for the camera owner)
+
+The bridge is meant to run all the time: install it once as a service and it starts at boot, restarts after a
+crash (or when the camera disappears) and answers every `FIND`.
+
+```sh
+# once, on the Pi (pi_bridge.py and pi_bridge.service copied to ~/arm/tools/ from ProjectDevGuide/tools/pi/)
+sudo cp ~/arm/tools/pi_bridge.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now pi_bridge
+```
+
+| I want to | Command |
+|---|---|
+| see what it does, live | `journalctl -u pi_bridge -f` |
+| run `--snapshot`, `--learn-color`, `--print-cam` (they need the camera) | `sudo systemctl stop pi_bridge`, run it, then `sudo systemctl start pi_bridge` |
+| use a new calibration | `--solve-calib points.csv` as usual: the bridge reloads `calib_T.npy` on the next `FIND` |
+| use re-taught colours | nothing: `color_refs.json` is reloaded within 2 s (re-teaching itself needs the service stopped, see above) |
+| change `pi_vision_uart.py` or `pi_bridge.py` | `sudo systemctl restart pi_bridge` |
+| run it by hand instead | `~/arm-env/bin/python ~/arm/tools/pi_bridge.py --camera-frame` (service stopped) |
+
+What the log shows (`journalctl -u pi_bridge -f`):
+
+```text
+calib: now sending CAMERA-frame mm (no calib_T.npy, --camera-frame)
+Colours: red learned x2, green learned x3, blue learned x3, black learned x2
+open /dev/serial0 115200 8N1, answering FIND. Ctrl+C to stop.
+status: frame CAMERA (no calib_T.npy, --camera-frame) | 13.9 fps | blue c74 95 4 288 0.1s | green c76 103 -102 419 0.1s | red c86 162 -74 376 0.1s | black c74 74 -56 360 0.1s | FIND 5 OBJ 5 NOTFOUND 0 ignored 0
+RX FIND red_box
+TX OBJ red_box 163 -74 376 [CAMERA] (10 ms after RX)
+```
+
+- `status` every 10 s: which frame is sent, camera fps, and per colour the confidence `c`, x y z (in the frame
+  being sent) and how old the detection is. `(not sent)` = too old or confidence below 40, a `FIND` would get
+  `NOTFOUND`.
+- `calib: ...` whenever `calib_T.npy` appears, changes or disappears (the matrix is printed). A broken file is
+  reported and not used. Once a calibration has been used, a missing or broken file never falls back to
+  camera frame: every `FIND` gets `NOTFOUND` until it is fixed.
+- `camera: no frame for 5 s` = camera unplugged or stuck; if the camera thread dies the bridge exits and
+  systemd restarts it.
+- `pi_vision_uart.py ... no longer has X` = the detector code was changed and the bridge needs updating. The
+  bridge uses `BlockCamera`, `BlockDetector`, `load_refs`, `best_per_color`, `COLOR_NAMES`, `CALIB_FILE`,
+  `REFS_FILE` and the detection fields `conf` and `xyz_cam_mm`.
+- On the STM32 side the same exchange appears in the debug log as `pi: OBJ red_box 163 -74 376 mm, rtt 4 ms`.
+
+The service passes `--camera-frame`. Once the team relies on calibration, remove it from
+`pi_bridge.service` so a missing `calib_T.npy` stops the bridge instead of sending camera-frame mm.
+
+## 4. Where each part lives
 
 | Part | File | Owner |
 |---|---|---|
 | Joystick, encoder, buttons, rail ADC | `RoboticArmMain/App/input/input.c` / `.h` | input member |
 | Pi link, protocol parser | `RoboticArmMain/App/pi_link/pi_link.c`, `pi_proto.c` | Pi member |
-| Pi bridge (text protocol, uses the detector) | `ProjectDevGuide/tools/pi/pi_bridge.py` → `~/arm/tools/` on the Pi | Pi member |
+| Pi bridge (text protocol, uses the detector) + service | `ProjectDevGuide/tools/pi/pi_bridge.py`, `pi_bridge.service` → `~/arm/tools/` on the Pi | Pi member |
 | Detector, colours, calibration | `~/arm/pi_vision_uart.py`, `color_refs.json`, `calib_T.npy` (on the Pi) | camera member |
 | Event ids | `RoboticArmMain/App/common/app_events.h` | core |

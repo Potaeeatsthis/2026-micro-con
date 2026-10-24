@@ -1,0 +1,28 @@
+# pi_bridge.service - keep pi_bridge.py running on the Raspberry Pi (starts at boot, restarts on failure).
+# Paths and user below are for the team Pi (user potae, venv ~/arm-env, code in ~/arm): change them if yours differ.
+# Install once (on the Pi, after copying pi_bridge.py and this file to ~/arm/tools/):
+#   sudo cp ~/arm/tools/pi_bridge.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now pi_bridge
+# Daily use:
+#   journalctl -u pi_bridge -f            live log (every FIND/reply + a status line every 10 s)
+#   sudo systemctl stop pi_bridge         before --snapshot / --learn-color / --print-cam (they need the camera)
+#   sudo systemctl start pi_bridge        afterwards
+#   sudo systemctl restart pi_bridge      after changing pi_vision_uart.py or pi_bridge.py
+# calib_T.npy and color_refs.json are picked up while running, no restart needed.
+# Remove --camera-frame once calib_T.npy exists if a missing calibration must stop the bridge instead.
+
+[Unit]
+Description=Pi bridge: D435 block positions to the STM32 over /dev/serial0 (text protocol v1)
+
+[Service]
+User=potae
+WorkingDirectory=/home/potae/arm
+ExecStart=/home/potae/arm-env/bin/python -u /home/potae/arm/tools/pi_bridge.py --camera-frame
+KillSignal=SIGINT
+TimeoutStopSec=10
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

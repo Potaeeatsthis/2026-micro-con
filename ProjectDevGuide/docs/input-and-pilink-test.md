@@ -122,7 +122,8 @@ stays unchanged. Lines that are not a valid `FIND` are logged and ignored.
 ```
 
 It **refuses to start without `calib_T.npy`**, because the protocol is robot-base mm; `--camera-frame`
-overrides that for bench tests. The camera takes about 20 s to start (STM32 timeouts until then). It logs when
+sends camera-frame mm until `calib_T.npy` appears (it is re-read while running, like `color_refs.json`).
+Running it as a service, the log and debugging: [`inputs-and-pi-interface.md`](inputs-and-pi-interface.md) §3. The camera takes about 20 s to start (STM32 timeouts until then). It logs when
 the camera stops delivering frames. One instance only: stop `pi_vision_uart.py` / `pilink_test.py` first.
 Unit test of the line handling (no camera): `python3 ProjectDevGuide/tests/host/test_pi_bridge.py`.
 
