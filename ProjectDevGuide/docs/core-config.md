@@ -16,6 +16,9 @@ Its main copy is `ProjectDevGuide/docs/core-config.md` in the repo; change it th
 ST-LINK USB (§11); heap and stack 0x2000 each; the SRAM2 MPU region is **region 1** (region 0 = CubeMX's
 background region); CubeMX pin traps and setting order (§13); CubeIDE project setup (§14); CI (§15).
 
+**Update 24 Oct 2026 (no `.ioc` change):** servo signals are wired **direct** for now, the SN74HC244N stage failed
+(§11); notes from the six-servo bench test (§4.1); voice-word timing for modules that use voice events (§9).
+
 ---
 
 ## 1. What changed from `robotic-arm-guide.md`
@@ -32,8 +35,8 @@ background region); CubeMX pin traps and setting order (§13); CubeIDE project s
 | Software | – | Bare-metal: main loop + interrupts (no RTOS), §9 |
 
 Unchanged: four modes, KY-023 joystick + KY-040 encoder, MODE and Hold-to-Enable buttons,
-1NO+1NC latching E-stop (NC cuts the relay, NO reports to the STM32), SN74AHCT244N buffer,
-power architecture, shared motion pipeline (every mode only sets targets).
+1NO+1NC latching E-stop (NC cuts the relay, NO reports to the STM32), SN74AHCT244N buffer
+(planned; servos wired direct until it is fitted, §11), power architecture, shared motion pipeline (every mode only sets targets).
 
 ---
 
@@ -141,6 +144,18 @@ and home are still unmeasured, so the firmware's `0/180/90` values are
 placeholders and not safe installed limits. Calibration per servo lives in code
 (`App/motion/servo_cal.c`), not in CubeMX; the canonical table is
 [`servo-calibration.md`](servo-calibration.md).
+
+**Bench test, 24 Oct 2026** (all six servos, direct wiring, test code on branch `test/servo-power-test`,
+never merged): the timers and pins above work on all six channels. Lessons for `motion/`:
+
+- **Write the CCRs only from the TIM6 tick, never from the main loop.** The main loop is blocked
+  ≈ 43 ms by every CNN run (§9), so a ramp stepped from the loop skips frames and the servos jerk
+  and lag behind the log.
+- **Small steps disappear in the servo deadband.** Reported deadbands: SG90/SG92R about 10 µs,
+  MG996R about 5 µs (datasheets / seller pages, not measured by us). With ≈ 10.7 µs per degree
+  (J1: 500 → 2430 µs over 180°), `APP_SPEED_FINE_DEG_S` 10 °/s gives 0.2° ≈ 2 µs per 20 ms frame,
+  below the SG deadband, so an SG joint moves in jumps. The test ran at 60 °/s (≈ 13 µs per frame)
+  and was smooth. Choose the fine speed with this in mind.
 
 ### 4.2 KY-040 — TIM1 encoder mode
 Combined channels: Encoder Mode, **Encoder Mode TI1 and TI2**, prescaler 0, period 65535,
@@ -297,6 +312,20 @@ interrupt; anything slow runs in the loop.
 holds 256 ms of audio; if the loop is away longer, audio is lost (`FAULT_VOICE_OVERRUN`).
 So the LCD redraws only the parts that changed, never the whole screen in every loop.
 
+**Voice-word timing (for modules that react to `EVT_VOICE_WORD`).** Settings in `App/voice/voice.c`:
+
+| Setting | Value | Effect |
+|---|---|---|
+| `VOICE_STRIDE_FRAMES` | 10 (CNN every 100 ms) | the loop is busy ≈ 43 ms of every 100 ms |
+| `VOICE_AVG` | 3 | a word must win several runs in a row |
+| `VOICE_THRESHOLD` | 0.75 | averaged probability needed |
+| `VOICE_MIN_SNR_DB` | 12 dB | quieter sound is ignored |
+| `VOICE_REFRACTORY_MS` | 1500 ms | no second word within 1.5 s |
+
+So a word event arrives a few CNN runs after the word, and two words closer than 1.5 s give one
+event. Treat voice as "do this next", never as a timing signal (e.g. do not cut a servo pulse on a
+word; finish or stop the move in `motion/`).
+
 ---
 
 ## 10. Code layout and team rules
@@ -353,6 +382,22 @@ So the LCD redraws only the parts that changed, never the whole screen in every 
 - KY-040 CLK/DT have 10 kΩ pull-ups on the module; its SW pin uses the STM32 internal pull-up.
 - Servo signals go through the SN74AHCT244N (5.1 V logic rail); servo current never goes
   through the Nucleo or the buffer.
+- **Current wiring (24 Oct 2026): no buffer.** Each STM32 PWM pin → **330 Ω** in series → servo
+  signal wire, with one common GND (servo buck, Nucleo). All six servos move this way (bench test,
+  §4.1). The servo reads the pulse **width**, so the 3.3 V level and the unloaded calibration from
+  the 5 V Uno bench both still apply. The 330 Ω limits the current into the STM32 pin if the servo
+  side ever drives the line; a 10 kΩ pull-down per signal is optional (it only stops twitching
+  while the STM32 is in reset).
+- **Do not use the SN74HC244N (no "T") with a diode on VCC.** That stage was built and failed: no
+  or erratic output. An HC input needs VIH ≥ 3.15 V at VCC 4.5 V (TI SCLS130D), too close to a
+  3.3 V pin, which is why a diode was added to lower VCC. Measured on the bench: STM32 pin correct
+  (PC6 0.23 V DC average for a 1460 µs pulse; 3.3 V × 1460 / 20000 = 0.24 V expected), but /OE
+  pins 1 and 19 floating (0.8 V and 1.1 V, not tied to GND), pin 20 (VCC) at a few mV in one
+  check, output at −0.7 V. The chip may be damaged; do not reuse it. The **HCT/AHCT** versions
+  have TTL inputs (VIH 2.0 V) and need no diode. When the SN74HCT244N arrives: pin 20 straight to 5 V, pin 10 GND, pins 1 and
+  19 to GND, unused inputs (e.g. 15, 17) to GND, then check one channel stage by stage
+  ([`servo-calibration.md`](servo-calibration.md), "Signal check").
+- Power order: Nucleo on **before** the servo rail; servo rail off **before** the Nucleo.
 - **Final robot with no laptop: power the Nucleo from the Pi's USB port into the ST-LINK USB connector.**
   Not through E5V: the 8 MHz HSE clock comes from the ST-LINK's MCO, and without the ST-LINK running
   there is no clock (the board stops in `Error_Handler` after the 5 s HSE timeout). The USB link also lets
