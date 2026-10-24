@@ -90,6 +90,21 @@ static int count_events_type(uint16_t type)
   return hit;
 }
 
+static void check_servo_cal(int joint, uint16_t us0, uint16_t us90, uint16_t us180)
+{
+  char msg[48];
+  snprintf(msg, sizeof msg, "J%d 0 deg pulse", joint + 1);
+  CHECK(servo_deg_to_us(joint, 0.0f) == us0, msg);
+  snprintf(msg, sizeof msg, "J%d 90 deg pulse", joint + 1);
+  CHECK(servo_deg_to_us(joint, 90.0f) == us90, msg);
+  snprintf(msg, sizeof msg, "J%d 180 deg pulse", joint + 1);
+  CHECK(servo_deg_to_us(joint, 180.0f) == us180, msg);
+  snprintf(msg, sizeof msg, "J%d 45 deg midpoint pulse", joint + 1);
+  CHECK(servo_deg_to_us(joint, 45.0f) == (uint16_t)((us0 + us90) / 2u), msg);
+  snprintf(msg, sizeof msg, "J%d 135 deg midpoint pulse", joint + 1);
+  CHECK(servo_deg_to_us(joint, 135.0f) == (uint16_t)((us90 + us180) / 2u), msg);
+}
+
 int main(void)
 {
   printf("== event queue\n");
@@ -100,11 +115,14 @@ int main(void)
   CHECK(e.v[0] == 0, "fifo order");
   app_events_drain(); app_events_init();
 
-  printf("== servo calibration\n");
-  CHECK(servo_deg_to_us(0, 0.0f) == 616, "0 deg -> 616 us");
-  CHECK(servo_deg_to_us(0, 90.0f) == 1523, "90 deg -> 1523 us");
-  CHECK(servo_deg_to_us(0, 180.0f) == 2400, "180 deg -> 2400 us");
-  CHECK(servo_deg_to_us(0, 250.0f) == 2400, "out of range clamps");
+  printf("== servo calibration (measured unloaded endpoints; limits/home are placeholders)\n");
+  check_servo_cal(J1_BASE,         500, 1460, 2430);
+  check_servo_cal(J2_SHOULDER,     500, 1430, 2440);
+  check_servo_cal(J3_ELBOW,        540, 1530, 2500);
+  check_servo_cal(J4_WRIST_PITCH,  500, 1440, 2370);
+  check_servo_cal(J5_WRIST_ROT,    640, 1580, 2470);
+  check_servo_cal(J6_GRIPPER,      580, 1570, 2500);
+  CHECK(servo_deg_to_us(0, 250.0f) == 2430, "out of range clamps");
 
   printf("== boot: no pulse until safety allows, then home\n");
   set_pin(ESTOP_NO_GPIO_Port, ESTOP_NO_Pin, 1);          /* boot with e-stop latched */
@@ -117,7 +135,7 @@ int main(void)
   CHECK(htim3.ccr[0] == 0, "still no pulse before confirm");
   app_event_post0(EVT_TOUCH_CONFIRM); run_ms(40);
   CHECK(safety_state() == SAFETY_OK, "confirm touch button clears the latch");
-  CHECK(htim3.ccr[0] == 1523, "first pulse = home pose (90 deg)");
+  CHECK(htim3.ccr[0] == 1460, "first pulse = home pose (90 deg)");
 
   printf("== voice mode: no hold-to-enable needed, never moves on its own\n");
   CHECK(modes_current() == MODE_VOICE, "boots in voice mode");

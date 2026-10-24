@@ -96,14 +96,14 @@ Turning a flag off means the module is not started or called; its code still com
 
 ## 5. Safety behaviour everyone relies on
 
-- **No pulse at power-up** until safety allows; then the first pulse is the calibrated home pose.
+- **No pulse at power-up** until safety allows; then the first pulse is the home pose from `servo_cal.c` (currently the 90° placeholder; the installed home is not yet measured).
 - **Manual modes move only while Hold-to-Enable is held.** On release, motion freezes in the same 20 ms tick and the target is reset to the current angle, so nothing jumps later.
 - **A jog that is not refreshed for 150 ms stops by itself.** Joystick modes call `manual_jog()` every pass, so a hung main loop cannot keep the arm moving.
 - **After the e-stop or a servo-rail loss, motion stays blocked** until power is back **and** someone presses the touch **OK** button (`safety_confirm_restart()`).
 - **A fatal fault** (`app_fault_raise(x, true)`) freezes motion until reset and lights LD3 (red).
 - **LEDs:** LD1 blinking = main loop alive; LD2 = voice word detected; LD3 = fatal fault.
 
-These are covered by host tests (49 checks). CI runs them on every PR; run them yourself with `sh ProjectDevGuide/tests/host/run.sh` (gcc on a PC; on Windows use Git Bash).
+These are covered by host tests (76 checks). CI runs them on every PR; run them yourself with `sh ProjectDevGuide/tests/host/run.sh` (gcc on a PC; on Windows use Git Bash).
 
 ---
 

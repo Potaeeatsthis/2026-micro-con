@@ -7,6 +7,7 @@ This folder holds the material around it:
 |---|---|---|
 | `docs/TEAM_GUIDE.md` | who owns which folder, the 10 rules, how modules talk, feature flags, PR checklist | every team member — read once |
 | `docs/core-config.md` | pins, clocks, timers, DMA, interrupts, memory, CubeMX checklist, CubeIDE setup, CI | anyone touching hardware or the `.ioc` |
+| `docs/servo-calibration.md` | canonical unloaded servo measurements, confirmed unit-to-joint/pin map, installed-calibration checklist | anyone calibrating or touching motion |
 | `docs/integration/` | how to open, build and run the project in CubeIDE; templates of our USER CODE in generated files | everyone (section 1), the `.ioc` owner (the rest) |
 | `docs/module_template/` | starting files for a new feature module | whoever adds a module |
 | `tests/host/` | behaviour tests of safety / motion / modes / voice task / Pi link / screen logic, built with gcc on a PC | CI and anyone changing those modules |

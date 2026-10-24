@@ -24,19 +24,21 @@ covers only the STM32 build, wiring, and upload.
   Arduino core variant selects `SERIAL_UART_INSTANCE 3` ("Connected to
   ST-Link"); this build does **not** use USB CDC for `Serial`.
 
-| Unit ID | MCU pin | Timer channel | Header label / connection ID |
-|---|---|---|---|
-| 1 | PC6 | TIM3 CH1 | `PC6` |
-| 2 | PC7 | TIM3 CH2 | `PC7` |
-| 3 | PD12 | TIM4 CH1 | `PD12` |
-| 4 | PD13 | TIM4 CH2 | `PD13` |
-| 5 | PD14 | TIM4 CH3 | `PD14` |
-| 6 | PD15 | TIM4 CH4 | `PD15` |
+| Unit ID | Bench label | MCU pin | Timer channel | Header label / connection ID |
+|---|---|---|---|---|
+| 1 | `MG996R-1` | PC6 | TIM3 CH1 | `PC6` |
+| 2 | `MG996R-2` | PC7 | TIM3 CH2 | `PC7` |
+| 3 | `MG996R-3` | PD12 | TIM4 CH1 | `PD12` |
+| 4 | `SG92R-1` | PD13 | TIM4 CH2 | `PD13` |
+| 5 | `SG92R-3` | PD14 | TIM4 CH3 | `PD14` |
+| 6 | `SG90` | PD15 | TIM4 CH4 | `PD15` |
 
 Use the **MCU pin names printed on the NUCLEO-144 headers** (`PC6`, `PD12`,
-etc.), not Arduino-style pin numbers such as `9` or `D9`. The six unit IDs are
-bench connection IDs only. They are **not** a final assignment of servos to arm
-joints; the joint map can change after assembly and calibration.
+etc.), not Arduino-style pin numbers such as `9` or `D9`. The six unit IDs and
+labels identify physical bench servos. The confirmed current mapping is
+J1..J6 = units 1..6 (J5 is `SG92R-3`, J6 is `SG90`); installed zeros, limits
+and home are still measured after assembly, not inferred from the labels. See
+[`ProjectDevGuide/docs/servo-calibration.md`](../../ProjectDevGuide/docs/servo-calibration.md).
 
 Both timers run at **50 Hz** (20 ms period) with a 1 us timer tick, so a compare
 value is the pulse width in microseconds. Only **one output is armed at a
@@ -47,10 +49,11 @@ timers are configured, no channel is enabled, and the timers do not start until
 a valid `arm` command. The first compare value is loaded before the first
 channel start.
 
-The hardware mapping follows the PWM plan in
-[`../../study/robotic-arm-guide.md`](../../study/robotic-arm-guide.md) (J1-J6
-are PC6, PC7, PD12-PD15 for TIM3/TIM4). The guide's J1-J6 assignment is
-provisional until the physical arm is calibrated.
+The hardware mapping follows the confirmed J1-J6 PWM plan in
+[`../../ProjectDevGuide/docs/core-config.md`](../../ProjectDevGuide/docs/core-config.md):
+J1-J6 are PC6, PC7, PD12-PD15 for TIM3/TIM4. The unit-to-joint mapping is
+confirmed for the current build, but the installed safe ranges and home pose
+remain uncalibrated until measured on the assembled arm.
 
 ## Install PlatformIO
 

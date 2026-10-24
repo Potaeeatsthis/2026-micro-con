@@ -131,11 +131,16 @@ should go away before the Pi is wired, set PG9 to pull-up in CubeMX (GPIO Settin
 | Clock | internal, 108 MHz |
 | Prescaler / Period | **107 / 19999** → 1 µs per count, 20 ms (50 Hz) |
 | Mode | PWM Generation CHx, PWM mode 1, polarity high |
-| Pulse (initial) | **0** (no pulse until the firmware has loaded the calibrated home pose) |
+| Pulse (initial) | **0** (no pulse until the firmware has loaded its home pose; the current 90° home is a placeholder, not an installed calibration) |
 | Auto-reload preload / output-compare preload | Enable / Enable (a new pulse takes effect at the next 20 ms frame) |
 
-`CCR = pulse in µs`. 500–2500 µs fits (the SG92R test measured 616 µs at 0°, 1523 µs at
-90°, 2400 µs at 180°). Calibration per servo lives in code (`App/motion/servo_cal.c`), not in CubeMX.
+`CCR = pulse in µs`. 500–2500 µs fits. Measured **unloaded** pulses at
+0°/90°/180° are J1 500/1460/2430, J2 500/1430/2440, J3 540/1530/2500,
+J4 500/1440/2370, J5 640/1580/2470, J6 580/1570/2500. Installed limits, zero
+and home are still unmeasured, so the firmware's `0/180/90` values are
+placeholders and not safe installed limits. Calibration per servo lives in code
+(`App/motion/servo_cal.c`), not in CubeMX; the canonical table is
+[`servo-calibration.md`](servo-calibration.md).
 
 ### 4.2 KY-040 — TIM1 encoder mode
 Combined channels: Encoder Mode, **Encoder Mode TI1 and TI2**, prescaler 0, period 65535,
@@ -369,7 +374,7 @@ not fitted yet; joint limits are always enforced in software as well.
 |---|---|---|
 | 1 | Arm geometry for IK (joint order, link lengths, zero pose) | `kinematics/` only — not the `.ioc` |
 | 2 | Pi message format details; Pi sends object XYZ in the **robot base frame**? | `pi_link/` only — not the `.ioc` |
-| 3 | MG996R issue (which joints use MG996R vs SG92R) | calibration only |
+| 3 | Installed servo calibration: safe min/max, joint zero and home (unit-to-joint mapping confirmed J1-J6 = units 1-6) | `motion/` only — not the `.ioc` |
 | 4 | Optional PG9 pull-up (removes the boot-time `fault: code 7` without a Pi) | `.ioc`, owner's choice |
 
 ---
@@ -449,7 +454,7 @@ Checks:
 | Check | What it proves |
 |---|---|
 | `build (Debug)`, `build (Release)` | `ProjectDevGuide/ci/build_firmware.py` compiles and links RoboticArmMain with the source folders, defines, include paths, libraries and linker script **read from `.cproject`** (Ubuntu `arm-none-eabi-gcc`). Fails on any error, flash/RAM overflow, `.dma_buffer` not at 0x2007C000 or over 16 KB, and any warning in `App/` (third-party code exempt: KISS FFT, `App/lcd/driver/`) |
-| `host-tests` | `ProjectDevGuide/tests/host/run.sh`: safety / motion / modes / voice-mode / pi_link / screen-logic behaviour on a PC (49 checks). The real `lcd_port.c` (ILI9341 driver, HAL) is replaced by `ProjectDevGuide/tests/host/fake/lcd_port_fake.c` |
+| `host-tests` | `ProjectDevGuide/tests/host/run.sh`: safety / motion / modes / voice-mode / pi_link / screen-logic behaviour on a PC (76 checks). The real `lcd_port.c` (ILI9341 driver, HAL) is replaced by `ProjectDevGuide/tests/host/fake/lcd_port_fake.c` |
 | `repo-rules` | `ProjectDevGuide/ci/check_rules.py`: `RoboticArmMain/` holds only the project (no build output, IDE state, `app_config_local.h`, `.md` notes, `docs/` or `tests/`); no file over 3 MB; `.cproject` source folders, `../App`, AI library and linker script in both configurations; `main.c` and `app_x-cube-ai.c` USER CODE as in §10; USER CODE markers paired; callbacks and `__io_putchar` in one place; the `.ioc` model file committed |
 
 Run the same checks locally from the repo root before pushing:

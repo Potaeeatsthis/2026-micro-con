@@ -415,17 +415,20 @@ The STM32 uses hardware timers to generate stable servo PWM. Software delays mus
 
 Both timers count in 1 µs steps with a 20 ms period (50 Hz). The compare value equals the pulse width in microseconds, and any pulse from 500 to 2500 µs is possible.
 
-Each servo must be calibrated, because each one has its own pulse limits. For example, the SG92R test measured:
+Each servo must be calibrated, because each one has its own pulse limits. The
+measured unloaded values are in the
+[canonical calibration table](../ProjectDevGuide/docs/servo-calibration.md).
+For example, J1 (`MG996R-1`) measured:
 
 ```text
-  0 deg ->  616 us
- 90 deg -> 1523 us
-180 deg -> 2400 us
+  0 deg ->  500 us
+ 90 deg -> 1460 us
+180 deg -> 2430 us
 ```
 
-The STM32 stores a calibration table for each servo and converts angles with two straight-line sections (0-90° and 90-180°). Each joint also has its own safe minimum and maximum angle.
+The STM32 stores a calibration table for each servo and converts angles with two straight-line sections (0-90° and 90-180°). Each joint also has its own safe minimum and maximum angle. The installed limits, zero and home are still unmeasured; the firmware's `0/180/90` values are placeholders.
 
-At power-up the PWM outputs send no pulse until the firmware has loaded the calibrated home pose.
+At power-up the PWM outputs send no pulse until the firmware has loaded its home pose (currently the 90° placeholder until installed calibration).
 
 The trajectory controller updates target pulse widths smoothly. It never jumps from one large angle to another.
 
@@ -721,7 +724,7 @@ This architecture uses all three requested modules: ADC, PWM, and graphic LCD.
 | Item | Owner |
 |---|---|
 | Arm geometry for IK (joint order, link lengths, zero pose) | Mechanical / IK member |
-| Which servo model on each joint (MG996R / SG92R) and the MG996R problem | Servo member |
+| Installed servo calibration (safe range, zero, home) after assembly; unit-to-joint map already confirmed J1-J6 = units 1-6 | Servo / motion member |
 | Whether to fit the 4 limit switches, and where | Mechanical member |
 | Jog queue limits (item count, total travel) | Voice / motion members, on the real arm |
 | Pi reply timeout and camera-to-robot calibration | Pi member |

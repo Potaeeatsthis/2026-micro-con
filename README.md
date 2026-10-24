@@ -21,6 +21,6 @@ The **Raspberry Pi 4** processes the RGB-D camera and sends object positions to 
 
 - [Final build specification](study/robotic-arm-final-build-spec.md): equipment, wiring, build order and safety checks.
 - [System guide](study/robotic-arm-guide.md): mode controls and STM32 responsibilities.
-- [Code and bench tests](code/README.md): the Arduino servo test sketches.
+- [Code and bench tests](code/README.md): the servo calibration bench and the merged STM32 firmware skeleton.
 
-**Current code status:** the repository contains single-servo Arduino tests. The Pi camera program, STM32 voice model, IK solver and complete arm controller are still planned. The UART and peripheral pin map needs CubeMX verification before wiring.
+**Current code status:** the servo bench tests and the merged STM32 HAL skeleton are in the repository. The skeleton includes the app loop, safety, motion/calibration, modes, voice, Pi link and LCD framework, but IK/FK and arm geometry are still placeholders and the installed servo limits/home are not calibrated. The measured unloaded servo values are in [the canonical calibration table](ProjectDevGuide/docs/servo-calibration.md). The Pi camera program and installed-arm validation are still open.
