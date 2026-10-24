@@ -14,6 +14,7 @@
  *
  * APP_INPUT_TEST (app_config_local.h only): sends FIND <APP_INPUT_TEST_OBJ> every
  * APP_INPUT_TEST_FIND_MS and prints link counters once a second when they change.
+ * APP_INPUT_TEST_CYCLE 1 asks for all four objects in turn instead (camera test).
  * needs APP_USE_MODES 0 (the voice mode would also send FIND) and APP_USE_MOTION 0.
  */
 #include "pi_link/pi_link.h"
@@ -36,6 +37,9 @@
 #endif
 #ifndef APP_INPUT_TEST_OBJ
 #define APP_INPUT_TEST_OBJ OBJ_RED_BOX
+#endif
+#ifndef APP_INPUT_TEST_CYCLE
+#define APP_INPUT_TEST_CYCLE 0
 #endif
 #if APP_INPUT_TEST && (APP_USE_MODES || APP_USE_MOTION)
 #error "APP_INPUT_TEST needs APP_USE_MODES 0 and APP_USE_MOTION 0 (no motion, test sends its own FIND)"
@@ -184,6 +188,7 @@ static void handle_line(char *line, uint32_t len)
 static uint32_t s_test_find_ms;
 static uint32_t s_test_stat_ms;
 static uint32_t s_test_stat_sum;
+static uint8_t  s_test_obj = (uint8_t)APP_INPUT_TEST_OBJ;
 
 /* periodic FIND + 1 Hz counters (only printed when something changed) */
 static void test_step(void)
@@ -191,7 +196,10 @@ static void test_step(void)
   uint32_t now = HAL_GetTick();
   if (s_pending == OBJ_NONE && ms_since(now, s_test_find_ms) >= APP_INPUT_TEST_FIND_MS) {
     s_test_find_ms = now;
-    if (!pi_link_find(APP_INPUT_TEST_OBJ)) LOG("pi: test FIND not sent (tx busy)\r\n");
+    if (!pi_link_find((object_id_t)s_test_obj)) LOG("pi: test FIND not sent (tx busy)\r\n");
+#if APP_INPUT_TEST_CYCLE
+    else s_test_obj = (uint8_t)((s_test_obj + 1u) % (uint8_t)OBJ_COUNT);
+#endif
   }
   if (ms_since(now, s_test_stat_ms) >= 1000u) {
     s_test_stat_ms = now;
@@ -216,7 +224,8 @@ void pi_link_init(void)
   }
   LOG("pi: link on USART6, timeout %lu ms\r\n", (unsigned long)APP_PI_TIMEOUT_MS);
 #if APP_INPUT_TEST
-  LOG("pi: TEST mode, FIND %s every %lu ms\r\n", pi_object_name(APP_INPUT_TEST_OBJ),
+  LOG("pi: TEST mode, FIND %s every %lu ms\r\n",
+      APP_INPUT_TEST_CYCLE ? "all objects in turn" : pi_object_name(APP_INPUT_TEST_OBJ),
       (unsigned long)APP_INPUT_TEST_FIND_MS);
   s_test_find_ms = HAL_GetTick() - APP_INPUT_TEST_FIND_MS + 1000u;   /* first FIND 1 s after boot */
 #endif

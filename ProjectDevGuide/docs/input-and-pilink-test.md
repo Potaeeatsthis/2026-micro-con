@@ -20,6 +20,7 @@ Create (or extend) `RoboticArmMain/App/common/app_config_local.h`. It is gitigno
 /* optional tunables (defaults shown):
 #define APP_INPUT_TEST_FIND_MS  5000u         period of the test FIND
 #define APP_INPUT_TEST_OBJ      OBJ_RED_BOX   object the test FIND asks for
+#define APP_INPUT_TEST_CYCLE    0             1 = ask for all four objects in turn
 #define APP_PI_TIMEOUT_MS       3000u         reply timeout under test
 */
 ```
@@ -107,6 +108,23 @@ camera-frame mm, not robot-base mm** (the script prints which frame it sends). T
 (robot-base frame, top-face centre, integer mm) needs that calibration; see `SETUP_PI.md` §9 on the Pi.
 Only detections younger than `--max-age` (1 s) with confidence ≥ `--min-conf` (40) are sent, otherwise
 `NOTFOUND`.
+
+### The real bridge: `pi_bridge.py`
+
+`ProjectDevGuide/tools/pi/pi_bridge.py` is the Pi side for real use: it answers every `FIND` from the
+latest D435 detection (`OBJ <name> x y z` or `NOTFOUND <name>`) and sends nothing else. It uses the
+same pipeline imports as `--realsense` above, the same `--max-age` / `--min-conf`, and `pi_vision_uart.py`
+stays unchanged. Lines that are not a valid `FIND` are logged and ignored.
+
+```sh
+~/arm-env/bin/python ~/arm/tools/pi_bridge.py                          # needs ~/arm/calib_T.npy
+~/arm-env/bin/python ~/arm/tools/pi_bridge.py --camera-frame --duration 60   # bench: camera-frame mm
+```
+
+It **refuses to start without `calib_T.npy`**, because the protocol is robot-base mm; `--camera-frame`
+overrides that for bench tests. The camera takes about 20 s to start (STM32 timeouts until then). It logs when
+the camera stops delivering frames. One instance only: stop `pi_vision_uart.py` / `pilink_test.py` first.
+Unit test of the line handling (no camera): `python3 ProjectDevGuide/tests/host/test_pi_bridge.py`.
 
 ## 5. What the STM32 logs
 
@@ -206,3 +224,21 @@ Effect: after a very fast spin, `EVT_ENC_STEP` can be off by one detent.
 | STM32 → Pi (PG14 → pin 10) works | yes: 17 of 17 `FIND red_box` received, none garbled |
 
 The round-trip includes the Pi script's 10 ms polling. With the real camera pipeline, add its detection time.
+
+| Camera -> Pi -> STM32 (`pi_bridge.py --camera-frame`, no calibration yet) | Value |
+|---|---|
+| Setup | D435 on USB 2 (15 fps, depth 480x270), four blocks on the table, `APP_INPUT_TEST_CYCLE 1`, FIND every 2 s |
+| FINDs answered | 38 / 38 `OBJ`, all four colours, 0 bad lines |
+| Position spread at rest (camera mm) | red ≤ 2, green ≤ 1, blue ≤ 3, black ≤ 1 |
+| FIND -> OBJ round-trip (min / typical / max ms) | 4 / 4 / 10 |
+| No blocks in view | 32 / 32 `NOTFOUND` (a green PCB at confidence 13 was correctly not sent) |
+
+Snapshot of that bench setup (`pi_vision_uart.py --snapshot`; panels: colour with detections, depth,
+height above the table, colour vs table). On the plain white table about 60% of pixels had no depth, so
+two of the four blocks were placed from the table plane (`(estimated)` in the list):
+
+![depth camera snapshot, four blocks](img/depthcam-snapshot.jpg)
+
+Positions are camera-frame until `calib_T.npy` exists (`SETUP_PI.md` §9 on the Pi); then the same bridge
+sends robot-base mm with no other change.
+
