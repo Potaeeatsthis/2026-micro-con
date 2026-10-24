@@ -1,5 +1,6 @@
 #!/bin/sh
-# host behaviour tests for safety / motion / modes / mode_voice / pi_link / events.
+# host behaviour tests for safety / motion / modes / mode_voice / pi_link / events,
+# plus test_pi_proto.c for the pi line parser (pi_link/pi_proto.c, pure code).
 # the screen logic (lcd.c) is tested; the real lcd_port.c talks to the ILI9341 driver (HAL), so a fake
 # in fake/lcd_port_fake.c stands in for it here.
 # needs gcc on a pc (linux, mac, or git-bash/msys2 on windows). run from anywhere:
@@ -12,9 +13,18 @@ gcc -std=gnu11 -O1 -g -Wall -Wextra -Wshadow -Wno-unused-parameter \
   -I"$HERE/fake" -I"$A" -o "$HERE/test_app" "$HERE/test_app.c" \
   "$A/common/app_events.c" "$A/common/app_fault.c" "$A/safety/safety.c" \
   "$A/motion/motion.c" "$A/motion/servo.c" "$A/motion/servo_cal.c" "$A/kinematics/kinematics.c" \
-  "$A"/modes/*.c "$A/lcd/lcd.c" "$HERE/fake/lcd_port_fake.c"
+  "$A"/modes/*.c "$A/lcd/lcd.c" "$HERE/fake/lcd_port_fake.c" "$A/pi_link/pi_proto.c"
+# the parser test binary goes to a temp dir (nothing new to gitignore)
+T=$(mktemp -d)
+trap 'rm -rf "$T"' EXIT
+gcc -std=gnu11 -O1 -g -Wall -Wextra -Wshadow -Wno-unused-parameter \
+  -I"$A" -o "$T/test_pi_proto" "$HERE/test_pi_proto.c" "$A/pi_link/pi_proto.c"
 # keep the test's own exit code (a pipe into grep would hide a failure)
 rc=0
 "$HERE/test_app" > "$HERE/test_app.log" || rc=$?
 grep -E "^==|FAIL|passed" "$HERE/test_app.log"
-exit $rc
+rc2=0
+"$T/test_pi_proto" > "$T/test_pi_proto.log" || rc2=$?
+grep -E "^==|FAIL|passed" "$T/test_pi_proto.log"
+[ $rc -ne 0 ] && exit $rc
+exit $rc2
