@@ -78,6 +78,31 @@ record; do not use it for the arm or for a new calibration.
 |---|---|---|---|---|---|---|---|---|
 | — | `SG92R-2` (retired) | — | 680 | 1550 | 2390 | 1550 | 500..2500 | Historical run 2; replaced as unreliable |
 
+## STM32 bench test (24 Oct 2026)
+
+All six servos moved from `RoboticArmMain` with the signals wired **direct** (STM32 pin → 330 Ω →
+servo signal, common GND); the SN74HC244N + diode stage did not work (see
+[`core-config.md`](core-config.md) §11). The test code (all joints to 90°, then the voice word
+"pick" swings J1..J6 one at a time) is on branch `test/servo-power-test`. It is a bench tool only and
+is never merged: it writes PWM outside `motion/`. Turn it on there in `app_config_local.h` with
+`APP_USE_SERVO_TEST 1`, `APP_USE_MOTION 0`, `APP_USE_MODES 0`.
+
+## Signal check (when a servo does not move)
+
+Measure before changing code. A multimeter on DC shows the **average** of the PWM signal,
+≈ high level × pulse / 20000 µs. Example for a joint held at 90° (J1, 1460 µs):
+
+| Point (to common GND) | Expected | Means if wrong |
+|---|---|---|
+| STM32 pin (e.g. PC6) | 3.3 V × 1460 / 20000 ≈ **0.24 V** (measured 0.23 V on 24 Oct) | 0 V: channel not started or CCR = 0; 3.3 V: pin stuck high |
+| Buffer VCC (pin 20) / GND (pin 10) | 5 V / 0 V | buffer not powered |
+| Buffer /OE (pins 1 and 19) | **0 V** (tied to GND) | floating /OE: outputs undefined |
+| Buffer output for that channel | 5 V × 1460 / 20000 ≈ **0.37 V** | input OK but output wrong: wiring or chip |
+| Servo signal wire at the plug | same as the line feeding it | broken wire or wrong row on the breadboard |
+| Servo red / brown | rail voltage (6 V) / 0 V | servo not powered |
+
+The averages are calculated, not measured, except the PC6 reading.
+
 ## Installed calibration status
 
 Everything below is still **to be measured after assembly**:
