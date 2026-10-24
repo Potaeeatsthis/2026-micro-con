@@ -4,7 +4,11 @@
  * outputs:
  *   - events (EVT_BTN_MODE, EVT_ENC_STEP, EVT_ENC_PRESS, EVT_JOY_PRESS) for one-shot actions
  *   - getters (input_joy_x/y) for continuous values, read by the active mode every loop
- * hold-to-enable and e-stop are NOT here, they belong to safety/.
+ * hold-to-enable and e-stop are NOT here, they belong to safety/. this module never moves
+ * anything: modes read the getters / events and set motion targets.
+ * buttons: debounced press and release are tracked; only presses become events.
+ * APP_INPUT_TEST (local config only): 10 Hz bench log of raw / averaged / dead-zone joystick
+ * values, encoder counts and button press/release, see input.c.
  *
  * hardware: ADC1 ranks IN3 (PA3 joy X), IN10 (PC0 joy Y), IN13 (PC3 rail), triggered
  * by TIM2 at 1 kHz, DMA circular. TIM1 encoder mode on PE9/PE11, 4 counts per detent.
