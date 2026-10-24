@@ -18,6 +18,8 @@
  *   enc: TIM1 counter, raw delta since the last line, direction, total (only when it moved)
  *   btn: debounced press / release of MODE, ENC, JOY
  *   evt: every event input posts (what the modes receive), ENC_STEP with a running sum
+ * APP_INPUT_LOG_EVENTS (app_config_local.h only): just the evt: lines, allowed with modes and
+ * motion on (bench test of the modes, see ProjectDevGuide/docs/controls-bench-test.md).
  * the isr part is a min/max/sum next to the existing averaging loop (no extra loop).
  */
 #include "input/input.h"
@@ -50,6 +52,10 @@
 #if APP_INPUT_TEST && (APP_USE_MODES || APP_USE_MOTION)
 #error "APP_INPUT_TEST needs APP_USE_MODES 0 and APP_USE_MOTION 0 (no motion during the bench test)"
 #endif
+#ifndef APP_INPUT_LOG_EVENTS
+#define APP_INPUT_LOG_EVENTS 0
+#endif
+#define INPUT_EVT_LOG (APP_INPUT_TEST || APP_INPUT_LOG_EVENTS)
 
 static uint16_t s_adc_buf[ADC_CH * ADC_SAMPLES] DMA_BUF;  /* [x, y, rail, x, y, rail, ...] */
 static volatile uint16_t s_raw[ADC_CH];
@@ -83,7 +89,6 @@ static volatile uint16_t s_t_max[2];
 static volatile uint32_t s_t_sum[2];
 static volatile uint32_t s_t_n;
 static void test_step(uint8_t press, uint8_t release, int32_t enc_delta);
-static void test_evt(evt_type_t type, const char *name, int32_t v0, bool ok);
 #endif
 
 void input_init(void)
@@ -201,10 +206,24 @@ static void calibrate_center_once(void)
   LOG("input: joystick centre %u / %u\r\n", s_center_x, s_center_y);
 }
 
+#if INPUT_EVT_LOG
+static int32_t s_t_detents;              /* sum of posted EVT_ENC_STEP v[0] since boot */
+
+static void test_evt(evt_type_t type, const char *name, int32_t v0, bool ok)
+{
+  if (type == EVT_ENC_STEP) {
+    s_t_detents += v0;
+    LOG("evt: ENC_STEP %+ld (sum %+ld)%s\r\n", (long)v0, (long)s_t_detents, ok ? "" : " QUEUE FULL, dropped");
+  } else {
+    LOG("evt: %s%s\r\n", name, ok ? "" : " QUEUE FULL, dropped");
+  }
+}
+#endif
+
 static void post(evt_type_t type, const char *name, int32_t v0)
 {
   bool ok = app_event_post(type, 0, v0, 0, 0);
-#if APP_INPUT_TEST
+#if INPUT_EVT_LOG
   test_evt(type, name, v0, ok);
 #else
   (void)name;
@@ -260,18 +279,6 @@ static uint32_t s_w_sum[2];
 static uint32_t s_w_n;
 static int32_t  s_t_enc_total;           /* raw counts since boot, before ENC_SIGN */
 static int32_t  s_t_enc_printed;         /* s_t_enc_total at the last enc line */
-
-static int32_t s_t_detents;              /* sum of posted EVT_ENC_STEP v[0] since boot */
-
-static void test_evt(evt_type_t type, const char *name, int32_t v0, bool ok)
-{
-  if (type == EVT_ENC_STEP) {
-    s_t_detents += v0;
-    LOG("evt: ENC_STEP %+ld (sum %+ld)%s\r\n", (long)v0, (long)s_t_detents, ok ? "" : " QUEUE FULL, dropped");
-  } else {
-    LOG("evt: %s%s\r\n", name, ok ? "" : " QUEUE FULL, dropped");
-  }
-}
 
 static void test_step(uint8_t press, uint8_t release, int32_t enc_delta)
 {
