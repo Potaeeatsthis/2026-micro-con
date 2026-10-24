@@ -67,7 +67,7 @@ evt: ENC_STEP +1 (sum +3)           encoder click
 evt: ENC_PRESS                      encoder knob
 evt: ENABLE held (safety)           Hold-to-Enable pressed / released (read from safety_enable_held())
 evt: ENABLE released (safety)
-screen: SINGLE JOINT FINE | Joint: J1 BASE | Target: 90 deg | Pulse: 1523 us | Enable: RELEASED
+screen: SINGLE JOINT FINE | Joint: J1 BASE | Target: 90 deg | Pulse: 1460 us | Enable: RELEASED
 ```
 `screen:` = what the LCD would show (mode, fine / fast, the mode's 4 detail lines), printed when it changes,
 at most 4 times a second. It shows the modes' reactions (selected joint, speed, jog targets) while the LCD
@@ -87,7 +87,7 @@ boots in VOICE. A switch only happens when motion is idle, Hold-to-Enable is rel
 | 4 | Hold Hold-to-Enable, press MODE, wait 3 s, release Enable | `evt: BTN_MODE` at once, `modes: -> ...` only **after** Enable is released | pass 2026-10-25 (both buttons wired): waits while Enable held, also while Enable + stick held (switches only after both released), jog freezes on MODE |
 | 5 | In SINGLE JOINT: press the joystick (centred) twice | 2 × `evt: JOY_PRESS`, `screen:` FINE → FAST → FINE | pass 2026-10-25 |
 | 6 | In SINGLE JOINT: 3 encoder clicks each way, press the knob | `evt: ENC_STEP` ±1 × 6, `screen:` Joint changes, `evt: ENC_PRESS` | pass 2026-10-25: J1 → J6 → J1 both ways (12 + 6 clicks), each joint keeps its target; JOINT GROUP: Group 1 → 2 → 3 → 1 |
-| 7 | SINGLE JOINT / JOINT GROUP: push the stick without Enable, then with Enable held, then release Enable | `Target` moves only while Enable is held, stops at release | pass 2026-10-25: FINE ≈ 10 deg/s, FAST ≈ 45 deg/s, J1 stops at 0 deg (616 us), no movement without Enable |
+| 7 | SINGLE JOINT / JOINT GROUP: push the stick without Enable, then with Enable held, then release Enable | `Target` moves only while Enable is held, stops at release | pass 2026-10-25: FINE ≈ 10 deg/s, FAST ≈ 45 deg/s, J1 stops at 0 deg (616 us with the calibration of that day; since the master merge J1 0 deg = 500 us), no movement without Enable |
 
 Write the results here (or in the PR) with the date, the commit and the local flags.
 2026-10-24 run: commit 6f49100 + `APP_INPUT_LOG_EVENTS`, local flags `APP_USE_VOICE 0`, `APP_INPUT_LOG_EVENTS 1`;
@@ -103,9 +103,9 @@ boot, one `held` / `released` pair per press, 10 s hold = one line, 5 taps = 5 p
 
 Not part of this test. Notes for whoever connects them:
 - First run of new motion code: **servo signal wires disconnected**, then one servo, then all six.
-- Until the SN74AHCT244N buffer arrives the team plans **STM32 pin → series resistor → servo signal**. That
-  drives the servo with 3.3 V logic instead of the 5 V the buffer gives (`core-config.md` §11). Check that each
-  servo model accepts 3.3 V signals, and that the servo pins are 5 V tolerant in the STM32F767 datasheet
-  (a servo may hold its signal line at its own supply voltage). Servo GND and Nucleo GND must be connected;
-  servo current never goes through the Nucleo.
-- Servo calibration (`ProjectDevGuide/docs/servo-calibration.md` on `master`) belongs to the motion owner.
+- Wiring, power order and the buffer plan: [`core-config.md`](core-config.md) §11 (each PWM pin → 330 Ω → servo
+  signal, common GND, Nucleo on before the servo rail; HCT244 buffer later, not the HC244).
+- Calibration values: [`servo-calibration.md`](servo-calibration.md) (motion owner). Installed limits and home are
+  not measured yet, so the 0 / 180 / 90 deg values are placeholders.
+- FINE 10 deg/s is ≈ 2 µs per 20 ms frame, below the SG90/SG92R deadband (`core-config.md` §4.1): an SG joint
+  may move in small jumps in FINE. Watch for it in the first servo test.
