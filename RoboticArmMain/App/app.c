@@ -35,6 +35,9 @@
 #if APP_USE_MODES
 #include "modes/modes.h"
 #endif
+#if APP_USE_SERVO_TEST
+#include "servo_test/servo_test.h"
+#endif
 
 #if APP_CONFIG_LOCAL_ACTIVE
 #warning "app_config_local.h is active - feature flags differ from master"
@@ -77,6 +80,9 @@ void app_init(void)
   lcd_init();
 #endif
   /* EXTENSION POINT 1: init of a new module goes here, inside its own #if APP_USE_x */
+#if APP_USE_SERVO_TEST
+  servo_test_init();
+#endif
 #if APP_USE_MODES
   modes_init();                                   /* last: it starts using every module above */
 #endif
@@ -98,6 +104,9 @@ void app_control_tick(void)
   motion_tick();                                  /* after safety: sees this tick's state */
 #endif
   /* EXTENSION POINT 2: a new 50 Hz job goes here only if it MUST be in an isr (< 50 us) */
+#if APP_USE_SERVO_TEST
+  servo_test_tick();                              /* after safety, like motion_tick */
+#endif
 }
 
 void app_loop(void)
@@ -115,6 +124,9 @@ void app_loop(void)
   pi_link_step();
 #endif
   /* EXTENSION POINT 3: main-loop step of a new module goes here (producers before modes) */
+#if APP_USE_SERVO_TEST
+  servo_test_step();
+#endif
 #if APP_USE_MODES
   modes_step();                                   /* the only event consumer */
 #else

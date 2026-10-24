@@ -50,6 +50,11 @@
 #define APP_USE_MODES           1   /* mode state machine (voice / cartesian / joint group / single joint) */
 #endif
 
+/* bench tests: keep 0 here, turn on in app_config_local.h */
+#ifndef APP_USE_SERVO_TEST
+#define APP_USE_SERVO_TEST      0   /* all to 90, then one servo swings, "pick" = next (App/servo_test/), needs APP_USE_MOTION 0 + APP_USE_MODES 0 */
+#endif
+
 /* hardware that is not fitted yet: keep 0 until it is wired and tested */
 #ifndef APP_USE_LIMIT_SWITCHES
 #define APP_USE_LIMIT_SWITCHES  0   /* PE8, PB11, PE0, PE2 - NC to GND, 1 = triggered */
@@ -108,6 +113,9 @@
 #endif
 #if APP_USE_MODES && !APP_USE_MOTION
 #error "APP_USE_MODES needs APP_USE_MOTION (modes only set motion targets)"
+#endif
+#if APP_USE_SERVO_TEST && (APP_USE_MODES || APP_USE_MOTION || !APP_USE_VOICE)
+#error "APP_USE_SERVO_TEST needs APP_USE_MOTION 0, APP_USE_MODES 0 (the test drives the servos itself) and APP_USE_VOICE 1 (\"pick\")"
 #endif
 
 #endif /* APP_CONFIG_H */
