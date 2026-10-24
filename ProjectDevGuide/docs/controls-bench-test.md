@@ -67,9 +67,12 @@ evt: ENC_STEP +1 (sum +3)           encoder click
 evt: ENC_PRESS                      encoder knob
 evt: ENABLE held (safety)           Hold-to-Enable pressed / released (read from safety_enable_held())
 evt: ENABLE released (safety)
+screen: SINGLE JOINT FINE | Joint: J1 BASE | Target: 90 deg | Pulse: 1523 us | Enable: RELEASED
 ```
+`screen:` = what the LCD would show (mode, fine / fast, the mode's 4 detail lines), printed when it changes,
+at most 4 times a second. It shows the modes' reactions (selected joint, speed, jog targets) while the LCD
+driver is not connected.
 
-Not logged: the fine / fast state (only on the LCD, once it works).
 
 Mode order (MODE button cycles): **VOICE → CARTESIAN → JOINT GROUP → SINGLE JOINT → VOICE**. The firmware
 boots in VOICE. A switch only happens when motion is idle, Hold-to-Enable is released and the stick is centred.
@@ -82,9 +85,9 @@ boots in VOICE. A switch only happens when motion is idle, Hold-to-Enable is rel
 | 2 | Press MODE 4 times, a second apart | 4 × `evt: BTN_MODE`, `modes: -> CARTESIAN`, `-> JOINT GROUP`, `-> SINGLE JOINT`, `-> VOICE` | pass 2026-10-24: 4 presses, 4 switches, each within 1 ms of the event |
 | 3 | Hold the stick right, press MODE, wait 3 s, release the stick | `evt: BTN_MODE` at once, `modes: -> ...` only **after** the stick is released | pass 2026-10-24: press 23:39:56, switch 23:40:07 after release; a second press while waiting was ignored (one switch) |
 | 4 | Hold Hold-to-Enable, press MODE, wait 3 s, release Enable | `evt: BTN_MODE` at once, `modes: -> ...` only **after** Enable is released | |
-| 5 | In CARTESIAN: press the joystick (centred) twice | 2 × `evt: JOY_PRESS` (speed toggles fine → fast → fine) | |
-| 6 | In SINGLE JOINT: 3 encoder clicks each way, press the knob | `evt: ENC_STEP` ±1 × 6, `evt: ENC_PRESS` | |
-| 7 | Hold Enable in CARTESIAN and push the stick | no error / fault lines (motion moves its targets; nothing visible without servos) | |
+| 5 | In SINGLE JOINT: press the joystick (centred) twice | 2 × `evt: JOY_PRESS`, `screen:` FINE → FAST → FINE | pass 2026-10-25 |
+| 6 | In SINGLE JOINT: 3 encoder clicks each way, press the knob | `evt: ENC_STEP` ±1 × 6, `screen:` Joint changes, `evt: ENC_PRESS` | pass 2026-10-25: J1 → J6 → J1 both ways (12 + 6 clicks), each joint keeps its target; JOINT GROUP: Group 1 → 2 → 3 → 1 |
+| 7 | SINGLE JOINT / JOINT GROUP: push the stick without Enable, then with Enable held, then release Enable | `Target` moves only while Enable is held, stops at release | pass 2026-10-25: FINE ≈ 10 deg/s, FAST ≈ 45 deg/s, J1 stops at 0 deg (616 us), no movement without Enable |
 
 Write the results here (or in the PR) with the date, the commit and the local flags.
 2026-10-24 run: commit 6f49100 + `APP_INPUT_LOG_EVENTS`, local flags `APP_USE_VOICE 0`, `APP_INPUT_LOG_EVENTS 1`;
@@ -93,7 +96,8 @@ MODE presses while a switch is waiting do not queue a second switch.
 Extra MODE checks (user, live): hold 3 s = one event, 5 fast taps = 5, very short tap, wire wiggle = nothing,
 MODE held through RESET = harmless: all pass. Hold-to-Enable alone (the same button moved to PE12): no line at
 boot, one `held` / `released` pair per press, 10 s hold = one line, 5 taps = 5 pairs, wiggle = nothing: all pass.
-Steps 4–7 need both buttons at once (and servos for real motion).
+2026-10-25 (one button moved between PE10 and PE12 without a reset): steps 5–7 pass. CARTESIAN shows
+`IK NOT READY` (arm geometry `TODO(ik)`). Step 4 needs both buttons at once. Real motion needs servos.
 
 ## 6. Next: servos
 

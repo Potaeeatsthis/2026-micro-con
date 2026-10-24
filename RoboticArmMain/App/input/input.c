@@ -21,6 +21,9 @@
  * APP_INPUT_LOG_EVENTS (app_config_local.h only): just the evt: lines, allowed with modes and
  * motion on (bench test of the modes, see ProjectDevGuide/docs/controls-bench-test.md). also
  * logs hold-to-enable changes, read through safety_enable_held() (safety itself does not log it).
+ * with the modes on it also prints what the lcd would show (mode, fine/fast, the mode's
+ * describe() lines) whenever it changes, at most 4 times a second: "screen: ...". read-only
+ * getters, so the modes' reactions are visible while the lcd driver is not connected.
  * the isr part is a min/max/sum next to the existing averaging loop (no extra loop).
  */
 #include "input/input.h"
@@ -59,6 +62,13 @@
 #define INPUT_EVT_LOG (APP_INPUT_TEST || APP_INPUT_LOG_EVENTS)
 #if INPUT_EVT_LOG
 #include "safety/safety.h"
+#endif
+#define INPUT_SCREEN_LOG (APP_INPUT_LOG_EVENTS && APP_USE_MODES)
+#if INPUT_SCREEN_LOG
+#include "modes/modes.h"
+#include "motion/motion.h"
+#include <stdio.h>
+#include <string.h>
 #endif
 
 static uint16_t s_adc_buf[ADC_CH * ADC_SAMPLES] DMA_BUF;  /* [x, y, rail, x, y, rail, ...] */
@@ -234,6 +244,32 @@ static void test_evt(evt_type_t type, const char *name, int32_t v0, bool ok)
 }
 #endif
 
+#if INPUT_SCREEN_LOG
+#define SCREEN_LOG_MS 250u
+
+/* one line with what the lcd would show; printed only when it changed */
+static void test_screen_log(void)
+{
+  static uint32_t last_ms;
+  static char prev[160];
+  uint32_t now = HAL_GetTick();
+  if (ms_since(now, last_ms) < SCREEN_LOG_MS) return;
+  last_ms = now;
+
+  char d[LCD_DETAIL_LINES][LCD_COLS];
+  memset(d, 0, sizeof d);
+  modes_describe(d, LCD_DETAIL_LINES);
+  char line[sizeof prev];
+  snprintf(line, sizeof line, "%s%s %s | %s | %s | %s | %s", modes_name(modes_current()),
+           modes_switch_pending() ? " ..." : "", motion_get_speed() == SPEED_FAST ? "FAST" : "FINE",
+           d[0], d[1], d[2], d[3]);
+  if (strcmp(line, prev) != 0) {
+    memcpy(prev, line, sizeof prev);
+    LOG("screen: %s\r\n", line);
+  }
+}
+#endif
+
 static void post(evt_type_t type, const char *name, int32_t v0)
 {
   bool ok = app_event_post(type, 0, v0, 0, 0);
@@ -272,6 +308,9 @@ void input_step(void)
   }
 #if INPUT_EVT_LOG
   test_enable_log();
+#endif
+#if INPUT_SCREEN_LOG
+  test_screen_log();
 #endif
 
 #if APP_INPUT_TEST
