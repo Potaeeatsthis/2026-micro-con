@@ -19,7 +19,8 @@
  *   btn: debounced press / release of MODE, ENC, JOY
  *   evt: every event input posts (what the modes receive), ENC_STEP with a running sum
  * APP_INPUT_LOG_EVENTS (app_config_local.h only): just the evt: lines, allowed with modes and
- * motion on (bench test of the modes, see ProjectDevGuide/docs/controls-bench-test.md).
+ * motion on (bench test of the modes, see ProjectDevGuide/docs/controls-bench-test.md). also
+ * logs hold-to-enable changes, read through safety_enable_held() (safety itself does not log it).
  * the isr part is a min/max/sum next to the existing averaging loop (no extra loop).
  */
 #include "input/input.h"
@@ -56,6 +57,9 @@
 #define APP_INPUT_LOG_EVENTS 0
 #endif
 #define INPUT_EVT_LOG (APP_INPUT_TEST || APP_INPUT_LOG_EVENTS)
+#if INPUT_EVT_LOG
+#include "safety/safety.h"
+#endif
 
 static uint16_t s_adc_buf[ADC_CH * ADC_SAMPLES] DMA_BUF;  /* [x, y, rail, x, y, rail, ...] */
 static volatile uint16_t s_raw[ADC_CH];
@@ -208,6 +212,16 @@ static void calibrate_center_once(void)
 
 #if INPUT_EVT_LOG
 static int32_t s_t_detents;              /* sum of posted EVT_ENC_STEP v[0] since boot */
+static bool    s_t_enable;               /* last logged safety_enable_held() */
+
+static void test_enable_log(void)
+{
+  bool en = safety_enable_held();
+  if (en != s_t_enable) {
+    s_t_enable = en;
+    LOG("evt: ENABLE %s (safety)\r\n", en ? "held" : "released");
+  }
+}
 
 static void test_evt(evt_type_t type, const char *name, int32_t v0, bool ok)
 {
@@ -256,6 +270,9 @@ void input_step(void)
     s_enc_accum -= detents * ENC_COUNTS_PER_DETENT;
     post(EVT_ENC_STEP, "ENC_STEP", detents * ENC_SIGN);
   }
+#if INPUT_EVT_LOG
+  test_enable_log();
+#endif
 
 #if APP_INPUT_TEST
   test_step(flags, released, enc_delta);
