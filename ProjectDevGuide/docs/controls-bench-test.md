@@ -84,7 +84,7 @@ boots in VOICE. A switch only happens when motion is idle, Hold-to-Enable is rel
 | 1 | Boot, hands off | `safety: init, estop released, ...`, `modes: -> VOICE`, `input: joystick centre ~2073 / ~2067` | pass 2026-10-24 (centre 2073 / 2067) |
 | 2 | Press MODE 4 times, a second apart | 4 × `evt: BTN_MODE`, `modes: -> CARTESIAN`, `-> JOINT GROUP`, `-> SINGLE JOINT`, `-> VOICE` | pass 2026-10-24: 4 presses, 4 switches, each within 1 ms of the event |
 | 3 | Hold the stick right, press MODE, wait 3 s, release the stick | `evt: BTN_MODE` at once, `modes: -> ...` only **after** the stick is released | pass 2026-10-24: press 23:39:56, switch 23:40:07 after release; a second press while waiting was ignored (one switch) |
-| 4 | Hold Hold-to-Enable, press MODE, wait 3 s, release Enable | `evt: BTN_MODE` at once, `modes: -> ...` only **after** Enable is released | |
+| 4 | Hold Hold-to-Enable, press MODE, wait 3 s, release Enable | `evt: BTN_MODE` at once, `modes: -> ...` only **after** Enable is released | pass 2026-10-25 (both buttons wired): waits while Enable held, also while Enable + stick held (switches only after both released), jog freezes on MODE |
 | 5 | In SINGLE JOINT: press the joystick (centred) twice | 2 × `evt: JOY_PRESS`, `screen:` FINE → FAST → FINE | pass 2026-10-25 |
 | 6 | In SINGLE JOINT: 3 encoder clicks each way, press the knob | `evt: ENC_STEP` ±1 × 6, `screen:` Joint changes, `evt: ENC_PRESS` | pass 2026-10-25: J1 → J6 → J1 both ways (12 + 6 clicks), each joint keeps its target; JOINT GROUP: Group 1 → 2 → 3 → 1 |
 | 7 | SINGLE JOINT / JOINT GROUP: push the stick without Enable, then with Enable held, then release Enable | `Target` moves only while Enable is held, stops at release | pass 2026-10-25: FINE ≈ 10 deg/s, FAST ≈ 45 deg/s, J1 stops at 0 deg (616 us), no movement without Enable |
@@ -97,7 +97,7 @@ Extra MODE checks (user, live): hold 3 s = one event, 5 fast taps = 5, very shor
 MODE held through RESET = harmless: all pass. Hold-to-Enable alone (the same button moved to PE12): no line at
 boot, one `held` / `released` pair per press, 10 s hold = one line, 5 taps = 5 pairs, wiggle = nothing: all pass.
 2026-10-25 (one button moved between PE10 and PE12 without a reset): steps 5–7 pass. CARTESIAN shows
-`IK NOT READY` (arm geometry `TODO(ik)`). Step 4 needs both buttons at once. Real motion needs servos.
+`IK NOT READY` (arm geometry `TODO(ik)`). Step 4 passed later the same night with both buttons wired. Real motion needs servos.
 
 ## 6. Next: servos
 
