@@ -216,6 +216,13 @@ static void testStartup() {
   expectContains(Serial.output, "RAM only", "startup must say records are volatile");
   expectContains(Serial.output, "reset loses", "startup must say reset loses records");
   expectContains(Serial.output, "Nothing attached", "startup must say nothing is attached");
+
+  const std::string table = run("table");
+  expectContains(table, "4,SG92R-1,,,,,,,0", "unit 4 must be SG92R-1");
+  expectContains(table, "5,SG92R-3,,,,,,,0", "unit 5 must keep the SG92R-3 label");
+  expectContains(table, "6,SG90,,,,,,,0", "unit 6 must be SG90");
+  expect(table.find("SG92R-2") == std::string::npos,
+         "retired SG92R-2 must not appear in the active unit list");
 }
 
 static void testParser() {
@@ -334,7 +341,7 @@ static void testRecordAndTable() {
   run("arm 1500");
   expectContains(run("reference"), "Reference pulse: 1500");
   expectContains(run("record 90.5"), "Recorded 90.50");
-  expectContains(run("pulse 1520"), "Pulse 1520");
+  expectContains(run("pulse 1510"), "Pulse 1510");
   expectContains(run("record 95.0"), "Recorded 95.00");
   const std::string offOutput = run("off");
   expectContains(offOutput, "Signal detached", "off must report signal detachment");
@@ -362,7 +369,7 @@ static void testRecordAndTable() {
   expectContains(table, "1,MG996R-1,1500,,,,,,2", "MG996R-1 summary must be isolated");
   expectContains(table, "2,MG996R-2,1500,,,,,,1", "MG996R-2 summary must be isolated");
   expectContains(table, "1,MG996R-1,90.50,1500", "MG996R-1 first point missing");
-  expectContains(table, "1,MG996R-1,95.00,1520", "MG996R-1 second point missing");
+  expectContains(table, "1,MG996R-1,95.00,1510", "MG996R-1 second point missing");
   expectContains(table, "2,MG996R-2,10.25,1500", "MG996R-2 point missing");
   expect(table.find("2,MG996R-2,90.50") == std::string::npos,
          "MG996R-1 points must not appear under MG996R-2");
@@ -385,18 +392,17 @@ static void testRangeEnforcement() {
   expectNoMotion(attaches, writes, "arm above test window");
 
   expectContains(run("arm 1450"), "Armed");
-  expectContains(run("pulse 1470"), "Pulse 1470");
+  expectContains(run("pulse 1460"), "Pulse 1460");
 
   writes = mockServo.pulses.size();
   attaches = mockServo.attachCount;
-  expectContains(run("pulse 1491"), "step limit");
-  expectNoMotion(attaches, writes, "pulse over 20 us step upward");
-  expectContains(run("pulse 1490"), "Pulse 1490");
-  expectContains(run("pulse 1500"), "Pulse 1500");
+  expectContains(run("pulse 1471"), "step limit");
+  expectNoMotion(attaches, writes, "pulse over 10 us step upward");
+  expectContains(run("pulse 1470"), "Pulse 1470");
   writes = mockServo.pulses.size();
   attaches = mockServo.attachCount;
-  expectContains(run("pulse 1470"), "step limit");
-  expectNoMotion(attaches, writes, "pulse over 20 us step downward");
+  expectContains(run("pulse 1459"), "step limit");
+  expectNoMotion(attaches, writes, "pulse over 10 us step downward");
   run("off");
 
   expectContains(run("limits 1460 1540"), "Unloaded limits");
@@ -435,6 +441,7 @@ static void testRangeEnforcement() {
   expectContains(run("installed 1490 1520"), "Installed limits");
 
   expectContains(run("arm 1500"), "Armed");
+  expectContains(run("pulse 1510"), "Pulse 1510");
   expectContains(run("pulse 1520"), "Pulse 1520");
   run("off");
 
@@ -479,6 +486,8 @@ static void testAttachEndpoints() {
   expect(mockServo.lastWriteInCritical, "first write must run with servo interrupts disabled");
   expect(mockInterruptsEnabled, "arm must restore interrupts");
   expect(mockNoInterruptsCount == mockInterruptsCount, "interrupt enable/disable must balance");
+  expectContains(run("pulse 505"), "Pulse 505");
+  expect(mockServo.lastPulse == 505, "small adjustment near the 500 us endpoint must be allowed");
   run("off");
 
   expectContains(run("arm 2500"), "Armed");
@@ -487,6 +496,8 @@ static void testAttachEndpoints() {
   expect(mockServo.lastWriteInCritical, "second first-write must run with interrupts disabled");
   expect(mockInterruptsEnabled, "second arm must restore interrupts");
   expect(mockNoInterruptsCount == mockInterruptsCount, "second arm interrupts must balance");
+  expectContains(run("pulse 2495"), "Pulse 2495");
+  expect(mockServo.lastPulse == 2495, "small adjustment near the 2500 us endpoint must be allowed");
   run("off");
 }
 
@@ -511,10 +522,10 @@ static void testLineRejection() {
   attaches = mockServo.attachCount;
   writes = mockServo.pulses.size();
 
-  const std::string nulPulse = withNul("pulse 1520", "x");
+  const std::string nulPulse = withNul("pulse 1510", "x");
   expectContains(run(nulPulse), "invalid or too-long line", "NUL in pulse line must reject the line");
   expectNoMotion(attaches, writes, "NUL in pulse line");
-  expectContains(run("pulse 1520"), "Pulse 1520");
+  expectContains(run("pulse 1510"), "Pulse 1510");
   run("off");
 
   const std::string nulLimits = withNul("limits 1400 1600", "x");

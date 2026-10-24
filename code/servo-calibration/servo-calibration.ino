@@ -14,17 +14,19 @@
 #include "servo_backend_uno.h"
 #endif
 
-// Bench calibration for six positional servos (3 x MG996R, 3 x SG92R).
-// One physical servo is connected at a time. Nothing is attached at startup.
-// All records live in RAM and are lost on reset. There is no auto-sweep and
-// no physical position feedback.
+// Bench calibration for the six active positional servos:
+// MG996R-1, MG996R-2, MG996R-3, SG92R-1, SG92R-3, SG90. SG92R-2 is retired.
+// SG92R-3 keeps its physical label even though it is now unit 5. One physical
+// servo is connected at a time. Nothing is attached at startup. All records
+// live in RAM and are lost on reset. There is no auto-sweep and no physical
+// position feedback.
 
 static const uint8_t SERVO_COUNT = 6;
 static const uint8_t MAX_POINTS = 9;
 
 static const int16_t HARD_MIN_US = 500;
 static const int16_t HARD_MAX_US = 2500;
-static const int16_t STEP_LIMIT_US = 20;
+static const int16_t STEP_LIMIT_US = 10;
 
 // Conservative bench-test guard. This is not a claim that any servo is safe
 // over this range; the user must find and mark each unit's real limits.
@@ -50,9 +52,9 @@ struct ServoRecord {
 };
 
 static ServoRecord records[SERVO_COUNT];
-// Unit labels only; this sketch does not assign units to arm joints.
+// Active physical units only; this sketch does not assign units to arm joints.
 static const char *const LABELS[SERVO_COUNT] = {
-  "MG996R-1", "MG996R-2", "MG996R-3", "SG92R-1", "SG92R-2", "SG92R-3"
+  "MG996R-1", "MG996R-2", "MG996R-3", "SG92R-1", "SG92R-3", "SG90"
 };
 
 static int8_t selectedIndex = -1;
@@ -216,7 +218,7 @@ static void printHelp() {
   Serial.println(F("  select 1..6          detach signal, select unit, reset test window"));
   Serial.println(F("  off                  detach signal; not a power cut or brake"));
   Serial.println(F("  arm <pulse_us>       attach and jump to a pulse; warns first"));
-  Serial.println(F("  pulse <pulse_us>     move while armed; max step 20 us"));
+  Serial.println(F("  pulse <pulse_us>     move while armed; max step 10 us"));
   Serial.println(F("  record <measured_deg> record angle at the current pulse"));
   Serial.println(F("  reference            save current pulse as unit reference"));
   Serial.println(F("  zero                 save current pulse as installed joint zero"));

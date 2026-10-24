@@ -1,15 +1,17 @@
 # Robotic Arm Code
 
-This repository currently contains **bench firmware for one servo at a time**. The planned four-mode controller, including STM32 voice recognition and inverse kinematics, is described in [the system guide](../study/robotic-arm-guide.md); its firmware is not in this repository yet.
+This repository contains **bench firmware for one servo at a time** plus the merged STM32 HAL skeleton in [`RoboticArmMain/`](../RoboticArmMain/). The skeleton has the app loop, safety, motion/calibration, modes, voice, Pi link and LCD framework. It is **not a complete arm controller yet**: IK/FK and arm geometry are still placeholders (`ARM_GEOMETRY_MEASURED 0`, so `kin_ik()`/`kin_fk()` return `KIN_NOT_READY`), and the installed servo limits/home are still uncalibrated. The bench projects are separate from `RoboticArmMain/`.
 
 There are two versions of the calibration bench. The Arduino Uno sketch uses the `Servo` library on pin 9. The STM32 project reuses the same console source and outputs PWM from the NUCLEO-F767ZI hardware timers on physical pins PC6, PC7, and PD12-PD15. Use the version that matches the board you have wired.
+
+The measured values and the confirmed unit-to-joint/pin mapping are in [`ProjectDevGuide/docs/servo-calibration.md`](../ProjectDevGuide/docs/servo-calibration.md). They are documentation only and are **not auto-loaded** into the console or firmware.
 
 | Sketch / project | What it tests |
 |---|---|
 | [`test-sg92r.ino`](test-sg92r/test-sg92r.ino) | Basic one-link inverse kinematics (IK): convert three X/Y targets into servo angles. |
-| [`servo-calibration.ino`](servo-calibration/servo-calibration.ino) | **Arduino Uno** six-unit positional servo calibration console for 3 MG996R + 3 SG92R: record pulses and measured angles, mark unloaded/installed safe limits, and print CSV tables. One physical servo at a time on pin 9; no startup motion. |
+| [`servo-calibration.ino`](servo-calibration/servo-calibration.ino) | **Arduino Uno** six-unit positional servo calibration console for 3 MG996R + SG92R-1 + SG92R-3 + SG90: record pulses and measured angles, mark unloaded/installed safe limits, and print CSV tables. One physical servo at a time on pin 9; no startup motion; `pulse` steps are at most 10 us. |
 | [`stm32-servos/`](stm32-servos/README.md) | **STM32 NUCLEO-F767ZI** PlatformIO build of the same calibration console, using hardware `HardwareTimer` PWM at 50 Hz on PC6/PC7/PD12-PD15. One output armed at a time; no startup PWM or auto-sweep. |
-| [`test-sg92r-ik.ino`](test-sg92r-ik/test-sg92r-ik.ino) | Repeat the one-link IK test using measured angle-to-pulse values. |
+| [`test-sg92r-ik.ino`](test-sg92r-ik/test-sg92r-ik.ino) | Repeat the one-link IK test using fixed test angle-to-pulse values from an older SG92R measurement. These are not the new calibration. |
 | [`test-mg996r.ino`](test-mg996r/test-mg996r.ino) | Test **continuous-rotation** servo direction and speed. This sketch does not position a standard MG996R by angle. |
 
 ## Run a test
@@ -26,4 +28,4 @@ There are two versions of the calibration bench. The Arduino Uno sketch uses the
 2. Connect the ST-LINK USB cable. Use the **physical NUCLEO-144 pin names** PC6, PC7, PD12, PD13, PD14, and PD15, not Arduino pin 9. The exact unit-to-pin map and the SN74AHCT244N buffer wiring are in the project README.
 3. Build, upload over ST-LINK, and open the ST-LINK virtual COM port at **115200 baud**. The shared `help`, `select`, `arm`, `pulse`, `record`, `limits`, `installed`, `zero`, `window`, and `table` commands are unchanged.
 
-Test only one sketch and one servo at a time. The pulse values in the IK sketches are test values; calibrate each real servo before attaching it to the arm.
+Test only one sketch and one servo at a time. The pulse values in the IK sketches are test values, not calibration. Use the measured unloaded values in [the canonical calibration table](../ProjectDevGuide/docs/servo-calibration.md), but measure installed limits, zero and home on the assembled arm before moving it.

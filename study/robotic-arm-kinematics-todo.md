@@ -3,11 +3,19 @@
 Offline kinematics plan for the Omartronics arm. Calibration bench code now runs
 on the STM32 NUCLEO-F767ZI through PlatformIO and the Arduino core, without
 CubeMX or STM32CubeIDE. The earlier Arduino Uno version is still available.
-The six servos are **brand-new and not calibrated**. Work in this order:
+The six active servos have measured **unloaded** 0/90/180 pulses, but they are
+**not installed-calibrated**. The canonical measured table is
+[`ProjectDevGuide/docs/servo-calibration.md`](../ProjectDevGuide/docs/servo-calibration.md);
+it is documentation only and is not auto-loaded by the console or firmware.
+Work in this order:
 
-1. Calibrate all six servo units unloaded.
-2. Assemble the arm and map units to joints.
-3. Set narrower installed limits and the installed joint zero.
+1. Calibrate all six servo units unloaded. (Measurement done; see the canonical
+   table above. Keep the saved CSV if console RAM was lost; do not replay
+   unloaded endpoints on the assembled arm to recreate records.)
+2. Assemble the arm and map units to joints (mapping confirmed; verify on the
+   real arm).
+3. Set narrower installed limits and the installed joint zero, then the home
+   pose. These are still **not measured**.
 4. Measure geometry, then build and validate FK and IK.
 
 Do not skip physical measurement or validation. A commanded pose is not a
@@ -18,18 +26,22 @@ measured pose.
 Legacy Uno bench setup: **Arduino Uno**, servo signal on **pin 9**,
 Serial Monitor at **115200 baud**, line ending **Newline** (or Both NL & CR),
 one physical servo at a time, external regulated servo supply, common ground.
-These are bench tools, not the full arm controller. For your STM32, follow
+These are bench tools, not the full arm controller. The merged controller
+skeleton is in [`RoboticArmMain/`](../RoboticArmMain/): app loop, safety,
+motion/calibration, modes, voice, Pi link and LCD framework exist, but IK/FK and
+geometry are still placeholders and the firmware still uses uncalibrated
+installed limits/home. For your STM32, follow
 [`code/stm32-servos/README.md`](../code/stm32-servos/README.md): the commands
 below are shared, but the STM32 uses its own physical pins, not Uno pin 9.
 
-| STM32 unit | Output pin |
-|---|---|
-| 1 / MG996R-1 | PC6 |
-| 2 / MG996R-2 | PC7 |
-| 3 / MG996R-3 | PD12 |
-| 4 / SG92R-1 | PD13 |
-| 5 / SG92R-2 | PD14 |
-| 6 / SG92R-3 | PD15 |
+| STM32 unit | Bench label | Output pin |
+|---|---|---|
+| 1 | MG996R-1 | PC6 |
+| 2 | MG996R-2 | PC7 |
+| 3 | MG996R-3 | PD12 |
+| 4 | SG92R-1 | PD13 |
+| 5 | SG92R-3 | PD14 |
+| 6 | SG90 | PD15 |
 
 - [ ] Install the PlatformIO extension in VS Code and open `code/stm32-servos`.
 - [ ] Build the `nucleo_f767zi` environment, then connect the ST-LINK USB port.
@@ -53,12 +65,17 @@ to both. No CubeMX or CubeIDE is needed for this STM32 bench project.
 - [x] The calibration console, README, host test and three bench sketches exist
       in this repository.
 - [x] The calibration console is the current bench tool for the six units.
+- [x] Unloaded 0/90/180 pulses are measured for all six active units and are
+      recorded in the canonical table. Installed limits/zero/home are not.
+- [x] The HAL controller skeleton is merged in `RoboticArmMain/`; IK/FK and
+      geometry remain incomplete (`ARM_GEOMETRY_MEASURED 0`).
 - [x] Host tests passed (all eight scenarios):
       `python3 code/servo-calibration/test_host.py`
 - [x] Arduino Uno compilation passed (software only; not uploaded).
 - [ ] Compile and upload `servo-calibration.ino` to the Arduino Uno and open
       the Serial Monitor as described above.
-- [ ] Every physical calibration, assembly, measurement and motion task below.
+- [ ] Every physical assembly, installed calibration, measurement and motion
+      task below.
 
 Host tests and Arduino compile checks are **software-only**. They do not prove
 servo type, voltage, wiring, direction, mechanical limits, measured angles or
@@ -74,8 +91,9 @@ physical safety.
       - J4: wrist pitch
       - J5: wrist roll
       - J6: gripper (not part of the XYZ positioning chain)
-- [ ] Confirm all six servos are **positional**. The set is three MG996R and
-      three SG92R, all brand-new and uncalibrated.
+- [ ] Confirm all six servos are **positional**. The set is three MG996R plus
+      `SG92R-1`, `SG92R-3` and `SG90`; they have unloaded measurements but no
+      installed calibration.
       - A continuous-rotation MG996R has no angle control. The calibration
         console does not support it, and `test-mg996r.ino` only tests direction
         and speed.
@@ -83,10 +101,15 @@ physical safety.
         design before calibration.
 - [ ] Use these fixed unit IDs:
       - Units **1..3**: MG996R-1, MG996R-2, MG996R-3
-      - Units **4..6**: SG92R-1, SG92R-2, SG92R-3
-      These identify physical units only. They are **not** joint assignments.
-- [ ] Do not assume a unit belongs to a joint. Record the unit-to-joint map
-      after calibration in Section 4.
+      - Unit **4**: SG92R-1
+      - Unit **5**: SG92R-3
+      - Unit **6**: SG90
+      These identify physical units only. They are **not** joint assignments by
+      themselves; the current confirmed mapping is recorded in Section 4 and in
+      the canonical table.
+- [ ] Do not infer installed limits or home from a unit label. Verify the
+      confirmed unit-to-joint map on the assembled arm and record it in
+      Section 4.
 - [ ] Use millimetres (mm) for lengths and degrees for model angles. The bench
       console commands pulses in microseconds (us).
 - [ ] Use the known **bent reference pose** as the model zero pose, not the
@@ -161,19 +184,21 @@ at the current pulse; it does not measure the servo.
    first test pulse or a needed point is outside the current guard. Keep it
    inside 500..2500 us. This is a deliberate guard change, not a safety claim.
 4. Send `arm <pulse_us>` inside the active guard. This attaches pin 9 and jumps
-   directly to the requested pulse; it is not ramped and has no 20 us step limit.
-   Choose a conservative first pulse; 1500 us is a common example, not a
-   guaranteed safe centre for these servos.
+   directly to the requested pulse; it is not ramped and does not obey the
+   10 us step limit. Choose a conservative first pulse; 1500 us is a common
+   example, not a guaranteed safe centre for these servos.
 5. Send `pulse <pulse_us>` for small changes while armed. Each command may
-   change the pulse by at most 20 us. Wait for the servo to settle.
+   change the pulse by at most 10 us; smaller steps are allowed. Wait for the
+   servo to settle.
 6. Measure the physical output angle with a protractor or angle gauge. Send
    `record <measured_deg>`. This stores the measured angle at the current pulse,
    not the commanded angle or a guessed value. Up to 9 points per unit; a
    duplicate pulse is rejected.
 7. Repeat at spread points (at least three recommended) to check direction and
    approximate linearity. Do not sweep to the endpoints.
-8. At a known unloaded shaft reference, usually near the centre, send
-   `reference` to store the current pulse. Record its measured angle too.
+8. Move to the pulse where the measured output angle is 90 deg, then send
+   `reference` to store that pulse as the unit reference. This is the reference
+   pulse, not the arithmetic midpoint of the 0/180 pulses.
    This is not the assembled arm's bent zero pose; that is defined in Section 4.
 9. Support the servo, send `off`, then send `limits <min> <max>` for the
    unloaded safe range. `limits` is accepted only while detached.
@@ -195,7 +220,8 @@ Stop here before assembly. Do **not** set `installed` or `zero` until Section 4.
   the window to 1400..1600 us, so a widened window is not silently reused.
   Reselecting the same unit keeps the current window.
 - `arm <pulse_us>` can jump immediately to the requested pulse. Every later
-  `pulse <pulse_us>` is limited to a 20 us change per command.
+  `pulse <pulse_us>` is limited to a 10 us change per command; smaller steps are
+  allowed.
 - Every `arm` and `pulse` is checked against the intersection of the test
   window, unloaded limits and installed limits that have been set.
 - `limits` is the unloaded safe range you establish by testing. `installed` is
@@ -218,37 +244,37 @@ Stop here before assembly. Do **not** set `installed` or `zero` until Section 4.
 The command syntax below is real. **Every number is a made-up example, not a
 physical fact about these servos.** Do not paste this as an automatic sequence.
 Wait for each movement, measure the angle, then type `record`. Only enter limits
-after unloaded testing.
+after unloaded testing. The measured unloaded values are in the canonical table;
+they are not auto-loaded.
 
 ```text
 help
 select 1
 arm 1500
-pulse 1480
-record 85.0
-pulse 1460
-record 80.0
-pulse 1480
-pulse 1500
-pulse 1520
-record 95.0
+record 90.0
 reference
+pulse 1510
+record 93.0
+pulse 1505
+record 92.0
 off
-limits 1460 1520
+limits 1400 1600
 table
 ```
 
-In this example, `MG996R-1` ends with a reference at 1520 us and unloaded
-limits 1460..1520 us, only if that interval was physically checked and leaves
-adequate margin. The recorded angles 85.0, 80.0 and 95.0 degrees are
-examples only.
+In this example, `MG996R-1` ends with a reference at 1500 us (the pulse where
+90 deg was measured) and unloaded limits 1400..1600 us, only if that interval
+was physically checked and leaves adequate margin. Every `pulse` step is at
+most 10 us. All recorded angles are examples only.
 
-After installation, the narrower limits and zero are recorded separately:
+After installation, the narrower limits, zero and home are recorded separately:
 
 ```text
 select 1
+limits 1400 1600
 window 1480 1520
 arm 1500
+pulse 1510
 pulse 1505
 off
 installed 1480 1520
@@ -258,12 +284,16 @@ table
 ```
 
 Again, all numbers are examples. `installed` must be inside the unloaded range,
-and `zero` must be inside the installed range.
+and `zero` must be inside the installed range. Measure the installed home pose
+separately; do not infer it from the reference or from these example numbers.
 
 ### 3.5 Per-unit calibration records
 
-Leave installed limits and zero blank until Section 4. Units are physical IDs,
-not joints.
+Leave installed limits, zero and home blank until Section 4. Units are physical
+IDs, not joints. The canonical table already records the confirmed unloaded
+reference and test envelope for each active unit; it is not auto-loaded. Keep
+historical points in your saved CSV and restore only unloaded `limits` while
+detached for installed testing. Use the local table below for your session.
 
 | Unit | Label | Positional confirmed? | Reference pulse (us) | Reference measured angle (deg) | Unloaded limits (us) | Installed limits (us) | Zero pulse (us) | Notes |
 |------|-------|-----------------------|---------------------|--------------------------------|----------------------|-----------------------|-----------------|-------|
@@ -271,8 +301,8 @@ not joints.
 | 2 | MG996R-2 | [ ] yes [ ] no | | | | | | |
 | 3 | MG996R-3 | [ ] yes [ ] no | | | | | | |
 | 4 | SG92R-1 | [ ] yes [ ] no | | | | | | |
-| 5 | SG92R-2 | [ ] yes [ ] no | | | | | | |
-| 6 | SG92R-3 | [ ] yes [ ] no | | | | | | |
+| 5 | SG92R-3 | [ ] yes [ ] no | | | | | | |
+| 6 | SG90 | [ ] yes [ ] no | | | | | | |
 
 Measured angle-pulse pairs. Enter only values you measured, in the form
 `angle deg @ pulse us`.
@@ -291,8 +321,8 @@ Measured angle-pulse pairs. Enter only values you measured, in the form
 - [ ] Unit 2 MG996R-2: same checks.
 - [ ] Unit 3 MG996R-3: same checks.
 - [ ] Unit 4 SG92R-1: same checks.
-- [ ] Unit 5 SG92R-2: same checks.
-- [ ] Unit 6 SG92R-3: same checks.
+- [ ] Unit 5 SG92R-3: same checks.
+- [ ] Unit 6 SG90: same checks.
 
 ### 3.6 Finish calibration before assembly
 
@@ -308,17 +338,18 @@ Measured angle-pulse pairs. Enter only values you measured, in the form
 ## 4. Assembly, unit-to-joint mapping, installed limits
 
 - [ ] Mount the units and support the arm before applying servo power.
-- [ ] Record which unit ID drives which joint. Do not infer the map from the
-      unit label or from the old sketches.
+- [ ] Verify on the assembled arm that each joint is driven by the unit in the
+      confirmed mapping below; label the cables. Do not infer installed limits,
+      zero or home from the unit label or from the old sketches.
 
-| Joint | Unit ID (1..6) | Unit label | Installed zero pulse (us) | Sign (+/-) | Notes |
-|-------|----------------|------------|---------------------------|------------|-------|
-| J1 | | | | | |
-| J2 | | | | | |
-| J3 | | | | | |
-| J4 | | | | | |
-| J5 | | | | | |
-| J6 | | | | | |
+| Joint | Unit ID (1..6) | Unit label | Installed limits (us) | Installed zero pulse (us) | Installed home pulse (us) | Sign (+/-) | Notes |
+|-------|----------------|------------|-----------------------|---------------------------|---------------------------|------------|-------|
+| J1 | 1 | MG996R-1 | | | | | |
+| J2 | 2 | MG996R-2 | | | | | |
+| J3 | 3 | MG996R-3 | | | | | |
+| J4 | 4 | SG92R-1 | | | | | |
+| J5 | 5 | SG92R-3 | | | | | |
+| J6 | 6 | SG90 | | | | | |
 
 For each installed unit, find the narrower installed range and set the installed
 zero. Use small steps, support the arm and keep the power disconnect reachable.
@@ -336,20 +367,24 @@ outside the Arduino and retain both earlier and later exports.
    not cover the unloaded range. This is still only a guard; the first `arm` can
    jump anywhere inside it.
 3. Support the arm, connect that servo, apply servo power, and `arm <pulse_us>`
-   near the expected zero with a conservative value. Use small `pulse` changes
-   only.
+   near the expected zero with a conservative value. Use `pulse` changes of at
+   most 10 us only.
 4. Check clearance, linked-joint movement, buzz and strain. Find a narrower
    installed min/max. Do not run a full sweep.
 5. Support the arm, send `off`, then send `installed <min> <max>`. It must be
    inside the unloaded limits.
 6. `arm <zero_pulse_us>` inside the installed range, verify the physical zero
    pose, then send `zero`.
-7. `table` and save the updated CSV.
+7. Move to the measured installed home pose and record its pulse separately
+   from the joint zero.
+8. `table` and save the updated CSV.
 
 - [ ] `installed` is a subset of the unloaded limits, normally narrower.
 - [ ] `zero` was accepted only after installed limits existed.
 - [ ] The installed zero pulse may differ from the unloaded reference pulse;
       use the physical pose, not the old number.
+- [ ] The installed home pulse was measured on the assembled arm, not inferred
+      from 90 deg or from the unloaded reference.
 - [ ] The installed range still leaves clearance at both ends under load.
 - [ ] Each joint sign is confirmed by a small, slow commanded move.
 
@@ -497,11 +532,17 @@ measured TCP positions at several poses.
 | J4 | | | | |
 | J5 | | | | |
 
-## 9. Full arm controller plan (not yet implemented)
+## 9. Full arm controller (merged skeleton, still incomplete)
 
-The Uno sketches and STM32 calibration project are bench tools. Six-joint
-trajectory control and IK are not implemented by this calibration console.
-The final controller is planned as:
+The Uno sketches and STM32 calibration project are bench tools, separate from
+the HAL firmware. [`RoboticArmMain/`](../RoboticArmMain/) now contains the merged
+controller skeleton: app loop, safety, motion/calibration, modes, voice, Pi link
+and LCD framework. It is **not a validated complete controller**: IK/FK and arm
+geometry are placeholders (`ARM_GEOMETRY_MEASURED 0`, so `kin_ik()`/`kin_fk()`
+return `KIN_NOT_READY`), and the motion table still uses uncalibrated
+`min/max/home` placeholders.
+
+The hardware plan for the merged controller is:
 
 - **STM32 NUCLEO-F767ZI** generating six **direct hardware PWM** signals,
   not the Arduino Servo library.
@@ -512,19 +553,27 @@ The final controller is planned as:
 - Verify the complete pin/timer map against the board documentation, system
   guide, and STM32 Arduino core pin definitions before wiring.
 
-- [ ] Port the calibrated per-unit data into the final firmware: installed
-      min/max pulse, joint zero, sign and unit-to-joint map.
-- [ ] Enforce installed limits in the final firmware, not only in the bench
-      console.
+- [ ] Convert measured installed min/max and home pulses to the existing
+      servo-angle coordinate before updating the degree fields in
+      `App/motion/servo_cal.c`. Store the measured joint zero and sign in the
+      records for the later joint-coordinate implementation; the current table
+      has no zero/sign fields. The current `0/180/90` values are placeholders,
+      not safe installed limits. Do not put microseconds into degree fields.
+- [ ] Enforce the measured installed limits in the firmware, not only in the
+      bench console.
+- [ ] Implement and validate IK/FK against measured geometry; remove the
+      placeholders only after physical checks.
 - [ ] Verify the STM32 pin/timer map and buffer wiring on the real board before
       connecting servos.
-- [ ] The 115200-baud Newline console is the Uno/STM32 calibration interface. The
-      final controller uses calibrated values internally, not this text
-      protocol.
+- [ ] The 115200-baud Newline console remains the Uno/STM32 calibration
+      interface. The controller uses calibrated values internally, not this
+      text protocol.
 
 See [the system guide](robotic-arm-guide.md) and
-[the build spec](robotic-arm-final-build-spec.md) for the planned wiring. The
-final firmware is not in this repository yet; do not treat the plan as tested.
+[the build spec](robotic-arm-final-build-spec.md) for the planned wiring, and
+[the canonical calibration table](../ProjectDevGuide/docs/servo-calibration.md)
+for the measured unloaded values. The merged skeleton exists, but IK/geometry
+and installed calibration are still open; do not treat it as tested.
 
 ## 10. Hardware and firmware information to fill in
 
@@ -534,7 +583,7 @@ final firmware is not in this repository yet; do not treat the plan as tested.
 | Servo signal | Uno pin 9 or STM32 pins listed above | TIM3/TIM4 via SN74AHCT244N | Bench build verified; final peripheral integration still needs checking |
 | Driver model | Uno Servo library or STM32 HardwareTimer | Direct hardware PWM + SN74AHCT244N | Buffer carries signals only |
 | Number of channels | 1 at a time | 6 | One unit at a time on the bench |
-| Channel-to-joint map | | | Fill after Section 4 |
+| Channel-to-joint map | J1..J6 = units 1..6 (confirmed) | Same map; installed calibration blank | Verify on the assembled arm; fill installed values after Section 4 |
 | Calibrated command format | `arm`/`pulse` in us | Calibrated angle/pulse plus limits | Final firmware converts |
 | Command units | us on the bench | degrees in the model | Do not mix raw PWM with model angles |
 | Power / stop method | External supply + disconnect | Same, plus hardware E-stop | Detaching signal is not a power cut |
