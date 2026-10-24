@@ -17,6 +17,7 @@
  *   joy: 2s window min / mean / max / peak-to-peak of single samples, every 2 s
  *   enc: TIM1 counter, raw delta since the last line, direction, total (only when it moved)
  *   btn: debounced press / release of MODE, ENC, JOY
+ *   evt: every event input posts (what the modes receive), ENC_STEP with a running sum
  * the isr part is a min/max/sum next to the existing averaging loop (no extra loop).
  */
 #include "input/input.h"
@@ -82,6 +83,7 @@ static volatile uint16_t s_t_max[2];
 static volatile uint32_t s_t_sum[2];
 static volatile uint32_t s_t_n;
 static void test_step(uint8_t press, uint8_t release, int32_t enc_delta);
+static void test_evt(evt_type_t type, const char *name, int32_t v0, bool ok);
 #endif
 
 void input_init(void)
@@ -199,6 +201,17 @@ static void calibrate_center_once(void)
   LOG("input: joystick centre %u / %u\r\n", s_center_x, s_center_y);
 }
 
+static void post(evt_type_t type, const char *name, int32_t v0)
+{
+  bool ok = app_event_post(type, 0, v0, 0, 0);
+#if APP_INPUT_TEST
+  test_evt(type, name, v0, ok);
+#else
+  (void)name;
+  (void)ok;
+#endif
+}
+
 void input_step(void)
 {
   calibrate_center_once();
@@ -211,9 +224,9 @@ void input_step(void)
   s_btn_release_flags = 0u;
   __set_PRIMASK(p);
 
-  if (flags & (1u << BTN_MODE_I)) (void)app_event_post0(EVT_BTN_MODE);
-  if (flags & (1u << BTN_ENC_I))  (void)app_event_post0(EVT_ENC_PRESS);
-  if ((flags & (1u << BTN_JOY_I)) && input_joy_centered()) (void)app_event_post0(EVT_JOY_PRESS);
+  if (flags & (1u << BTN_MODE_I)) post(EVT_BTN_MODE, "BTN_MODE", 0);
+  if (flags & (1u << BTN_ENC_I))  post(EVT_ENC_PRESS, "ENC_PRESS", 0);
+  if ((flags & (1u << BTN_JOY_I)) && input_joy_centered()) post(EVT_JOY_PRESS, "JOY_PRESS", 0);
 
   int16_t cnt = (int16_t)__HAL_TIM_GET_COUNTER(&htim1);
   int16_t enc_delta = (int16_t)(cnt - s_enc_last);
@@ -222,7 +235,7 @@ void input_step(void)
   int32_t detents = s_enc_accum / ENC_COUNTS_PER_DETENT;
   if (detents != 0) {
     s_enc_accum -= detents * ENC_COUNTS_PER_DETENT;
-    (void)app_event_post(EVT_ENC_STEP, 0, detents * ENC_SIGN, 0, 0);
+    post(EVT_ENC_STEP, "ENC_STEP", detents * ENC_SIGN);
   }
 
 #if APP_INPUT_TEST
@@ -247,6 +260,18 @@ static uint32_t s_w_sum[2];
 static uint32_t s_w_n;
 static int32_t  s_t_enc_total;           /* raw counts since boot, before ENC_SIGN */
 static int32_t  s_t_enc_printed;         /* s_t_enc_total at the last enc line */
+
+static int32_t s_t_detents;              /* sum of posted EVT_ENC_STEP v[0] since boot */
+
+static void test_evt(evt_type_t type, const char *name, int32_t v0, bool ok)
+{
+  if (type == EVT_ENC_STEP) {
+    s_t_detents += v0;
+    LOG("evt: ENC_STEP %+ld (sum %+ld)%s\r\n", (long)v0, (long)s_t_detents, ok ? "" : " QUEUE FULL, dropped");
+  } else {
+    LOG("evt: %s%s\r\n", name, ok ? "" : " QUEUE FULL, dropped");
+  }
+}
 
 static void test_step(uint8_t press, uint8_t release, int32_t enc_delta)
 {

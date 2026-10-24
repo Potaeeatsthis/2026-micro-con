@@ -154,6 +154,15 @@ btn: JOY press (centred), exti edges <n>
 btn: JOY release
 ```
 
+Events, one line per event `input` posts (exactly what the modes receive):
+```text
+evt: ENC_STEP +1 (sum +7)        v[0] = detents, sum = all ENC_STEP v[0] since boot
+evt: JOY_PRESS                   only when the stick is centred
+evt: ENC_PRESS
+evt: BTN_MODE
+```
+A press with the stick pushed shows `btn: JOY press (NOT centred: no event)` and no `evt:` line.
+
 Pi link:
 ```text
 pi: TEST mode, FIND red_box every 5000 ms
@@ -211,6 +220,11 @@ The stick must move freely: a breadboard edge limited one side to 513 counts in 
 | Counts lost, fast clockwise | about 2 counts (half a detent) in the fastest bursts (≈ 37 detents/s), seen in two runs; none in slow turns |
 | Counts lost, fast counter-clockwise | none seen (one run, 36 counts) |
 | SW press / release seen | yes; knob switch clean (1 edge per press), joystick switch bounces (about 4 edges per press) and the 50 Hz debounce absorbs it |
+
+Re-check 2026-10-24 22:44–22:48 with the `evt:` log (what the modes receive): four runs of 10 clicks gave
+`EVT_ENC_STEP` sums of +10, −11 (that run measured 12 clicks of counts), +10, −10; every event is ±1 with the
+right sign. Joystick press centred → one `JOY_PRESS` per press (switch bounces ~3 edges), pushed → none; knob
+press → one `ENC_PRESS` each. Joystick range, centre (2073 / 2067), noise (13–29) and signs unchanged.
 
 Losses were inferred from the resting count modulo 4, because the turns were not exactly 10 detents each.
 Effect: after a very fast spin, `EVT_ENC_STEP` can be off by one detent.
