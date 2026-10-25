@@ -51,7 +51,8 @@ here: they belong to `safety/`.
 
 What the numbers mean:
 
-- **Colour** = the name: `red_box`, `green_box`, `blue_box`, `black_box` (`OBJ_RED_BOX` … in `object_id_t`).
+- **Colour** = the name: `red_box`, `green_box`, `blue_box`, `black_box` (`OBJ_RED_BOX` … in `object_id_t`,
+  `OBJ_BOX_COUNT` of them). `hand` (`OBJ_HAND`) comes after the boxes, see below.
 - **x y z** = integer mm, **robot-base frame**: origin on the base axis at the mounting plane, +X forward,
   +Y left, +Z up. The point is the **centre of the block's top face**.
 - The Pi does detection, depth and the camera → base transform. **The STM32 does IK and the grasp offset**
@@ -60,7 +61,7 @@ What the numbers mean:
   `pi_link_cancel()` forgets the pending request (mode change, stop).
 - Bad lines never become events; they are logged with a reason (`pi: bad line (...)`).
 
-**Hand (Pi side ready, STM32 side not yet).** The bridge also answers `FIND hand`:
+**Hand.** The bridge also answers `FIND hand`; voice mode sends it after `hand` + `yes` (`voice-task.md`):
 
 | STM32 sends | Pi answers | Meaning |
 |---|---|---|
@@ -73,9 +74,9 @@ What the numbers mean:
 - One hand only (the first MediaPipe finds). Detection runs up to 5 times a second (≈ 120 ms per run on the Pi 4).
 - MediaPipe runs in a **separate worker process** with its own Python (`~/hand-env`), so a crash there can never
   stop the block answers. The newest MediaPipe (1.1.1) dies with `Illegal instruction` on the Pi 4; use 0.10.18.
-- To use it, the STM32 needs `OBJ_HAND` in `object_id_t` (`app_types.h`, core owner) and the name `"hand"` in
-  `pi_proto.c` (pi_link). Today `mode_voice.c` uses `DEST_HAND`, a fixed calibrated pose, and never sends `FIND hand`.
-  Careful: `mode_voice.c` loops over `OBJ_COUNT` as "boxes"; adding `OBJ_HAND` needs a separate box count there.
+- STM32 side: `OBJ_HAND` in `object_id_t` (after the boxes; `OBJ_BOX_COUNT` = boxes only) and the name `"hand"`
+  in `pi_proto.c`. Code that means "boxes" loops over `OBJ_BOX_COUNT`, not `OBJ_COUNT`.
+- `APP_INPUT_TEST_CYCLE` (bench) cycles over `OBJ_COUNT`, so it now also sends `FIND hand`.
 
 **Current status (2026-10-24):** colours re-taught (all four found, confidence 70–87). The camera → base
 calibration (`calib_T.npy`) is not done yet, so the bridge runs with `--camera-frame` and the x y z are

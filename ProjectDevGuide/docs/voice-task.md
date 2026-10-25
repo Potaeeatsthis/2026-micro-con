@@ -19,9 +19,9 @@ they wait for a valid word or `stop` for as long as the user needs (decided 25 O
 | S3 GRASPING | moving: open, above, down, close, up | only `stop` | → S10 |
 | S4 HOLDING | object in the gripper | `hand` / `station` / `base` / `place` / `drop` → S7; `forward` / `backward` / `left` / `right` → S6 (first item queued); `home` → `RELEASE FIRST` | nothing |
 | S6 JOG QUEUE | building the queue (max 10 items, each keeps the slider step) | jog words → add; `undo` → remove the last; `yes` → S8 RUN QUEUE; `no` → clear, S4 | clear, S4 |
-| S7 CONFIRM PLACE | shows the destination | `yes` → S8 PLACING; `no` → back to S4 or S10 (where it came from) | back to S4 or S10 |
+| S7 CONFIRM PLACE | shows the destination | `yes` → S8 PLACING (for `hand`: first `FIND hand`, waits with only `stop`; reply → S8, `NOTFOUND` → asks again, Pi timeout → S4); `no` → back to S4 or S10 (where it came from) | back to S4 or S10 |
 | S8 RUN QUEUE | moving through the queue | only `stop` | → S10 |
-| S8 PLACING | moving: above, down, open, up | only `stop` | → S10 |
+| S8 PLACING | moving: above, down, open, up (hand: opens `HAND_RELEASE_MM` above the palm, never at it) | only `stop` | → S10 |
 | S9 GOING HOME | moving | only `stop` | → S10 |
 | S10 STOPPED | holds still; a closed gripper stays closed | `place` / `drop` → S7; `home` → S11 (opens the gripper first) | nothing |
 | S11 CONFIRM HOME | "go home?" | `yes` → S9; `no` → back to S0 or S10 | back to S0 or S10 |
@@ -30,6 +30,11 @@ Changes from the system guide §11.3: S5 is merged into S7 (S7 shows the destina
 misheard `home` (e.g. "foam") can never move the arm or open the gripper without `yes`; `place` from S10
 goes through S7. The arm never releases a held object on its own. The gripper state follows the gripper
 step when it is commanded, so a `stop` right after "open" in a place script knows the gripper is empty.
+
+`hand` (26 Oct 2026) has no fixed pose: the hand moves, so `yes` in S7 asks the Pi (`FIND hand`) for the palm
+centre at that moment. The answer is read once and kept for the whole place script (the arm does not follow a
+hand that moves during the place). The gripper opens `HAND_RELEASE_MM` (30 mm placeholder, team decision) above
+the palm and never goes down to it.
 
 Other events: e-stop, servo-rail loss or a fatal fault stop a moving state (→ S10) and cancel a Pi
 request; a mode change holds the motion and cancels the task (back in voice mode: S0, or S4 if holding).
@@ -85,14 +90,17 @@ Branch `core/voice-task` on `f799ee2`, local flags `APP_VOICE_DRY_RUN 1`, `APP_V
 
 Not run on the board (pure state logic; the Pi side was the point of this test): S11 `yes`/`no`,
 `undo`, `no` in S2, `stop` during a grasp, the Pi timeout (measured in PR #8: ≈ 3009 ms). The host tests
-cover `home` through S11 from S0 and S10, `stop` while moving and the Pi timeout; full host tests for
+cover `home` through S11 from S0 and S10, `stop` while moving, the Pi timeout and (dry-run build) `hand` with
+the live palm position: FIND hand, NOTFOUND, timeout, stop, release height; full host tests for
 every state are still to do. The two fixes
 made after the run (gripper state per step, log order) were build-checked only.
 
 ## 5. Still open
 
 - IK/FK (`TODO(ik)`): until it exists, a real (non-dry) `yes` in S2 shows `IK NOT READY` and stays in S2.
-- `hand` / `station` / `base` poses (`DEST_CALIBRATED 0`), and "place here" lowers a fixed 50 mm instead
+- `station` / `base` poses (`DEST_CALIBRATED 0`), and "place here" lowers a fixed 50 mm instead
   of to the table.
 - Jog directions in the robot-base frame and the queue travel limit (300 mm placeholder).
 - Camera → robot-base calibration (`calib_T.npy`) before any real move.
+- `HAND_RELEASE_MM` (how far above the palm the gripper opens) and a safety-owner OK before the arm ever moves
+  towards a person's hand. There is no hardware e-stop planned.

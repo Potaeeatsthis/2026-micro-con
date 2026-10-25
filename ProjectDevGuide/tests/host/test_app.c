@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include "main.h"
 #include "tim.h"
 #include "usart.h"
@@ -107,8 +108,100 @@ static void check_servo_cal(int joint, uint16_t us0, uint16_t us90, uint16_t us1
   CHECK(servo_deg_to_us(joint, 135.0f) == (uint16_t)((us90 + us180) / 2u), msg);
 }
 
+#if APP_VOICE_DRY_RUN
+/* second build (run.sh, -DAPP_VOICE_DRY_RUN=1): ik is not measured yet, so only a dry run can
+ * reach S4 HOLDING and walk "hand" end to end. moves are read back from the dry-run log. */
+static FILE *g_log;
+static int   g_saved_stdout = -1;
+static void log_capture(void)
+{
+  fflush(stdout);
+  g_log = tmpfile();                                  /* can be NULL (e.g. no temp dir on windows) */
+  if (!g_log) return;
+  g_saved_stdout = dup(1); dup2(fileno(g_log), 1);
+}
+static int log_has(const char *s)
+{
+  char line[160]; int hit = 0;
+  if (!g_log) return 0;
+  fflush(stdout);
+  rewind(g_log);
+  while (fgets(line, sizeof line, g_log)) if (strstr(line, s)) hit = 1;
+  return hit;
+}
+static void log_release(void)
+{
+  if (!g_log) return;
+  fflush(stdout); dup2(g_saved_stdout, 1); close(g_saved_stdout); fclose(g_log); g_log = NULL;
+}
+static uint32_t word_bit(const char *w) { return 1u << voice_class_id(w); }
+
+static int voice_hand_dry_run(void)
+{
+  safety_init(); motion_init(); pi_link_init(); lcd_init(); modes_init();
+  run_ms(100);
+
+  printf("== voice hand (dry run): live palm position from the pi\n");
+  say("pick"); say("red box"); pi_link_on_tx_done();
+  pi_rx("OBJ red_box 182 -45 30\n");
+  say("yes");
+  run_ms(8000);
+  CHECK(strcmp(screen_line(0), "S4 HOLDING") == 0, "dry-run grasp -> S4 holding");
+
+  say("hand");
+  CHECK(strcmp(screen_line(0), "S7 CONFIRM PLACE") == 0 && strcmp(screen_line(1), "Place at HAND?") == 0, "hand -> S7 asks");
+  g_tx[0] = 0;
+  say("yes");
+  CHECK(strcmp(g_tx, "FIND hand\n") == 0, "yes sends FIND hand");
+  CHECK(strcmp(screen_line(0), "S7 CONFIRM PLACE") == 0 && strcmp(screen_line(1), "Finding hand") == 0, "waits in S7");
+  CHECK(!(g_voice_mask & (word_bit("yes") | word_bit("no"))) && (g_voice_mask & word_bit("stop")), "while finding: only stop");
+  g_tx[0] = 0;
+  say("no");
+  say("yes");                                         /* past the filter: on_word must ignore them too */
+  CHECK(strcmp(screen_line(0), "S7 CONFIRM PLACE") == 0 && strcmp(screen_line(1), "Finding hand") == 0, "yes / no while finding: still waiting");
+  CHECK(g_tx[0] == 0, "no second FIND while finding");
+  pi_link_on_tx_done();
+  pi_rx("NOTFOUND hand\n");
+  CHECK(strcmp(screen_line(0), "S7 CONFIRM PLACE") == 0 && strcmp(screen_line(1), "Place at HAND?") == 0, "NOTFOUND -> asks again");
+  CHECK(g_voice_mask & word_bit("yes"), "yes / no accepted again");
+
+  say("yes"); pi_link_on_tx_done();
+  g_tick += APP_PI_TIMEOUT_MS + 100u; loop_pass();
+  CHECK(strcmp(screen_line(0), "S4 HOLDING") == 0, "pi timeout while finding -> S4, still holding");
+
+  say("hand"); say("yes"); pi_link_on_tx_done();
+  say("stop");
+  CHECK(strcmp(screen_line(0), "S4 HOLDING") == 0, "stop while finding -> S4");
+  pi_rx("OBJ hand 1 2 3\n");
+  CHECK(strcmp(screen_line(0), "S4 HOLDING") == 0, "late hand reply after stop does nothing");
+
+  say("hand"); say("yes"); pi_link_on_tx_done();
+  pi_rx("OBJ red_box 1 2 3\n");
+  CHECK(strcmp(screen_line(1), "Finding hand") == 0, "a box reply does not count as the hand");
+  log_capture();
+  CHECK(g_log != NULL, "log capture works (tmpfile)");
+  pi_rx("OBJ hand 101 -4 279\n");
+  int placing = strcmp(screen_line(0), "S8 PLACING") == 0;
+  run_ms(8000);
+  int above = log_has("move to 101 -4 329 mm"), release = log_has("move to 101 -4 309 mm");
+  int open_ = log_has("gripper OPEN"), palm = log_has("move to 101 -4 279 mm");
+  log_release();
+  CHECK(placing, "OBJ hand -> S8 placing");
+  CHECK(above, "first above the palm (+APPROACH_MM)");
+  CHECK(release && open_, "opens at palm + HAND_RELEASE_MM");
+  CHECK(!palm, "never goes down to the palm itself");
+  CHECK(strcmp(screen_line(0), "S0 IDLE") == 0, "then home -> S0");
+
+  printf("\n%d passed, %d failed\n", passes, fails);
+  return fails ? 1 : 0;
+}
+#endif
+
 int main(void)
 {
+#if APP_VOICE_DRY_RUN
+  return voice_hand_dry_run();
+#endif
   printf("== event queue\n");
   app_events_init();
   for (int i = 0; i < 40; i++) app_event_post(EVT_ENC_STEP, 0, i, 0, 0);
