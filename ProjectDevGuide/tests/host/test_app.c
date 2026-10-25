@@ -48,6 +48,8 @@ HAL_StatusTypeDef HAL_UART_AbortReceive(UART_HandleTypeDef *h) { (void)h; return
 int voice_class_id(const char *n) { for (int i = 0; i < N_CLASSES; i++) if (!strcmp(CLASS_NAMES[i], n)) return i; return -1; }
 const char *voice_class_name(int id) { return (id >= 0 && id < N_CLASSES) ? CLASS_NAMES[id] : "?"; }
 int voice_last_word(void) { return -1; }
+static uint32_t g_voice_mask = 0xFFFFFFFFu;     /* what mode_voice last told voice/ to accept */
+void voice_set_accept_mask(uint32_t m) { g_voice_mask = m; }
 
 /* ---------------------------------------------------------------- helpers */
 static int fails, passes;
@@ -244,7 +246,10 @@ int main(void)
   run_ms(4000);
   CHECK(cur(0) == 60.0f, "voice mode moves without hold-to-enable");
   say("home");
-  CHECK(strcmp(screen_line(0), "S9 GOING HOME") == 0, "home from S0 -> moving");
+  CHECK(strcmp(screen_line(0), "S11 CONFIRM HOME") == 0, "home from S0 asks first");
+  CHECK(cur(0) == 60.0f, "S11: nothing moves before yes");
+  say("yes");
+  CHECK(strcmp(screen_line(0), "S9 GOING HOME") == 0, "home + yes -> moving");
   run_ms(500);
   say("stop");
   CHECK(strcmp(screen_line(0), "S10 STOPPED") == 0, "stop while moving -> S10");
@@ -255,6 +260,10 @@ int main(void)
   CHECK(strcmp(screen_line(0), "S10 STOPPED") == 0, "S10 ignores start words");
 
   say("home");
+  CHECK(strcmp(screen_line(0), "S11 CONFIRM HOME") == 0, "home from S10 asks first");
+  say("no");
+  CHECK(strcmp(screen_line(0), "S10 STOPPED") == 0, "no -> back to S10, still holding");
+  say("home"); say("yes");
   run_ms(15000);   /* gripper 90->30 at 10 deg/s = 6 s, then 30 deg back home = 3 s */
   CHECK(cur(0) == 90.0f, "home from S10 reaches home");
   CHECK(strcmp(screen_line(0), "S0 IDLE") == 0, "then back to S0");

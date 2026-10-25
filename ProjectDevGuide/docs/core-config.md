@@ -323,7 +323,8 @@ So the LCD redraws only the parts that changed, never the whole screen in every 
 | `VOICE_REFRACTORY_MS` | 1500 ms | no second word within 1.5 s |
 
 So a word event arrives a few CNN runs after the word, and two words closer than 1.5 s give one
-event. Treat voice as "do this next", never as a timing signal (e.g. do not cut a servo pulse on a
+event. In voice mode a word the current task state does not accept is dropped in `voice.c` and starts no
+refractory time ([`voice-task.md`](voice-task.md) §2). Treat voice as "do this next", never as a timing signal (e.g. do not cut a servo pulse on a
 word; finish or stop the move in `motion/`).
 
 ---
