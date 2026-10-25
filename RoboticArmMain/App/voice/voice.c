@@ -53,6 +53,11 @@ static uint32_t s_infer_us;
 static uint32_t s_overruns_seen;
 static int      s_last_word = -1;
 static uint32_t s_last_word_ms;
+static uint32_t s_accept = VOICE_ACCEPT_ALL;   /* words the active task state wants (mode_voice) */
+static int      s_ignored_word = -1;
+static uint32_t s_ignored_ms;
+
+_Static_assert(N_CLASSES <= 32, "voice_set_accept_mask holds one bit per class");
 
 /* ---------------------------------------------------------------- isr side */
 typedef struct { float x1; float y1; } dc_state_t;
@@ -192,6 +197,17 @@ void voice_step(void)
   if (snr_db < VOICE_MIN_SNR_DB) return;
   if (s_last_detect_ms != 0u && ms_since(now, s_last_detect_ms) < VOICE_REFRACTORY_MS) return;
 
+  /* 5. word filter: a word the task state does not want is dropped and starts no refractory,
+   *    so the word that follows is still heard. one log line per word, not one per CNN run */
+  if ((s_accept & (1u << top)) == 0u) {
+    if (top != s_ignored_word || ms_since(now, s_ignored_ms) >= VOICE_REFRACTORY_MS) {
+      LOG("--- %s %d%% ignored (not wanted now)\r\n", CLASS_NAMES[top], (int)(top_p * 100.0f));
+    }
+    s_ignored_word = top;
+    s_ignored_ms = now;
+    return;
+  }
+
   s_last_detect_ms = now;
   s_last_word = top;
   s_last_word_ms = now;
@@ -219,6 +235,8 @@ int voice_class_id(const char *name)
   }
   return -1;
 }
+
+void voice_set_accept_mask(uint32_t mask) { s_accept = mask; }
 
 int      voice_last_word(void)    { return s_last_word; }
 uint32_t voice_last_word_ms(void) { return s_last_word_ms; }

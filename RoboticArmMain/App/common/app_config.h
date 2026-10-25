@@ -102,12 +102,27 @@
 #define APP_PI_TIMEOUT_MS       3000u /* TODO(pi): set after testing the camera pipeline */
 #endif
 
+/* ---------------------------------------------------------------- voice task bench flags
+ * set these only in app_config_local.h, never on master */
+#ifndef APP_VOICE_DRY_RUN
+#define APP_VOICE_DRY_RUN       0     /* 1 = voice mode logs each planned move and fakes "move done", no ik, no servo */
+#endif
+#ifndef APP_VOICE_DRY_RUN_STEP_MS
+#define APP_VOICE_DRY_RUN_STEP_MS 1000u /* how long each faked move step "takes" (time to say stop) */
+#endif
+#ifndef APP_VOICE_FAKE_PI
+#define APP_VOICE_FAKE_PI       0     /* 1 = a box word gets an instant fake OBJ reply, no pi needed */
+#endif
+
 /* ---------------------------------------------------------------- sanity checks */
 #if APP_USE_RAIL_SENSE && !APP_USE_INPUT
 #error "APP_USE_RAIL_SENSE needs APP_USE_INPUT (the rail is read by the input adc)"
 #endif
 #if APP_USE_MODES && !APP_USE_MOTION
 #error "APP_USE_MODES needs APP_USE_MOTION (modes only set motion targets)"
+#endif
+#if APP_VOICE_FAKE_PI && !APP_VOICE_DRY_RUN
+#error "APP_VOICE_FAKE_PI needs APP_VOICE_DRY_RUN (a fake position must never move the real arm)"
 #endif
 
 #endif /* APP_CONFIG_H */
