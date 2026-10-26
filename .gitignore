@@ -34,3 +34,6 @@ __pycache__/
 study/Kinematic-Slide.pdf
 study/robotic-arm-budget.xlsx
 study/study_guide_pdf_skill.md
+
+# station simulation pictures (test_station_sim.py --save)
+ProjectDevGuide/tools/pi/sim_*.jpg

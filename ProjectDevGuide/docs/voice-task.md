@@ -99,7 +99,8 @@ made after the run (gripper state per step, log order) were build-checked only.
 
 - IK/FK (`TODO(ik)`): until it exists, a real (non-dry) `yes` in S2 shows `IK NOT READY` and stays in S2.
 - `station` / `base` poses (`DEST_CALIBRATED 0`), and "place here" lowers a fixed 50 mm instead
-  of to the table.
+  of to the table. The Pi already answers `FIND station`
+  (drop spot found by depth, [`station-detection.md`](station-detection.md)); the STM32 does not send it yet.
 - Jog directions in the robot-base frame and the queue travel limit (300 mm placeholder).
 - Camera → robot-base calibration (`calib_T.npy`) before any real move.
 - `HAND_RELEASE_MM` (how far above the palm the gripper opens) and a safety-owner OK before the arm ever moves

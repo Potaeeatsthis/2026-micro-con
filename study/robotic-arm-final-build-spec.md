@@ -18,13 +18,15 @@ Mechanical design is based on the [OmArTronics DIY 6-DOF robotic arm](https://om
 | Board | Responsibility |
 |---|---|
 | **Raspberry Pi 4** | RGB-D camera processing, object detection, depth, and object XYZ in robot-base coordinates |
-| **STM32 NUCLEO-F767ZI** | Two-microphone voice recognition, task state machine, inverse kinematics, four control modes, manual inputs, 2.4-inch ILI9341 LCD, four limit-switch inputs, safety, trajectory generation, and six hardware-PWM servo signals |
+| **STM32 NUCLEO-F767ZI** | Two-microphone voice recognition, task state machine, inverse kinematics, four control modes, manual inputs, 2.8-inch ILI9341 touch LCD (Lab 8 board), four limit-switch inputs, safety, trajectory generation, and six hardware-PWM servo signals |
 
-The Pi reports where the camera sees an object. The STM32 is planned to recognise voice commands, calculate joint angles, and control movement. The voice model and complete IK solver have not been validated in this repository.
+The Pi reports where the camera sees an object. The STM32 recognises voice commands and controls movement; it will also calculate joint angles once the IK solver is written. The complete IK solver has not been written or validated yet.
 
-### Planned STM32 voice model
+### STM32 voice model
 
-Two INMP441 microphones share a proposed 16 kHz stereo SAI/I²S input. A TC-ResNet keyword model deployed with X-CUBE-AI would classify a rolling one-second audio window every 100 ms. The proposed 21 labels cover `move/pick/grab`; four coloured boxes; `hand/station/base`; four jog directions; `undo`; `place/drop`; `yes/no`; and `home/stop`. These are command labels, including two-word labels such as `red box`. The friend's ~33 ms inference claim and model accuracy are **unverified here**. The repository has no trained model or STM32 voice firmware; measure memory, inference time and recognition accuracy on the board before integration.
+Two INMP441 microphones share a 16 kHz stereo SAI/I²S input. A TC-ResNet keyword model deployed with X-CUBE-AI classifies a rolling one-second audio window every 100 ms. The 21 labels cover `move/pick/grab`; four coloured boxes; `hand/station/base`; four jog directions; `undo`; `place/drop`; `yes/no`; and `home/stop`. These are command labels, including two-word labels such as `red box`.
+
+**Status (26 Oct 2026):** the model and the voice task are merged into `RoboticArmMain`. Measured on the board: the voice features and CNN take about 43 ms of every 100 ms main-loop window (`ProjectDevGuide/docs/core-config.md` §9). In the 25 Oct dry run with the real Pi, every accepted word was recognised at 75–99 % with no wrong word (`ProjectDevGuide/docs/voice-task.md` §4). Accuracy on more speakers and in noise is still to be measured.
 
 The task flow is: recognise an object command → request its XYZ from the Pi → show it and wait for `yes` → check reachability and limits → grasp → choose a destination or a bounded jog sequence → confirm placement before releasing. `no` cancels a pending choice, and `undo` removes the last pending jog. Voice `stop` cancels pending work and requests a controlled stop promptly, including during grasp. Keep holding the object while power is available; never release it automatically after a timeout. The hardware emergency stop disconnects servo power independently of voice and firmware.
 
@@ -60,7 +62,7 @@ Manual movement requires a separate Hold-to-Enable button. Releasing it stops th
 | INMP441 microphones | 2 | Left and right voice input to the STM32 |
 | KY-023 joystick and KY-040 rotary encoder | 1 each | Manual movement and selection |
 | MG996R and SG90 servos | 3 of each fitted | Six arm joints |
-| ILI9341 2.4-inch SPI TFT LCD | 1 | Mode, target and safety display |
+| ILI9341 2.8-inch SPI TFT LCD with touch (Lab 8 board, decided 20 Oct) | 1 | Mode, target and safety display; touch controls |
 | 12 mm normally-open momentary button | 2 | MODE and Hold-to-Enable |
 | 22 mm latching emergency stop, 1NO + 1NC | 1 | Hardware stop and status input |
 | Relay or suitable DC switch, fuse, driver and flyback diode | 1 set | Disconnect servo power when e-stop is pressed |
@@ -83,11 +85,11 @@ Manual movement requires a separate Hold-to-Enable button. Releasing it stops th
 | Path | Carries | Route |
 |---|---|---|
 | Power | up to 9.75 A | source → fuse → e-stop relay → buck → terminal block → servo **RED + BLACK** |
-| Signal | microamps | STM32 hardware PWM → SN74AHCT244N → servo **ORANGE** |
+| Signal | microamps | STM32 hardware PWM → SN74AHCT244N → servo **ORANGE** (until the buffer arrives: PWM pin → 330 Ω → servo, see `ProjectDevGuide/docs/core-config.md` §11) |
 
 The red and black servo wires connect to the 6.0 V distribution block. The orange signal wire connects to one SN74AHCT244N output.
 
-An **optional** 10 kΩ / 3.3 kΩ divider can sense the 6.0 V distribution block after the buck and emergency-stop relay. Connect 6 V → 10 kΩ → ADC junction → 3.3 kΩ → common ground; an optional 100 nF capacitor connects the junction to ground. The ADC sees about 1.49 V at 6 V or 2.98 V at 12 V. Confirm the ADC's maximum voltage and possible transients before wiring. A low reading can report rail loss or sag; this diagnostic cannot replace the hardware stop. Use an ADC pin confirmed free in CubeMX. The friend's `PC3` proposal is not an assigned pin.
+An **optional** 10 kΩ / 3.3 kΩ divider can sense the 6.0 V distribution block after the buck and emergency-stop relay. Connect 6 V → 10 kΩ → ADC junction → 3.3 kΩ → common ground; an optional 100 nF capacitor connects the junction to ground. The ADC sees about 1.49 V at 6 V or 2.98 V at 12 V. Confirm the ADC's maximum voltage and possible transients before wiring. A low reading can report rail loss or sag; this diagnostic cannot replace the hardware stop. The divider is wired to `PC3`, which is now assigned in CubeMX (`ProjectDevGuide/docs/core-config.md` §3); the firmware flag `APP_USE_RAIL_SENSE` stays 0 until the divider is fitted.
 
 > **Do not send servo power through the STM32 or SN74AHCT244N.** The buffer carries only the six PWM signals. All devices must share one common signal ground.
 
@@ -174,12 +176,12 @@ Raspberry Pi 4
         ▼
 STM32 NUCLEO-F767ZI
    ├── 2 × INMP441          3.3 V, shared SAI/I²S bus, left/right channels
-   ├── Voice recognition    planned TC-ResNet / X-CUBE-AI; timing to validate
+   ├── Voice recognition    TC-ResNet / X-CUBE-AI; ≈ 43 ms per 100 ms window on the board
    ├── Inverse kinematics   convert target XYZ to safe joint angles
    ├── KY-023 joystick      X/Y to ADC; power from 3.3 V, not 5 V
    ├── Servo-rail sense     optional divider to a free ADC input
    ├── KY-040 encoder       CLK/DT to timer encoder inputs; SW to digital input
-   ├── ILI9341 2.4-inch LCD SPI plus control pins; check module voltage ratings
+   ├── ILI9341 2.8-inch touch LCD (Lab 8 board) SPI5 plus control pins
    ├── MODE button          12 mm momentary, normally open
    ├── Hold-to-Enable       separate 12 mm momentary, normally open
    ├── E-stop status        22 mm latching button NO contact to input
@@ -304,11 +306,11 @@ The DS3218 is a practical shoulder upgrade, but it is not guaranteed to be a per
 | **14** | Voice-guided autonomous pick-and-place | Fixed commands recognised; 8 of 10 grasps succeed |
 | **15** | Battery conversion, full run-through | Runs untethered with both rails checked |
 
-Validate microphone capture and the STM32 voice model before joining voice, camera and motion. A working model is not present in this repository yet.
+Validate microphone capture and the STM32 voice model before joining voice, camera and motion. The model is merged and passed a dry run with the real Pi on 25 Oct 2026 (`ProjectDevGuide/docs/voice-task.md` §4); motion was not part of that test.
 
 If the optional rail sensor is fitted, verify its ADC voltage at power-off and 6 V, and its LCD warning before autonomous motion. It must not delay emergency-stop power removal.
 
-**Camera-to-robot calibration at stage 12 is a schedule risk.** It can take a week. The STM32 voice model is another schedule risk until measured on the board.
+**Camera-to-robot calibration at stage 12 is a schedule risk.** It can take a week, and it has not started yet (the Pi still sends camera-frame mm). The voice model is measured on the board but still needs testing with more speakers and noise.
 
 ---
 
@@ -374,7 +376,7 @@ After any servo-power loss, stop the trajectory and voice task. A commanded join
 2. **Confirm all equipment is available:** ILI9341, two 12 mm buttons, e-stop circuit, four limit switches, jumper wires and LiPo balance charger.
 3. **Verify the complete STM32CubeMX pin map:** six TIM3/TIM4 PWM outputs, two joystick ADC inputs plus one optional rail-sense ADC input, shared SAI audio, KY-040 timer inputs and switch, ILI9341 SPI/control pins, Pi GPIO UART and EXTI inputs. Assign new pins for all four limit switches; do not reuse audio pins.
 4. **Validate the STM32 voice model and IK solver** on the real board, including memory use, timing, accuracy and unreachable-target handling.
-5. **Confirm the exact 2.4-inch ILI9341 module's voltage ratings** and test the emergency-stop circuit before autonomous motion.
+5. **Confirm the Lab 8 2.8-inch ILI9341 board's voltage ratings** and test the emergency-stop circuit before autonomous motion.
 
 ---
 

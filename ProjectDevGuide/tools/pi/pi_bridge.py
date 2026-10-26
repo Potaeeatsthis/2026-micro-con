@@ -9,8 +9,11 @@ Protocol v1 (ProjectDevGuide/docs/core-config.md, study/robotic-arm-guide.md sec
     STM32 -> Pi:  FIND <name>
     Pi -> STM32:  OBJ <name> <x> <y> <z>      integer mm, robot-base frame, top-face centre
     Pi -> STM32:  NOTFOUND <name>
-    names: blue_box, green_box, red_box, black_box, hand
+    names: blue_box, green_box, red_box, black_box, hand, station
     hand = palm centre on the palm surface (pi_hand.py), same frame and units as the blocks
+    station = the free DROP SPOT on the station top (pi_vision_uart.py det.station["drop_cam_m"]): the top's
+              centre if free, else the nearest free grid point; NOTFOUND if no station or no free spot.
+              Blocks lying on the station are answered by the normal FIND <colour>_box.
 Nothing else is ever sent. A line that is not a valid FIND is logged and ignored.
 
 Camera: BlockCamera / BlockDetector / load_refs() / best_per_color() from ~/arm/pi_vision_uart.py
@@ -50,7 +53,8 @@ import time
 
 NAMES = ("blue_box", "green_box", "red_box", "black_box")
 HAND = "hand"
-FIND_NAMES = NAMES + (HAND,)
+STATION = "station"
+FIND_NAMES = NAMES + (HAND, STATION)
 CAMERA_STALE_S = 5.0  # warn when the camera has delivered no frame for this long
 REFS_CHECK_S = 2.0    # how often color_refs.json is checked for changes
 PIPELINE_API = ("BlockCamera", "BlockDetector", "load_refs", "best_per_color", "COLOR_NAMES",
@@ -189,7 +193,7 @@ class Calibration:
 class CameraSource:
     """Latest detection per colour from pi_vision_uart.py, updated in a background thread."""
 
-    def __init__(self, arm_dir, max_age_s, min_conf, camera_frame, hand=None):
+    def __init__(self, arm_dir, max_age_s, min_conf, camera_frame, hand=None, station=True):
         arm_dir = os.path.expanduser(arm_dir)
         sys.path.insert(0, arm_dir)
         os.chdir(arm_dir)  # the pipeline loads color_refs.json from the cwd
@@ -207,9 +211,12 @@ class CameraSource:
         say(f"camera: max age {max_age_s} s, min conf {min_conf}")
         self.cam = pv.BlockCamera(fps=None, laser="auto")
         self.det = pv.BlockDetector(self.cam.intr, self.cam.depth_scale, pv.load_refs())
+        if not station:
+            self.det.station_enabled = False  # FIND station gets NOTFOUND
         self.refs_watch = FileWatch(os.path.join(arm_dir, pv.REFS_FILE), self._reload_refs)
         self.refs_watch.prime()  # load_refs() above already read it
         self.latest, self.lock, self.stop = {}, threading.Lock(), False
+        self.station = None  # latest station seen: {"drop_cam_mm", "conf", "t", "n_blocks"}
         self.last_frame, self.frames = time.monotonic(), 0
         self.hand, self.hand_min_score, self.hand_state = None, 0, "off (--no-hand)"
         if hand is not None:
@@ -245,8 +252,13 @@ class CameraSource:
                 self.frames += 1
                 # camera mm only: the current calibration is applied at lookup time
                 best = self.pv.best_per_color(self.det.detect(color, depth), identity, self.last_frame)
+                st = getattr(self.det, "station", None)  # None with an older pi_vision_uart.py
                 with self.lock:
                     self.latest.update(best)
+                    if st is not None:
+                        drop = st["drop_cam_m"]
+                        self.station = {"drop_cam_mm": None if drop is None else drop * 1000.0, "conf": st["conf"],
+                                        "t": self.last_frame, "n_blocks": st["n_blocks"]}
                 if self.hand is not None:
                     self.hand.offer(color, depth, self.last_frame)
         except Exception as e:  # noqa: BLE001 - any camera failure must be visible, not silent
@@ -267,8 +279,16 @@ class CameraSource:
         return (r is not None and r["xyz_cam_mm"] is not None and time.monotonic() - r["t"] <= self.max_age_s
                 and r["score"] >= self.hand_min_score)
 
+    def _station_ok(self, r):
+        return (r is not None and r["drop_cam_mm"] is not None and time.monotonic() - r["t"] <= self.max_age_s
+                and r["conf"] >= self.min_conf)
+
     def lookup(self, name):
         self.calib.check()
+        if name == STATION:
+            with self.lock:
+                r = self.station
+            return self.calib.to_frame(r["drop_cam_mm"]) if self._station_ok(r) else None
         if name == HAND:
             r = self.hand.get() if self.hand is not None else None
             return self.calib.to_frame(r["xyz_cam_mm"]) if self._hand_ok(r) else None
@@ -293,6 +313,7 @@ class CameraSource:
             ok = "" if age <= self.max_age_s and r["conf"] >= self.min_conf else " (not sent)"
             parts.append(f"{name[:-4]} c{r['conf']} {xyz} {age:.1f}s{ok}")
         parts.append(self.hand_status())
+        parts.append(self.station_status())
         return f"frame {self.calib.frame or 'NONE'} ({self.calib.info}) | {fps:.1f} fps | " + " | ".join(parts)
 
     def hand_status(self):
@@ -305,6 +326,21 @@ class CameraSource:
         pos = self.calib.to_frame(r["xyz_cam_mm"])
         xyz = "?" if pos is None else " ".join(str(int(round(v))) for v in pos)
         return f"hand c{r['score']} {xyz} {age:.1f}s" + ("" if self._hand_ok(r) else " (not sent)")
+
+    def station_status(self):
+        if not getattr(self.det, "station_enabled", False):
+            return "station off"
+        with self.lock:
+            r = self.station
+        if r is None:
+            return "station -"
+        age = time.monotonic() - r["t"]
+        if r["drop_cam_mm"] is None:
+            return f"station c{r['conf']} FULL ({r['n_blocks']} blocks) {age:.1f}s"
+        pos = self.calib.to_frame(r["drop_cam_mm"])
+        xyz = "?" if pos is None else " ".join(str(int(round(v))) for v in pos)
+        return (f"station c{r['conf']} drop {xyz} ({r['n_blocks']} blocks) {age:.1f}s"
+                + ("" if self._station_ok(r) else " (not sent)"))
 
     def close(self):
         self.stop = True
@@ -332,6 +368,7 @@ def snapshot(arm_dir, python, model, blocks=False, seconds=5.0):
     say(f"snapshot: {worker.kind}, {seconds:.0f} s" + (", blocks + hand" if blocks else ", hold a hand open in view"))
     deproject = lambda u, v, z: pv.rs.rs2_deproject_pixel_to_point(cam.intr, [u, v], z)  # noqa: E731
     best, n, found = None, 0, 0
+    st_line = st_best = None
     t_end = time.monotonic() + seconds
     try:
         while time.monotonic() < t_end:
@@ -350,6 +387,8 @@ def snapshot(arm_dir, python, model, blocks=False, seconds=5.0):
                 better = best is None or (has and (not had or r["score"] > best[0]["score"]))
             if better:
                 best = (r, color.copy(), depth, bl, det.plane is not None if det else True)
+                st_line = pv.station_line(det, np.eye(4)) if det is not None and hasattr(pv, "station_line") else None
+                st_best = getattr(det, "station", None)
     finally:
         cam.stop()
         worker.close()
@@ -365,6 +404,9 @@ def snapshot(arm_dir, python, model, blocks=False, seconds=5.0):
         return
     status = f"{len(bl)} block(s)" + ("" if plane else " | NO TABLE PLANE")
     left = pi_hand.draw(pv.draw(color.copy(), bl, np.eye(4), status), r, text_top=True)
+    if hasattr(pv, "draw_station"):
+        det.station = st_best  # the station of the saved frame
+        pv.draw_station(left, det)
     dvis = cv2.applyColorMap(cv2.convertScaleAbs(depth, alpha=255.0 / 1500), cv2.COLORMAP_JET)
     dvis[depth == 0] = 0
     path = os.path.join(arm_dir, "snapshot.jpg")
@@ -375,6 +417,8 @@ def snapshot(arm_dir, python, model, blocks=False, seconds=5.0):
         x, y, z = b["xyz_cam_m"] * 1000.0
         say(f"  {(b['name'] or '?'):>6}  c{b['conf']:3d}  {x:6.0f} {y:6.0f} {z:6.0f} mm" + ("" if b["depth_ok"] else "  (est)"))
     say(f"  hand    {hand_txt}  (position on {found} of {n} frames)")
+    if st_line:
+        say(f"  {st_line}  (camera mm)")
     say(f"saved {path}")
 
 
@@ -390,6 +434,7 @@ def main():
     ap.add_argument("--status", type=float, default=10.0, help="status line every N seconds (0 = off)")
     ap.add_argument("--duration", type=float, default=0, help="quit after this many seconds (0 = never)")
     ap.add_argument("--no-hand", action="store_true", help="no hand detection (FIND hand gets NOTFOUND)")
+    ap.add_argument("--no-station", action="store_true", help="no station detection (FIND station gets NOTFOUND)")
     ap.add_argument("--hand-hz", type=float, default=5.0, help="hand detections per second")
     ap.add_argument("--hand-min-score", type=int, default=50, help="lowest hand score (0-100) used")
     ap.add_argument("--hand-python", default="~/hand-env/bin/python", help="Python with MediaPipe for the hand worker")
@@ -412,7 +457,8 @@ def main():
 
     hand = None if args.no_hand else {"python": args.hand_python, "model": hand_model, "hz": args.hand_hz,
                                       "min_score": args.hand_min_score}
-    src = CameraSource(args.arm_dir, args.max_age, args.min_conf, args.camera_frame, hand)
+    src = CameraSource(args.arm_dir, args.max_age, args.min_conf, args.camera_frame, hand,
+                       station=not args.no_station)
     ser = serial.Serial(args.port, args.baud, bytesize=8, parity="N", stopbits=1, timeout=0.05)
     ser.reset_input_buffer()
     split = LineSplitter()

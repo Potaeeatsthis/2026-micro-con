@@ -65,6 +65,17 @@ installed safe limits.
 the 0°/180° pulses. For example, J1's reference is 1460 µs; the midpoint of 500
 and 2430 would be 1465 µs.
 
+**Values on the tool limit may be clipped.** The bench tool could not send less than 500 µs or more than
+2500 µs. These points landed exactly on that limit, so the true pulse for that angle may lie slightly beyond it:
+0° of `MG996R-1`, `MG996R-2` and `SG92R-1` (500 µs), and 180° of `MG996R-3` and `SG90` (2500 µs). The horn
+was seated one spline tooth (about 14° on the MG996R, 17° on the SG92R) closest to 90° at 1500 µs, so a
+different tooth moves all three points together.
+
+**Repeatability (three runs, 23 Oct 2026).** The span from 0° to 180° stayed within 30 µs between runs for every
+unit measured three times (`MG996R-1` 1950 / 1950 / 1930 µs, `SG92R-1` 1900 / 1900 / 1870 µs). The absolute
+pulses moved by up to about 150 µs between runs because the horn sat on a different tooth. Runs 1 and 2 used
+50 µs steps (about ±2.5°); the table above is run 3, fine-tuned with 10 µs steps.
+
 The 500..2500 µs column is the unloaded range each unit was tested over. It is
 the value to enter as the console's unloaded `limits` if it matches what you
 physically checked; it is not an installed range.
@@ -102,6 +113,29 @@ Measure before changing code. A multimeter on DC shows the **average** of the PW
 | Servo red / brown | rail voltage (6 V) / 0 V | servo not powered |
 
 The averages are calculated, not measured, except the PC6 reading.
+
+## Bench power lessons (23 Oct 2026)
+
+These happened during the unloaded measurements. They are why the servo rail must never come from a board's
+5 V pin or from laptop USB.
+
+| What was done | What happened |
+|---|---|
+| MG996R powered from the NUCLEO **VIN** pin | Clicks, no motion: VIN is an **input** (7–12 V into the board), not a supply |
+| MG996R and SG92R from the NUCLEO **5V** pin (ST-LINK USB) | Clicks; the rail sagged to ≈ 4.6 V on a meter and the board **reset** mid-test (startup log printed again) |
+| MG996R from the Arduino Nano 5V (USB) | Worked for slow moves, but a full-range jump **froze the Nano** (no reply until a DTR reset), the USB port locked (`Device Descriptor Request Failed`, error 43) and once the **laptop shut down** (Windows Kernel-Power 41) |
+| 12 V battery into a buck converter without a fuse | The buck's own input capacitor **burst** at connection; most likely the input polarity was reversed. Treat that buck as damaged |
+
+Rules that follow:
+
+- Power the servos only from the separate 6 V buck rail (or 4 × AA ≈ 6 V for a single bench servo), with the
+  ground shared with the board. Never from VIN, 5V, 3V3 or a USB port.
+- Before the buck: **fuse** on the battery +, and a reverse-polarity diode or a polarity check with a meter.
+  Set the buck output (6.0 V, CC limit ≈ 3 A for one MG996R) with nothing connected, then connect the servo.
+- Do not jump a servo across its full range in one step on the bench; ramp it. The full-range jump is the
+  biggest current spike.
+- A brown-out can **hang** an AVR board without resetting it: if a servo suddenly stops responding, reset the
+  board before suspecting the servo.
 
 ## Installed calibration status
 

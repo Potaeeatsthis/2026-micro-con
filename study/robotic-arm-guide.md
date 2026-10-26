@@ -11,7 +11,7 @@
 
 | Topic | Now |
 |---|---|
-| Raspberry Pi job | Camera only: finds the box and reports its XYZ position in the robot-base frame |
+| Raspberry Pi job | Camera only: finds the box (and, since 26 Oct, the operator's palm for `hand`) and reports its XYZ position in the robot-base frame |
 | Voice, task state machine, IK | All on the STM32 |
 | Pi link | Pi GPIO UART to STM32 USART6, 115200 8N1; message format v1 agreed (Section 12) |
 | LCD | 2.8-inch ILI9341 **with touch** (the Lab 8 board): mode tabs, jog slider, jog queue with Undo, software STOP |
@@ -38,7 +38,7 @@ The system has four operating modes:
 
 The Raspberry Pi processes the RGB-D camera and sends object positions to the STM32. The STM32 handles voice recognition, the task state machine, inverse kinematics (IK), movement, manual controls, safety, the display, and servo PWM.
 
-**Status:** the voice model already runs on the STM32 in a separate test project and will be merged into this repository; its accuracy is still being improved. The IK solver is not written yet.
+**Status (26 Oct 2026):** the voice model and the S0–S11 voice task are merged into `RoboticArmMain` and were tested on the board in dry-run mode with the real Pi (accepted words 75–99 %; `ProjectDevGuide/docs/voice-task.md` §4). The Pi bridge finds the four colour blocks and a hand with the D435, but sends camera-frame mm until the camera-to-robot calibration (`calib_T.npy`) is done. All six servos moved from a `RoboticArmMain` bench build (branch `test/servo-power-test`, never merged), and their unloaded calibration is measured. The IK solver and arm geometry are not written yet, so nothing moves the assembled arm.
 
 ## 2. Final Architecture
 
@@ -314,7 +314,7 @@ Robot arm moves the box
 | Confirm | `yes`, `no` |
 | Other | `home`, `stop` |
 
-Each word is spoken on its own with a short pause. `hand`, `station` and `base` are fixed positions set during calibration.
+Each word is spoken on its own with a short pause. `station` and `base` are fixed positions set during calibration. `hand` is not fixed: after `yes`, the STM32 asks the Pi for the palm position at that moment (`FIND hand`, 26 Oct 2026). Finding the station with the camera instead of a fixed pose is a proposal only (Section 22).
 
 ### 11.3 Task state machine
 
@@ -394,7 +394,7 @@ Pi → STM32: OBJ red_box 182 -45 30
 Pi → STM32: NOTFOUND red_box
 ```
 
-Object names follow the voice labels (`blue_box`, `green_box`, `red_box`, `black_box`). The timeout value and the camera-to-robot calibration method still need testing.
+Object names follow the voice labels (`blue_box`, `green_box`, `red_box`, `black_box`). The Pi also answers `FIND hand` with the palm centre (`OBJ hand x y z`). Measured on the board: round trip 4–14 ms, timeout 3000 ms (`APP_PI_TIMEOUT_MS`). The camera-to-robot calibration is not done yet, so the Pi currently sends camera-frame mm. Details: `ProjectDevGuide/docs/inputs-and-pi-interface.md`.
 
 The ST-Link USB cable may still provide programming, debugging or power, but it is not the Pi command link. The STM32 code uses one macro (`PI_UART`) for this link.
 
@@ -441,6 +441,8 @@ Smooth command:
 ```
 
 ### 13.1 SN74AHCT244N Installation
+
+> **Current wiring (24 Oct 2026): no buffer.** Until an SN74HCT244N or SN74AHCT244N arrives, each STM32 PWM pin goes through a 330 Ω series resistor straight to the servo signal wire, with a common ground. All six servos move this way. Do not use the SN74HC244N (no "T") with a diode on VCC; that stage was built and failed. See `ProjectDevGuide/docs/core-config.md` §11.
 
 The SN74AHCT244N is not built into the STM32 NUCLEO-F767ZI. It is a separate 20-pin DIP integrated circuit. The STM32 GPIO pins generate 3.3 V PWM signals, while this buffer changes them into reliable 5 V logic signals for the servos.
 
@@ -727,8 +729,10 @@ This architecture uses all three requested modules: ADC, PWM, and graphic LCD.
 | Installed servo calibration (safe range, zero, home) after assembly; unit-to-joint map already confirmed J1-J6 = units 1-6 | Servo / motion member |
 | Whether to fit the 4 limit switches, and where | Mechanical member |
 | Jog queue limits (item count, total travel) | Voice / motion members, on the real arm |
-| Pi reply timeout and camera-to-robot calibration | Pi member |
-| Destination positions for hand / station / base | Set during calibration |
-| Voice model accuracy on the board | Voice member |
+| Camera-to-robot calibration (`calib_T.npy`); the Pi timeout is set to 3000 ms | Pi member |
+| Destination positions for station / base (`hand` uses the live palm position) | Set during calibration |
+| **Proposal:** find the station with the camera instead of a fixed pose (`FIND station`; see `ProjectDevGuide/docs/inputs-and-pi-interface.md` §5) | Pi member + core owner, if the team agrees |
+| SN74HCT244N or SN74AHCT244N buffer (servos run direct through 330 Ω until it arrives) | Hardware member |
+| Voice model accuracy on the board (75–99 % for accepted words in the 25 Oct dry run) | Voice member |
 
 The Motion 2350 Pro and PCA9685 are not part of the final architecture. They may be kept only as backup hardware if direct STM32 PWM cannot be completed.
