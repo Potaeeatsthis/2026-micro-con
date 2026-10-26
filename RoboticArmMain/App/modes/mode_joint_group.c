@@ -2,8 +2,8 @@
  *
  * owner: TODO(team) - write the owner's name here and in ProjectDevGuide/docs/TEAM_GUIDE.md section 1
  *   group 1: X = J1 base,      Y = J2 shoulder
- *   group 2: X = J3 elbow,     Y = J4 wrist pitch
- *   group 3: X = J5 wrist rot, Y = J6 gripper
+ *   group 2: X = J3 elbow,      Y = J4 wrist roll
+ *   group 3: X = J5 wrist pitch, Y = J6 gripper
  */
 #include "modes/mode_ops.h"
 #include "motion/motion.h"

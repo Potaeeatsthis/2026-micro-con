@@ -14,6 +14,9 @@
  *
  * Physical labels are preserved: MG996R-1/-2/-3, SG92R-1, SG92R-3 and SG90.
  * SG92R-2 is retired; SG92R-3 keeps its name at joint 5 and J6 uses an SG90.
+ * J4 is wrist roll and J5 is wrist pitch; this swap is by joint role only, so
+ * the servo unit, channel, pulse calibration and home angle of each row stay
+ * unchanged.
  *
  * STARTUP STILL SENDS HOME: motion_init() loads home_deg and the first allowed
  * PWM tick writes that pose. Keep every servo signal wire disconnected while
@@ -26,7 +29,7 @@ const servo_cal_t SERVO_CAL[ARM_N_JOINTS] = {
   { "J1 BASE",         500,  1460, 2430,   0.0f, 180.0f, 90.0f },  /* MG996R #1 */
   { "J2 SHOULDER",     500,  1430, 2440,   0.0f, 180.0f, 90.0f },  /* MG996R #2 */
   { "J3 ELBOW",        540,  1530, 2500,   0.0f, 180.0f, 90.0f },  /* MG996R #3 */
-  { "J4 WRIST PITCH",  500,  1440, 2370,   0.0f, 180.0f, 90.0f },  /* SG92R #1 */
-  { "J5 WRIST ROT",    640,  1580, 2470,   0.0f, 180.0f, 90.0f },  /* SG92R #3 (stable label) */
+  { "J4 WRIST ROLL",   500,  1440, 2370,   0.0f, 180.0f, 90.0f },  /* SG92R #1 */
+  { "J5 WRIST PITCH",  640,  1580, 2470,   0.0f, 180.0f, 90.0f },  /* SG92R #3 (stable label) */
   { "J6 GRIPPER",      580,  1570, 2500,   0.0f, 180.0f, 90.0f },  /* SG90 */
 };

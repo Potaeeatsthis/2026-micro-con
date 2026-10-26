@@ -16,7 +16,8 @@ kin_status_t kin_ik(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_
   return KIN_NOT_READY;
 #else
   /* TODO(ik): base yaw from atan2(y, x), then 2-link planar solution for shoulder/elbow,
-   * wrist pitch from the requested tool pitch; check every joint against servo_cal limits */
+   * wrist pitch (J5) from the requested tool pitch; check every joint against servo_cal limits.
+   * J4 wrist roll is not in this planar model; hold it at its reference angle (see arm_geometry.h). */
   return KIN_OUT_OF_REACH;
 #endif
 }

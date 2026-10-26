@@ -37,8 +37,8 @@ though the current mapping is one unit per joint.
 | J1 base | MG996R#1 | 1 | `MG996R-1` | PC6 (CN7-1, D16) | TIM3_CH1 |
 | J2 shoulder | MG996R#2 | 2 | `MG996R-2` | PC7 (CN7-11, D21) | TIM3_CH2 |
 | J3 elbow | MG996R#3 | 3 | `MG996R-3` | PD12 (CN10-21, D29) | TIM4_CH1 |
-| J4 wrist pitch | SG92R#1 | 4 | `SG92R-1` | PD13 (CN10-19, D28) | TIM4_CH2 |
-| J5 wrist rotation | SG92R#3 | 5 | `SG92R-3` | PD14 (CN7-16, D10) | TIM4_CH3 |
+| J4 wrist roll | SG92R#1 | 4 | `SG92R-1` | PD13 (CN10-19, D28) | TIM4_CH2 |
+| J5 wrist pitch | SG92R#3 | 5 | `SG92R-3` | PD14 (CN7-16, D10) | TIM4_CH3 |
 | J6 gripper | SG90 | 6 | `SG90` | PD15 (CN7-18, D9) | TIM4_CH4 |
 
 The Arduino Uno bench still uses one servo on **pin 9** at a time. On the STM32

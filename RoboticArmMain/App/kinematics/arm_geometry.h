@@ -15,17 +15,21 @@
 
 #define ARM_BASE_HEIGHT_MM   0.0f   /* table to shoulder axis */
 #define ARM_UPPER_ARM_MM     0.0f   /* shoulder axis to elbow axis */
-#define ARM_FOREARM_MM       0.0f   /* elbow axis to wrist pitch axis */
-#define ARM_TOOL_MM          0.0f   /* wrist pitch axis to gripper tip */
+#define ARM_FOREARM_MM       0.0f   /* elbow axis to J5 wrist pitch axis */
+#define ARM_TOOL_MM          0.0f   /* J5 wrist pitch axis to gripper tip */
 
-/* servo angle (deg) at which each joint is at its kinematic zero; sign = +1 or -1 */
+/* servo angle (deg) at which each joint is at its kinematic zero; sign = +1 or -1.
+ * J4 is wrist roll, proximal to the J5 wrist pitch axis. The planar model below
+ * ignores J4 roll: assume J4 stays at its reference angle. If roll is non-zero,
+ * it rotates the pitch axis with it, so the tool is not limited to the planar
+ * pitch plane; add the roll term before commanding a non-zero J4 angle. */
 #define ARM_J1_ZERO_DEG 90.0f
 #define ARM_J2_ZERO_DEG 90.0f
 #define ARM_J3_ZERO_DEG 90.0f
-#define ARM_J4_ZERO_DEG 90.0f
+#define ARM_J5_ZERO_DEG 90.0f
 #define ARM_J1_SIGN     1.0f
 #define ARM_J2_SIGN     1.0f
 #define ARM_J3_SIGN     1.0f
-#define ARM_J4_SIGN     1.0f
+#define ARM_J5_SIGN     1.0f
 
 #endif /* APP_ARM_GEOMETRY_H */
