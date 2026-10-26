@@ -1,5 +1,5 @@
 /* host fake of App/lcd/lcd_port.c: no screen on a PC, so every call does nothing.
- * the real lcd_port.c includes the Lab08 ILI9341 driver (HAL, SPI5), which cannot build on a PC. */
+ * the real lcd_port.c talks to the ILI9341 over SPI (HAL), which cannot build on a PC. */
 #include "lcd/lcd_port.h"
 
 void lcd_port_init(void) {}
@@ -18,4 +18,14 @@ bool lcd_port_touch(int *x, int *y)
 {
   (void)x; (void)y;
   return false;
+}
+
+void lcd_port_asset(int id, int x, int y)
+{
+  (void)id; (void)x; (void)y;
+}
+
+void lcd_port_digits(int x_right, int y, int field_w, const char *s, uint16_t fg, uint16_t bg)
+{
+  (void)x_right; (void)y; (void)field_w; (void)s; (void)fg; (void)bg;
 }
