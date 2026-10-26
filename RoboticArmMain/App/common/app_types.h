@@ -16,8 +16,8 @@ typedef enum {
   J1_BASE = 0,
   J2_SHOULDER,
   J3_ELBOW,
-  J4_WRIST_PITCH,
-  J5_WRIST_ROT,
+  J4_WRIST_ROLL,
+  J5_WRIST_PITCH,
   J6_GRIPPER
 } joint_id_t;
 

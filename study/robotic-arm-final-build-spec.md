@@ -190,7 +190,7 @@ SN74AHCT244N DIP-20 buffer  VCC = 5 V, GND shared, /1OE and /2OE tied LOW
    └── 100 nF ceramic capacitor directly between VCC and GND
         ▼
 6 servos — ORANGE signal wire only
-   PWM1 base · PWM2 shoulder · PWM3 elbow · PWM4 wrist pitch · PWM5 wrist rot · PWM6 gripper
+   PWM1 base · PWM2 shoulder · PWM3 elbow · PWM4 wrist roll · PWM5 wrist pitch · PWM6 gripper
 ```
 
 ### Signal links

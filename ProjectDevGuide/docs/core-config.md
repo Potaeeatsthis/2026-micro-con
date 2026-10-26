@@ -73,8 +73,8 @@ USB (PA8–PA12, PG6, PG7), SWD (PA13, PA14, PB3), HSE (PH0, PH1), LSE (PC14, PC
 | **Servos** | J1 base | PC6 | CN7-1 (D16) | TIM3_CH1 |
 | | J2 shoulder | PC7 | CN7-11 (D21) | TIM3_CH2 |
 | | J3 elbow | PD12 | CN10-21 (D29) | TIM4_CH1 |
-| | J4 wrist pitch | PD13 | CN10-19 (D28) | TIM4_CH2 |
-| | J5 wrist rotation | PD14 | CN7-16 (D10) | TIM4_CH3 |
+| | J4 wrist roll | PD13 | CN10-19 (D28) | TIM4_CH2 |
+| | J5 wrist pitch | PD14 | CN7-16 (D10) | TIM4_CH3 |
 | | J6 gripper | PD15 | CN7-18 (D9) | TIM4_CH4 |
 | **Microphones** (INMP441 ×2) | WS / FS | PE4 | CN9-16 (D57) | SAI1_FS_A |
 | | SCK | PE5 | CN9-18 (D58) | SAI1_SCK_A |

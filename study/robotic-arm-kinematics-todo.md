@@ -88,8 +88,8 @@ physical safety.
       - J1: base rotation
       - J2: shoulder
       - J3: elbow
-      - J4: wrist pitch
-      - J5: wrist roll
+      - J4: wrist roll
+      - J5: wrist pitch
       - J6: gripper (not part of the XYZ positioning chain)
 - [ ] Confirm all six servos are **positional**. The set is three MG996R plus
       `SG92R-1`, `SG92R-3` and `SG90`; they have unloaded measurements but no

@@ -214,9 +214,11 @@ int main(void)
   check_servo_cal(J1_BASE,         500, 1460, 2430);
   check_servo_cal(J2_SHOULDER,     500, 1430, 2440);
   check_servo_cal(J3_ELBOW,        540, 1530, 2500);
-  check_servo_cal(J4_WRIST_PITCH,  500, 1440, 2370);
-  check_servo_cal(J5_WRIST_ROT,    640, 1580, 2470);
+  check_servo_cal(J4_WRIST_ROLL,   500, 1440, 2370);
+  check_servo_cal(J5_WRIST_PITCH,  640, 1580, 2470);
   check_servo_cal(J6_GRIPPER,      580, 1570, 2500);
+  CHECK(strcmp(servo_cal(J4_WRIST_ROLL)->name, "J4 WRIST ROLL") == 0, "J4 is wrist roll");
+  CHECK(strcmp(servo_cal(J5_WRIST_PITCH)->name, "J5 WRIST PITCH") == 0, "J5 is wrist pitch");
   CHECK(servo_deg_to_us(0, 250.0f) == 2430, "out of range clamps");
 
   printf("== boot: no pulse until safety allows, then home\n");
