@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Line handling, transform and file reloading of ProjectDevGuide/tools/pi/pi_bridge.py,
-no camera or serial port needed. Calibration-file tests need numpy (skipped without it):
+"""Line handling, transform and file reloading of ProjectDevGuide/tools/pi/pi_bridge.py, and the hand
+lookup / palm position of pi_hand.py, no camera, serial port or mediapipe needed.
+Calibration-file and palm tests need numpy (skipped without it):
     python3 ProjectDevGuide/tests/host/test_pi_bridge.py
     uv run --no-project --with numpy python ProjectDevGuide/tests/host/test_pi_bridge.py
 """
@@ -17,8 +18,9 @@ except ImportError:
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tools", "pi"))
 import pi_bridge as pb  # noqa: E402
+import pi_hand as ph  # noqa: E402
 
-POS = {"red_box": (182.4, -45.6, 30.0), "blue_box": (-0.5, 0.49, 12.5)}
+POS = {"red_box": (182.4, -45.6, 30.0), "blue_box": (-0.5, 0.49, 12.5), "hand": (210.2, 15.0, 95.6)}
 
 
 def lookup(name):
@@ -42,9 +44,17 @@ class HandleLine(unittest.TestCase):
     def test_glitch_bytes_and_spaces(self):
         self.assertEqual(pb.handle_line("\x00\xffFIND  red_box \r", lookup)[0], "OBJ red_box 182 -46 30")
 
+    def test_find_hand(self):
+        self.assertEqual(pb.handle_line("FIND hand", lookup)[0], "OBJ hand 210 15 96")
+        self.assertEqual(pb.handle_line("FIND hand", lambda n: None)[0], "NOTFOUND hand")
+
+    def test_box_names_unchanged(self):
+        self.assertEqual(pb.NAMES, ("blue_box", "green_box", "red_box", "black_box"))
+        self.assertIsNone(pb.colour_of("hand"))
+
     def test_ignored(self):
         for line in ("", "FIND", "FIND red", "FIND red_box extra", "find red_box", "OBJ red_box 1 2 3",
-                     "NOTFOUND red_box", "garbage !! 123"):
+                     "NOTFOUND red_box", "garbage !! 123", "FIND Hand", "FIND hands", "FIND hand 1"):
             reply, note = pb.handle_line(line, lookup)
             self.assertIsNone(reply, line)
             self.assertIn("ignored", note)
@@ -163,6 +173,160 @@ class Files(unittest.TestCase):
         c = pb.Calibration(self.path, camera_frame_ok=False)
         c.check()
         self.assertIsNone(c.frame)
+
+
+class FakeHand:
+    def __init__(self, r, state="on"):
+        self.r, self.state = r, state
+
+    def get(self):
+        return self.r
+
+
+def hand_src(hand):
+    """A CameraSource without camera: only what lookup("hand") / hand_status() use."""
+    s = pb.CameraSource.__new__(pb.CameraSource)
+    s.calib = pb.Calibration("/nonexistent/calib_T.npy", camera_frame_ok=True)
+    s.calib.check()
+    s.max_age_s, s.hand, s.hand_min_score, s.hand_state = 1.0, hand, 50, "off (--no-hand)"
+    return s
+
+
+class HandLookup(unittest.TestCase):
+    def test_hand_off_is_notfound(self):
+        s = hand_src(None)
+        self.assertIsNone(s.lookup("hand"))
+        self.assertEqual(s.hand_status(), "hand off (--no-hand)")
+
+    def test_fresh_hand_sent(self):
+        s = hand_src(FakeHand({"xyz_cam_mm": (10.0, 20.0, 400.0), "score": 90, "t": time.monotonic(), "info": ""}))
+        self.assertEqual(s.lookup("hand"), (10.0, 20.0, 400.0))
+        self.assertTrue(s.hand_status().startswith("hand c90 10 20 400"))
+
+    def test_old_low_score_or_no_position_not_sent(self):
+        now = time.monotonic()
+        for r in ({"xyz_cam_mm": (1.0, 2.0, 300.0), "score": 90, "t": now - 2.0, "info": ""},
+                  {"xyz_cam_mm": (1.0, 2.0, 300.0), "score": 30, "t": now, "info": ""},
+                  {"xyz_cam_mm": None, "t": now, "info": "no hand"}):
+            self.assertIsNone(hand_src(FakeHand(r)).lookup("hand"))
+
+    def test_detector_failed_is_notfound(self):
+        s = hand_src(FakeHand(None, state="off (ModuleNotFoundError)"))
+        self.assertIsNone(s.lookup("hand"))
+        self.assertIn("off", s.hand_status())
+
+
+def pinhole(u, v, z):
+    """fake intrinsics: fx = fy = 300, centre (212, 120)"""
+    return ((u - 212) / 300.0 * z, (v - 120) / 300.0 * z, z)
+
+
+@unittest.skipIf(np is None, "numpy not installed")
+class PalmXYZ(unittest.TestCase):
+    PALM = [(200, 100), (220, 100), (210, 110), (200, 120), (220, 120)]
+
+    def depth(self, mm=400):
+        return np.full((240, 424), mm, dtype=np.uint16)  # depth_scale 0.001: raw = mm
+
+    def test_flat_palm(self):
+        xyz, _ = ph.palm_xyz(self.PALM, self.depth(), 0.001, pinhole)
+        self.assertAlmostEqual(xyz[2], 400.0)
+        self.assertAlmostEqual(xyz[0], (210 - 212) / 300.0 * 400.0)
+        self.assertAlmostEqual(xyz[1], (110 - 120) / 300.0 * 400.0)
+
+    def test_holes_skipped_until_too_few(self):
+        d = self.depth()
+        d[95:106, 195:226] = 0          # no depth at the two top points
+        xyz, info = ph.palm_xyz(self.PALM, d, 0.001, pinhole)
+        self.assertIsNotNone(xyz, info)
+        d[105:126, 195:226] = 0         # and none at the other three
+        self.assertIsNone(ph.palm_xyz(self.PALM, d, 0.001, pinhole)[0])
+
+    def test_one_point_on_the_background_dropped(self):
+        d = self.depth()
+        d[115:126, 215:226] = 900       # last point sees the floor behind the hand
+        xyz, _ = ph.palm_xyz(self.PALM, d, 0.001, pinhole)
+        self.assertAlmostEqual(xyz[2], 400.0)
+
+    def test_out_of_range_and_off_image(self):
+        self.assertIsNone(ph.palm_xyz(self.PALM, self.depth(100), 0.001, pinhole)[0])
+        self.assertIsNone(ph.palm_xyz(self.PALM, self.depth(2000), 0.001, pinhole)[0])
+        self.assertIsNone(ph.palm_xyz([(-5, 10), (500, 10), (10, 300)], self.depth(), 0.001, pinhole)[0])
+
+
+FAKE_WORKER = r"""
+import json, os, signal, struct, sys
+mode = sys.argv[1]
+out = sys.stdout
+out.write(json.dumps({"ready": "fake " + mode}) + "\n"); out.flush()
+n = 0
+while True:
+    head = sys.stdin.buffer.read(12)
+    if len(head) < 12:
+        break
+    h, w, c = struct.unpack("<III", head)
+    sys.stdin.buffer.read(h * w * c)
+    n += 1
+    if mode == "sigill" and n == 2:
+        os.kill(os.getpid(), signal.SIGILL)   # like MediaPipe 1.1.1 on the Pi 4
+    lms = [[0.5, 0.5]] * 21                   # every landmark at the image centre
+    out.write(json.dumps({"lms": lms, "score": 0.97}) + "\n"); out.flush()
+"""
+
+
+@unittest.skipIf(np is None, "numpy not installed")
+class HandWorker(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.script = os.path.join(self.dir.name, "fake_worker.py")
+        with open(self.script, "w") as f:
+            f.write(FAKE_WORKER)
+        self.logs = []
+        self.old_retry, ph.WORKER_RETRY_S = ph.WORKER_RETRY_S, 0.3
+
+    def tearDown(self):
+        ph.WORKER_RETRY_S = self.old_retry
+        self.dir.cleanup()
+
+    def source(self, cmd):
+        return ph.HandSource(cmd, 0.001, pinhole, 20.0, self.logs.append)
+
+    def feed(self, hs, seconds):
+        color, depth = np.zeros((240, 424, 3), np.uint8), np.full((240, 424), 500, np.uint16)
+        t_end = time.monotonic() + seconds
+        while time.monotonic() < t_end:
+            hs.offer(color, depth, time.monotonic())
+            time.sleep(0.02)
+
+    def test_worker_gives_palm_xyz(self):
+        hs = self.source([sys.executable, self.script, "ok"])
+        self.feed(hs, 1.5)
+        r = hs.get()
+        hs.close()
+        self.assertEqual(hs.state, "on")
+        self.assertEqual(r["score"], 97)
+        self.assertAlmostEqual(r["xyz_cam_mm"][2], 500.0)
+        self.assertAlmostEqual(r["xyz_cam_mm"][0], 0.0)   # centre pixel 212 = principal point
+        s = hand_src(hs)
+        self.assertIsNotNone(s.lookup("hand"))
+
+    def test_crashing_worker_only_turns_hand_off(self):
+        hs = self.source([sys.executable, self.script, "sigill"])
+        self.feed(hs, 1.0)
+        state, r = hs.state, hs.get()
+        hs.close()
+        self.assertTrue(state.startswith("stopped") or state == "on", state)  # may already be restarted
+        self.assertTrue(any("worker exited" in m for m in self.logs), self.logs)
+        self.assertIsNone(hand_src(FakeHand(None, state)).lookup("hand"))
+        self.assertTrue(r is None or r["xyz_cam_mm"] is not None)
+
+    def test_missing_python_is_off(self):
+        hs = self.source(["/nonexistent/hand-env/bin/python", self.script, "ok"])
+        self.feed(hs, 0.5)
+        state = hs.state
+        hs.close()
+        self.assertTrue(state.startswith("off"), state)
+        self.assertEqual(len([m for m in self.logs if "off" in m]), 1)    # logged once, not every retry
 
 
 if __name__ == "__main__":

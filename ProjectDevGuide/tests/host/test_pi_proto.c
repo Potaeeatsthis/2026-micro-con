@@ -74,6 +74,12 @@ int main(void)
   CHECK(strcmp(pi_object_name(OBJ_NONE), "none") == 0, "name of OBJ_NONE");
   CHECK(pi_object_from_name("black_box") == OBJ_BLACK_BOX, "black_box from name");
   CHECK(pi_object_from_name("purple_box") == OBJ_NONE, "unknown name");
+  CHECK(strcmp(pi_object_name(OBJ_HAND), "hand") == 0, "name of hand");
+  CHECK(pi_object_from_name("hand") == OBJ_HAND, "hand from name");
+  CHECK(pi_object_from_name("Hand") == OBJ_NONE, "names are case-sensitive");
+  CHECK(OBJ_BOX_COUNT == 4 && OBJ_HAND == OBJ_BOX_COUNT && OBJ_COUNT == 5, "4 boxes, then hand");
+  CHECK(parse("OBJ hand 101 -4 279") == PI_OK && g_msg.obj == OBJ_HAND && g_msg.xyz[2] == 279, "OBJ hand parses");
+  CHECK(parse("NOTFOUND hand") == PI_OK && g_msg.type == PI_MSG_NOTFOUND && g_msg.obj == OBJ_HAND, "NOTFOUND hand parses");
 
   printf("== pi_proto: line assembler\n");
   pi_line_t l;

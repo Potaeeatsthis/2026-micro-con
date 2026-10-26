@@ -9,7 +9,8 @@
  * fields separated by spaces:
  *   Pi -> STM32:  OBJ <name> <x> <y> <z>     integer mm, robot-base frame, top-face centre
  *   Pi -> STM32:  NOTFOUND <name>
- * names: blue_box, green_box, red_box, black_box (object_id_t order).
+ * names: blue_box, green_box, red_box, black_box, hand (object_id_t order).
+ * boxes: top-face centre. hand: palm centre, may move, so ask again before each use.
  *
  * new message: one row in PI_KEYWORDS (pi_proto.c), one value in pi_msg_type_t, one handler
  * row in RX_HANDLERS (pi_link.c), and the guide's protocol table.

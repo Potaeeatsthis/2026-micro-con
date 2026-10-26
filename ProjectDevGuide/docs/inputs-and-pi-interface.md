@@ -51,7 +51,8 @@ here: they belong to `safety/`.
 
 What the numbers mean:
 
-- **Colour** = the name: `red_box`, `green_box`, `blue_box`, `black_box` (`OBJ_RED_BOX` … in `object_id_t`).
+- **Colour** = the name: `red_box`, `green_box`, `blue_box`, `black_box` (`OBJ_RED_BOX` … in `object_id_t`,
+  `OBJ_BOX_COUNT` of them). `hand` (`OBJ_HAND`) comes after the boxes, see below.
 - **x y z** = integer mm, **robot-base frame**: origin on the base axis at the mounting plane, +X forward,
   +Y left, +Z up. The point is the **centre of the block's top face**.
 - The Pi does detection, depth and the camera → base transform. **The STM32 does IK and the grasp offset**
@@ -59,6 +60,23 @@ What the numbers mean:
 - One request at a time. A reply for a request that is no longer pending is ignored and logged.
   `pi_link_cancel()` forgets the pending request (mode change, stop).
 - Bad lines never become events; they are logged with a reason (`pi: bad line (...)`).
+
+**Hand.** The bridge also answers `FIND hand`; voice mode sends it after `hand` + `yes` (`voice-task.md`):
+
+| STM32 sends | Pi answers | Meaning |
+|---|---|---|
+| `FIND hand` | `OBJ hand 210 15 96` | palm centre seen within the last 1 s |
+| | `NOTFOUND hand` | no hand, palm depth unusable, or hand detection off |
+
+- The point is the **palm centre on the palm surface** the camera sees: the mean of the wrist and the four finger
+  bases, each with its own depth. Same frame and units as the blocks (camera-frame mm until `calib_T.npy` exists).
+- A hand **moves**: the answer is where it was at that moment. Ask again just before using it.
+- One hand only (the first MediaPipe finds). Detection runs up to 5 times a second (≈ 120 ms per run on the Pi 4).
+- MediaPipe runs in a **separate worker process** with its own Python (`~/hand-env`), so a crash there can never
+  stop the block answers. The newest MediaPipe (1.1.1) dies with `Illegal instruction` on the Pi 4; use 0.10.18.
+- STM32 side: `OBJ_HAND` in `object_id_t` (after the boxes; `OBJ_BOX_COUNT` = boxes only) and the name `"hand"`
+  in `pi_proto.c`. Code that means "boxes" loops over `OBJ_BOX_COUNT`, not `OBJ_COUNT`.
+- `APP_INPUT_TEST_CYCLE` (bench) cycles over `OBJ_COUNT`, so it now also sends `FIND hand`.
 
 **Current status (2026-10-24):** colours re-taught (all four found, confidence 70–87). The camera → base
 calibration (`calib_T.npy`) is not done yet, so the bridge runs with `--camera-frame` and the x y z are
@@ -85,6 +103,10 @@ sudo systemctl enable --now pi_bridge
 | use re-taught colours | nothing: `color_refs.json` is reloaded within 2 s (re-teaching itself needs the service stopped, see above) |
 | change `pi_vision_uart.py` or `pi_bridge.py` | `sudo systemctl restart pi_bridge` |
 | run it by hand instead | `~/arm-env/bin/python ~/arm/tools/pi_bridge.py --camera-frame` (service stopped) |
+| check the hand detection | service stopped, `... pi_bridge.py --hand-snapshot`: writes `~/arm/hand.jpg` (landmarks, palm points, XYZ) |
+| see everything the bridge detects | service stopped, `... pi_bridge.py --snapshot`: writes `~/arm/snapshot.jpg` (blocks + hand on the colour image, depth beside it) and prints each position |
+| run without hand detection | add `--no-hand` (FIND hand gets NOTFOUND, blocks unchanged) |
+| set up hand detection (once) | `~/.local/bin/uv venv ~/hand-env --python 3.12` then `~/.local/bin/uv pip install --python ~/hand-env/bin/python "mediapipe==0.10.18"`; `~/arm-env` is not touched |
 
 What the log shows (`journalctl -u pi_bridge -f`):
 
@@ -92,7 +114,7 @@ What the log shows (`journalctl -u pi_bridge -f`):
 calib: now sending CAMERA-frame mm (no calib_T.npy, --camera-frame)
 Colours: red learned x2, green learned x3, blue learned x3, black learned x2
 open /dev/serial0 115200 8N1, answering FIND. Ctrl+C to stop.
-status: frame CAMERA (no calib_T.npy, --camera-frame) | 13.9 fps | blue c74 95 4 288 0.1s | green c76 103 -102 419 0.1s | red c86 162 -74 376 0.1s | black c74 74 -56 360 0.1s | FIND 5 OBJ 5 NOTFOUND 0 ignored 0
+status: frame CAMERA (no calib_T.npy, --camera-frame) | 13.9 fps | blue c74 95 4 288 0.1s | green c76 103 -102 419 0.1s | red c86 162 -74 376 0.1s | black c74 74 -56 360 0.1s | hand - (no hand) | FIND 5 OBJ 5 NOTFOUND 0 ignored 0
 RX FIND red_box
 TX OBJ red_box 163 -74 376 [CAMERA] (10 ms after RX)
 ```
@@ -100,6 +122,10 @@ TX OBJ red_box 163 -74 376 [CAMERA] (10 ms after RX)
 - `status` every 10 s: which frame is sent, camera fps, and per colour the confidence `c`, x y z (in the frame
   being sent) and how old the detection is. `(not sent)` = too old or confidence below 40, a `FIND` would get
   `NOTFOUND`.
+- `hand ...` at the end of `status`: `hand c95 x y z 0.1s` (position being sent), `hand - (no hand)` /
+  `hand - (depth on 2 of 5 palm points)` (why not), or `hand off (...)` / `hand stopped (...)` (no `~/hand-env`,
+  worker crashed or stuck: it is restarted every 30 s; `hand off (--no-hand)`). The
+  `c` is MediaPipe's left/right confidence, usually above 90: a weak filter. The depth check decides.
 - `calib: ...` whenever `calib_T.npy` appears, changes or disappears (the matrix is printed). A broken file is
   reported and not used. Once a calibration has been used, a missing or broken file never falls back to
   camera frame: every `FIND` gets `NOTFOUND` until it is fixed.
@@ -120,5 +146,6 @@ The service passes `--camera-frame`. Once the team relies on calibration, remove
 | Joystick, encoder, buttons, rail ADC | `RoboticArmMain/App/input/input.c` / `.h` | input member |
 | Pi link, protocol parser | `RoboticArmMain/App/pi_link/pi_link.c`, `pi_proto.c` | Pi member |
 | Pi bridge (text protocol, uses the detector) + service | `ProjectDevGuide/tools/pi/pi_bridge.py`, `pi_bridge.service` → `~/arm/tools/` on the Pi | Pi member |
+| Hand detection (MediaPipe worker, palm XYZ) | `ProjectDevGuide/tools/pi/pi_hand.py` → `~/arm/tools/`; MediaPipe 0.10.18 in `~/hand-env` (not in `~/arm-env`) | Pi member |
 | Detector, colours, calibration | `~/arm/pi_vision_uart.py`, `color_refs.json`, `calib_T.npy` (on the Pi) | camera member |
 | Event ids | `RoboticArmMain/App/common/app_events.h` | core |
