@@ -1,15 +1,15 @@
 /* lcd.c - pages + text-line screen model
  *
  * pages:  HOME (picture, Start) -> SELECT MODE (picture, four cards) -> STATUS (text lines below).
- *         Single card -> SINGLE page (servo 1..6 selector, arm picture follows, X/Y/Z numbers, Back / Proceed).
+ *         Single card -> SINGLE page (servo 1..6 selector, arm picture follows, X/Y/Z numbers, Back).
  *         Group card  -> GROUP page (group 1..3 = S1+S2, S3+S4, S5+S6, same layout).
- *         Cartesian card -> CARTESIAN page (arm with axis arrows, X/Y/Z numbers, Back / Proceed).
+ *         Cartesian card -> CARTESIAN page (arm with axis arrows, X/Y/Z numbers, Back).
+ *         a mode card switches the mode at once (no confirm: choosing a mode moves nothing).
  *         Voice card -> VOICE page (camera check marks + "Pick Color") -> Proceed -> confirm pop-up
  *                       -> DESTINATION page (drop in destination / drop now / custom)
  *                       -> confirm pop-up -> PROCESSING pop-up ... see the status pop-ups below
  *                       custom -> CUSTOM page (distance slider, queue) -> Proceed -> confirm pop-up.
- *         Proceed on Single / Group / Cartesian opens a confirm pop-up. DEBUG: Yes or No then goes to the
- *         HOME page (Yes also posts the mode request like before). a real action replaces that later.
+ *         confirm pop-ups only before the arm moves on its own (voice pick, drop, custom queue).
  *         Back returns to the previous page (SELECT, or the voice page before).
  *
  * pop-ups (drawn on top of the page, only they get touch while open):
@@ -68,11 +68,11 @@
 typedef enum { SCR_HOME = 0, SCR_SELECT, SCR_STATUS, SCR_SINGLE, SCR_GROUP, SCR_CART, SCR_VOICE, SCR_DEST, SCR_CUSTOM } screen_t;
 typedef enum {
   ACT_NONE = 0, ACT_SERVO_PREV, ACT_SERVO_NEXT, ACT_GROUP_PREV, ACT_GROUP_NEXT,
-  ACT_CONFIRM_SINGLE, ACT_CONFIRM_GROUP, ACT_CONFIRM_CART, ACT_CONFIRM_PICK,
+  ACT_CONFIRM_PICK,
   ACT_CONFIRM_DROP_DEST, ACT_CONFIRM_DROP_NOW, ACT_CONFIRM_CUSTOM,
   ACT_BOX_TOGGLE, ACT_PICK_CYCLE
 } action_t;
-typedef enum { CF_NONE = 0, CF_SINGLE, CF_GROUP, CF_CART, CF_PICK, CF_DROP_DEST, CF_DROP_NOW, CF_CUSTOM } confirm_t;
+typedef enum { CF_NONE = 0, CF_PICK, CF_DROP_DEST, CF_DROP_NOW, CF_CUSTOM } confirm_t;
 typedef enum { OV_NONE = 0, OV_CONFIRM, OV_STATUS } overlay_t;
 
 /* DEBUG helpers until the camera / voice logic drives the screens (set to 0 to switch them off) */
@@ -122,26 +122,23 @@ static const touch_zone_t HOME_ZONES[] = {
   {  19, 139, 172,  48, 0, 0, SCR_SELECT, ACT_NONE, NULL },                                    /* Start */
 };
 static const touch_zone_t SELECT_ZONES[] = {
-  {  21,  16, 132,  93, 0,                  0,                 SCR_SINGLE, ACT_NONE, NULL },   /* Single    */
-  { 170,  16, 132,  93, 0,                  0,                 SCR_GROUP,  ACT_NONE, NULL },   /* Group     */
-  {  21, 129, 132,  93, 0,                  0,                 SCR_CART,   ACT_NONE, NULL },   /* Cartesian */
+  {  21,  16, 132,  93, EVT_TOUCH_MODE_TAB, MODE_SINGLE_JOINT, SCR_SINGLE, ACT_NONE, NULL },   /* Single    */
+  { 170,  16, 132,  93, EVT_TOUCH_MODE_TAB, MODE_JOINT_GROUP,  SCR_GROUP,  ACT_NONE, NULL },   /* Group     */
+  {  21, 129, 132,  93, EVT_TOUCH_MODE_TAB, MODE_CARTESIAN,    SCR_CART,   ACT_NONE, NULL },   /* Cartesian */
   { 170, 129, 132,  93, EVT_TOUCH_MODE_TAB, MODE_VOICE,        SCR_VOICE,  ACT_NONE, NULL },   /* Voice     */
 };
 static const touch_zone_t SINGLE_ZONES[] = {
   {  14,  57,  66,  28, 0, 0, NAV_NONE,   ACT_SERVO_PREV, NULL },                              /* < servo  */
   {  80,  57,  66,  28, 0, 0, NAV_NONE,   ACT_SERVO_NEXT, NULL },                              /* servo >  */
   {  14, 201,  78,  28, 0, 0, SCR_SELECT, ACT_NONE,       NULL },                              /* Back     */
-  { 224, 201,  78,  28, 0, 0, NAV_NONE, ACT_CONFIRM_SINGLE, NULL },                            /* Proceed  */
 };
 static const touch_zone_t GROUP_ZONES[] = {
   {  14,  48,  82,  28, 0, 0, NAV_NONE,   ACT_GROUP_PREV, NULL },                              /* < group  */
   {  96,  48,  82,  28, 0, 0, NAV_NONE,   ACT_GROUP_NEXT, NULL },                              /* group >  */
   {  14, 201,  78,  28, 0, 0, SCR_SELECT, ACT_NONE,       NULL },                              /* Back     */
-  { 224, 201,  78,  28, 0, 0, NAV_NONE, ACT_CONFIRM_GROUP, NULL },                             /* Proceed  */
 };
 static const touch_zone_t CART_ZONES[] = {
   {  14, 201,  78,  28, 0, 0, SCR_SELECT, ACT_NONE,       NULL },                              /* Back     */
-  { 224, 201,  78,  28, 0, 0, NAV_NONE, ACT_CONFIRM_CART, NULL },                              /* Proceed  */
 };
 static const touch_zone_t VOICE_ZONES[] = {
   {  23,  73, 131, 35, 0, 0, NAV_NONE,   ACT_BOX_TOGGLE, NULL },                               /* red card   (debug) */
@@ -191,6 +188,11 @@ static void draw_buttons(void)
 {
   lcd_port_asset(LCD_A_BTN_BACK, LCD_POS_BTN_BACK_X, LCD_POS_BTN_BACK_Y);
   lcd_port_asset(LCD_A_BTN_PROCEED, LCD_POS_BTN_PROCEED_X, LCD_POS_BTN_PROCEED_Y);
+}
+
+static void draw_back(void)          /* manual pages: the mode is already on, nothing to proceed to */
+{
+  lcd_port_asset(LCD_A_BTN_BACK, LCD_POS_BTN_BACK_X, LCD_POS_BTN_BACK_Y);
 }
 
 /* the parts of a page that change with the selector. the group arm picture also covers the right end of the
@@ -270,21 +272,21 @@ static void show_screen(screen_t s)
       lcd_port_asset(LCD_A_SEL_NARROW, LCD_POS_SINGLE_SEL_X, LCD_POS_SINGLE_SEL_Y);
       draw_single_selection();                  /* arm picture + label (they do not overlap the frame) */
       draw_rows(LCD_ROWS_SINGLE_X, SINGLE_Y);
-      draw_buttons();
+      draw_back();
       break;
     case SCR_GROUP:
       begin_value_page();
       lcd_port_asset(LCD_A_HDR_GROUP, 0, 0);
       draw_group_selection();
       draw_rows(LCD_ROWS_GROUP_X, GROUP_Y);
-      draw_buttons();
+      draw_back();
       break;
     case SCR_CART:
       begin_value_page();
       lcd_port_asset(LCD_A_HDR_CART, 0, 0);
       lcd_port_asset(LCD_A_CART_ARM, LCD_POS_CART_ARM_X, LCD_POS_CART_ARM_Y);
       draw_rows(LCD_ROWS_CART_X, CART_Y);
-      draw_buttons();
+      draw_back();
       break;
     case SCR_VOICE:
       lcd_port_fill(0, 0, LCD_WIDTH_PX, LCD_HEIGHT_PX, LCD_BG);
@@ -419,9 +421,6 @@ static void page_values_for(screen_t s)
 static int conf_sub_index(confirm_t c)
 {
   switch (c) {
-    case CF_SINGLE:    return 0;
-    case CF_GROUP:     return 1;
-    case CF_CART:      return 2;
     case CF_PICK:      return 3 + (s_pick >= 0 ? s_pick : LCD_BOX_BLUE);
     case CF_DROP_DEST: return 7;
     case CF_DROP_NOW:  return 8;
@@ -480,15 +479,6 @@ static void close_overlay(void)
 static void confirm_answer(bool yes)
 {
   switch (s_conf) {
-    case CF_SINGLE:
-    case CF_GROUP:
-    case CF_CART: {
-      uint16_t mode = (s_conf == CF_SINGLE) ? MODE_SINGLE_JOINT : (s_conf == CF_GROUP ? MODE_JOINT_GROUP : MODE_CARTESIAN);
-      if (yes) (void)app_event_post(EVT_TOUCH_MODE_TAB, mode, 0, 0, 0);
-      s_ov = OV_NONE;
-      show_screen(SCR_HOME);         /* DEBUG: back to the home page after the pop-up */
-      break;
-    }
     case CF_PICK:
       s_ov = OV_NONE;
       if (yes) show_screen(SCR_DEST);   /* TODO(voice): start picking up the colour in s_pick */
@@ -571,9 +561,6 @@ static void run_action(uint8_t act, uint16_t arg)
       s_group = (act == ACT_GROUP_NEXT) ? (s_group + 1) % GROUP_COUNT : (s_group + GROUP_COUNT - 1) % GROUP_COUNT;
       draw_group_selection();
       break;
-    case ACT_CONFIRM_SINGLE:    open_confirm(CF_SINGLE);    break;
-    case ACT_CONFIRM_GROUP:     open_confirm(CF_GROUP);     break;
-    case ACT_CONFIRM_CART:      open_confirm(CF_CART);      break;
     case ACT_CONFIRM_PICK:      if (s_pick >= 0) open_confirm(CF_PICK); break;     /* needs a colour first */
     case ACT_CONFIRM_DROP_DEST: open_confirm(CF_DROP_DEST); break;
     case ACT_CONFIRM_DROP_NOW:  open_confirm(CF_DROP_NOW);  break;
