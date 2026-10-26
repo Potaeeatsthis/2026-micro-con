@@ -14,15 +14,22 @@ void lcd_port_text(int x, int y, const char *s, uint16_t fg, uint16_t bg, int si
   (void)x; (void)y; (void)s; (void)fg; (void)bg; (void)size;
 }
 
+/* scripted by the tests: where the "finger" is, and which pictures were drawn since the last clear */
+int fake_lcd_touch_x, fake_lcd_touch_y, fake_lcd_touch_down;
+int fake_lcd_assets[256], fake_lcd_n;
+
 bool lcd_port_touch(int *x, int *y)
 {
-  (void)x; (void)y;
-  return false;
+  if (!fake_lcd_touch_down) return false;
+  *x = fake_lcd_touch_x;
+  *y = fake_lcd_touch_y;
+  return true;
 }
 
 void lcd_port_asset(int id, int x, int y)
 {
-  (void)id; (void)x; (void)y;
+  (void)x; (void)y;
+  if (fake_lcd_n < 256) fake_lcd_assets[fake_lcd_n++] = id;
 }
 
 void lcd_port_digits(int x_right, int y, int field_w, const char *s, uint16_t fg, uint16_t bg)

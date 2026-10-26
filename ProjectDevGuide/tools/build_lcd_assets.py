@@ -317,6 +317,276 @@ def arm_tile(arm, place, overlay, box):
     return page.convert("RGB").crop((x, y, x + bw, y + bh))
 
 
+# ============================================================================ voice mode: colors + icons
+PANEL_A = (9, 12, 18)
+CHIP_FILL = (22, 26, 34)
+CHIP_BORDER = (89, 97, 110)
+TRACK = (89, 97, 110)
+GREY = (156, 163, 175)
+DIM = (75, 81, 91)
+SUBDIM = (99, 106, 116)
+SUBDIM2 = (99, 107, 117)
+OV_FILL = (14, 17, 20)
+OV_SUB = (116, 125, 136)
+OV_GREY = (140, 150, 163)
+OV_LINE = (36, 40, 46)
+TEXT2 = (235, 238, 244)
+BOXES = [("Red", (222, 32, 32)), ("Green", (64, 200, 72)), ("Black", (46, 46, 52)), ("Blue", (40, 112, 255))]
+CONF_TEXTS = ["Start Single mode?", "Start Group mode?", "Start Cartesian mode?",
+              "Pick up the red box?", "Pick up the green box?", "Pick up the black box?", "Pick up the blue box?",
+              "Drop in destination?", "Drop now?", "Run the custom queue?"]
+POS.update({
+    "PANEL_CAM": (14, 49), "CARD_0": (23, 73), "CARD_1": (162, 73), "CARD_2": (23, 112), "CARD_3": (162, 112),
+    "PANEL_PICK": (14, 157), "PICK_TXT": (42, 177),
+    "DEST_HEAD": (22, 50), "DEST_BODY": (0, 92),
+    "PANEL_A": (12, 51), "DIST_VAL": (82, 81), "SLIDER": (18, 95), "PANEL_SAY": (12, 145), "PANEL_QUEUE": (196, 51),
+    "OV_CONF": (30, 40), "OV_CONF_SUB": (50, 112), "OV_STATUS": (20, 20),
+    "OV_PROC_LINE": (60, 118), "OV_STOPH_LINE": (60, 66),
+})
+CHECK_DX, CHECK_DY = 108, 10                        # check mark inside a card
+CARD_W, CARD_H = 131, 35
+OV_CONF_W, OV_CONF_H = 260, 160
+OV_ST_W, OV_ST_H = 280, 200
+
+
+def mic(d, cx, top, s, color, w=1.5):
+    lw = max(1.0, w * s)
+    cw, ch = 4.3 * s, 13 * s
+    d.rounded_rectangle([(cx - cw) * S, top * S, (cx + cw) * S, (top + ch) * S], radius=cw * S, outline=color, width=int(lw * S))
+    r = 8 * s
+    cy = top + 9 * s
+    d.arc([(cx - r) * S, (cy - r) * S, (cx + r) * S, (cy + r) * S], 10, 170, fill=color, width=int(lw * S))
+    line(d, [(cx, cy + r), (cx, top + 20.5 * s)], color, lw)
+    line(d, [(cx - 3.5 * s, top + 20.5 * s), (cx + 3.5 * s, top + 20.5 * s)], color, lw)
+
+
+def icon_mic_header(d):
+    mic(d, 24, 9.5, 1.05, WHITE, 1.6)
+
+
+def icon_camera(d, x, y):
+    c = (150, 158, 170)
+    rrect(d, (x, y + 3, x + 13, y + 12), 2, None, c, 1.2)
+    line(d, [(x + 4, y + 3), (x + 5, y + 0.8), (x + 8, y + 0.8), (x + 9, y + 3)], c, 1.2)
+    d.ellipse([(x + 6.5 - 2.7) * S, (y + 7.5 - 2.7) * S, (x + 6.5 + 2.7) * S, (y + 7.5 + 2.7) * S], outline=c, width=int(1.2 * S))
+
+
+def icon_sliders(d, cx, cy):
+    c = GREY
+    for dy, kx in ((-5, -3), (0, 3), (5, -1)):
+        line(d, [(cx - 7, cy + dy), (cx + 7, cy + dy)], c, 1.3)
+        d.ellipse([(cx + kx - 2) * S, (cy + dy - 2) * S, (cx + kx + 2) * S, (cy + dy + 2) * S], fill=c)
+
+
+def shade(c, k):
+    return tuple(max(0, min(255, int(v * k))) for v in c)
+
+
+def cube(d, cx, cy, r, base):
+    def v(a):
+        return (cx + r * math.cos(math.radians(a)), cy + r * math.sin(math.radians(a)))
+    c = (cx, cy)
+    lighter = tuple(min(255, int(x + (255 - x) * 0.38)) for x in base)
+    faces = [([v(-90), v(-30), c, v(210)], lighter), ([v(210), c, v(90), v(150)], base), ([c, v(-30), v(30), v(90)], shade(base, 0.62))]
+    for pts, col in faces:
+        d.polygon([(x * S, y * S) for x, y in pts], fill=col)
+    edge = tuple(min(255, int(x + (255 - x) * 0.55)) for x in base)
+    hexa = [v(a) for a in (-90, -30, 30, 90, 150, 210)]
+    line(d, hexa + [hexa[0]], edge, 0.8)
+    line(d, [c, v(-30)], edge, 0.6)
+    line(d, [c, v(210)], edge, 0.6)
+    line(d, [c, v(90)], edge, 0.6)
+
+
+# ============================================================================ voice mode: page components
+def comp_panel_cam():
+    im, d = canvas(289, 103)
+    rrect(d, (0, 0, 288, 102), 7, ROW_BG, ROW_BORDER, 1)
+    icon_camera(d, 9, 6)
+    text(d, (31, 12), "Camera Detection", font(FR, 11), TEXT2)
+    return down(im)
+
+
+def comp_card(label, color):
+    im, d = canvas(CARD_W, CARD_H)
+    rrect(d, (0, 0, CARD_W - 2, CARD_H - 2), 6, ROW_BG, ROW_BORDER, 1)
+    cube(d, 17, 18, 12, color)
+    text(d, (33, 17.5), label, font(FR, 11), TEXT2)
+    return down(im)
+
+
+def comp_check():
+    im, d = canvas(15, 15, ROW_BG)
+    d.ellipse([1 * S, 1 * S, 14 * S, 14 * S], outline=WHITE, width=int(1.2 * S))
+    line(d, [(4.4, 7.8), (6.6, 10.1), (10.8, 5.1)], WHITE, 1.3)
+    return down(im)
+
+
+def comp_panel_pick():
+    im, d = canvas(289, 40)
+    rrect(d, (0, 0, 288, 39), 7, ROW_BG, ROW_BORDER, 1)
+    text(d, (11, 12.5), "Pick Color", font(FR, 11), TEXT2)
+    mic(d, 15.5, 22, 0.6, TEXT2, 1.4)
+    return down(im)
+
+
+def comp_dest_head(box):
+    im, d = canvas(200, 34)
+    text(d, (0, 11), "Destination", font(FB, 14), WHITE)
+    text(d, (0, 28), f"Holding {box.lower()} box", font(FR, 8), SUBDIM)
+    return down(im)
+
+
+def comp_dest_body():
+    im, d = canvas(320, 84)
+    for cx in (54, 160):
+        mic(d, cx, 6.2, 0.65, GREY, 1.6)
+    ctr = font(FB, 11)
+    text(d, (57, 31), "drop in", ctr, WHITE, "mm")
+    text(d, (57, 47), "destination", ctr, WHITE, "mm")
+    text(d, (55, 63), "default/station", font(FR, 7), SUBDIM2, "mm")
+    text(d, (55, 76), "/hand", font(FR, 7), SUBDIM2, "mm")
+    text(d, (160, 32), "drop now", ctr, WHITE, "mm")
+    text(d, (160, 48), "place/drop", font(FR, 7), SUBDIM2, "mm")
+    line(d, [(111, 5), (111, 75)], LINE, 1.2)
+    line(d, [(208, 2), (208, 73)], LINE, 1.2)
+    rrect(d, (219, 18, 310, 50), 7, (7, 9, 15), SEL_BORDER, 1.3)
+    icon_sliders(d, 235.5, 34)
+    text(d, (255, 34), "custom", font(FR, 12), WHITE)
+    return down(im)
+
+
+def comp_panel_a():
+    im, d = canvas(176, 84)
+    rrect(d, (0, 0, 175, 83), 7, PANEL_A, SEL_BORDER, 1.2)
+    text(d, (10, 19), "Custom", font(FB, 15), WHITE)
+    text(d, (10, 38), "Distance", font(FR, 11.8), GREY)
+    return down(im)
+
+
+def comp_dist(n):
+    return text_tile(50, 16, PANEL_A, f"{n} CM", 13, (240, 242, 247), 0, left=1)
+
+
+def comp_slider():
+    im, d = canvas(160, 34, PANEL_A)
+    d.rounded_rectangle([6 * S, 9 * S, 151 * S, 12 * S - 1], radius=1.5 * S, fill=TRACK)
+    for i in range(21):
+        x = 6 + 7.25 * i
+        if i % 5 == 0:
+            line(d, [(x, 14.5), (x, 17.5)], (110, 116, 126), 1.0)
+            text(d, (x, 22.5), str(i), font(FR, 6), (124, 127, 132), "mm")
+        else:
+            line(d, [(x, 14.5), (x, 16.5)], (62, 68, 78), 0.9)
+    text(d, (2, 31), "1 cm per step", font(FR, 6.2), (170, 174, 182))
+    return down(im)
+
+
+def comp_knob():
+    im, d = canvas(12, 12, PANEL_A)
+    d.ellipse([0.6 * S, 0.6 * S, 11.4 * S, 11.4 * S], fill=WHITE)
+    return down(im)
+
+
+def comp_panel_say():
+    im, d = canvas(176, 37)
+    rrect(d, (0, 0, 175, 36), 7, (10, 13, 19), SEL_BORDER, 1.2)
+    mic(d, 13, 8, 0.6, GREY, 1.4)
+    text(d, (25, 12.5), "Say a direction", font(FR, 10), GREY)
+    text(d, (25, 23), "forward/backward/left/right", font(FR, 6.5), DIM)
+    return down(im)
+
+
+def comp_panel_queue():
+    im, d = canvas(114, 131)
+    rrect(d, (0, 0, 113, 130), 7, PANEL_A, SEL_BORDER, 1.2)
+    text(d, (8, 14), "Queue", font(FR, 12), WHITE)
+    text(d, (105, 12), "3", font(FR, 10), GREY, "rm")
+    for y, s in ((27, "forward 2cm"), (52, "left 5 cm"), (77, "right 20 cm")):
+        rrect(d, (6, y, 107, y + 20), 6, CHIP_FILL, CHIP_BORDER, 1)
+        text(d, (12, y + 10.5), s, font(FR, 9), (218, 220, 224))
+    return down(im)
+
+
+# ============================================================================ overlays
+def ov_canvas(w, h):
+    im, d = canvas(w, h, BG)
+    rrect(d, (0, 0, w - 1, h - 1), 12, OV_FILL, WHITE, 1.5)
+    return im, d
+
+
+def comp_conf_frame():
+    im, d = ov_canvas(OV_CONF_W, OV_CONF_H)
+    text(d, (130, 60), "CONFIRM ACTION ?", font(FB, 14), WHITE, "mm")
+    rrect(d, (16, 103, 121, 136), 7, BACK_FILL, BACK_BORDER, 1)
+    text(d, (68.5, 120), "No", font(FB, 13), WHITE, "mm")
+    rrect(d, (136, 103, 244, 136), 7, WHITE, None, 0)
+    text(d, (190, 120), "Yes", font(FB, 13), BG, "mm")
+    return down(im)
+
+
+def comp_conf_sub(s):
+    return text_tile(220, 14, OV_FILL, s, 9, OV_SUB, 110)
+
+
+def holding_tile(w, h, box, size):
+    im, d = canvas(w, h, OV_FILL)
+    parts = [("Holding", font(FB, size), OV_GREY), (" : ", font(FR, size), (90, 98, 110)), (f"{box} box", font(FR, size), OV_SUB)]
+    total = sum(d.textlength(t, font=f) for t, f, _ in parts)
+    x = (w * S - total) / 2
+    for t, f, c in parts:
+        d.text((x, h / 2 * S), t, font=f, fill=c, anchor="lm")
+        x += d.textlength(t, font=f)
+    return down(im)
+
+
+def gripper_line(d, y, size):
+    parts = [("Gripper", font(FB, size), OV_GREY), (" : ", font(FR, size), (90, 98, 110)), ("Empty", font(FR, size), OV_SUB)]
+    total = sum(d.textlength(t, font=f) for t, f, _ in parts)
+    x = (OV_ST_W * S - total) / 2
+    for t, f, c in parts:
+        d.text((x, y * S), t, font=f, fill=c, anchor="lm")
+        x += d.textlength(t, font=f)
+
+
+def say_line(d, mic_cx, text_x, s):
+    mic(d, mic_cx, 147, 1.0, WHITE, 1.6)
+    text(d, (text_x, 157), s, font(FB, 12), OV_GREY)
+
+
+def comp_proc_frame():
+    im, d = ov_canvas(OV_ST_W, OV_ST_H)
+    text(d, (140, 33), "Processing", font(FB, 14), WHITE, "mm")
+    for cx in (126, 139.5, 153):
+        d.ellipse([(cx - 3.8) * S, (56 - 3.8) * S, (cx + 3.8) * S, (56 + 3.8) * S], fill=WHITE)
+    line(d, [(13, 80), (267, 80)], OV_LINE, 1.0)
+    line(d, [(15, 130), (271, 130)], OV_LINE, 1.0)
+    say_line(d, 80, 98, "Say \u201cStop\u201d")
+    return down(im)
+
+
+def comp_stoph_frame():
+    im, d = ov_canvas(OV_ST_W, OV_ST_H)
+    text(d, (140, 33), "Stopped", font(FB, 14), WHITE, "mm")
+    line(d, [(13, 74), (267, 74)], OV_LINE, 1.0)
+    text(d, (140, 96), "Place the block before", font(FB, 10), OV_GREY, "mm")
+    text(d, (140, 112), "returning home.", font(FB, 10), OV_GREY, "mm")
+    line(d, [(14, 135), (269, 135)], OV_LINE, 1.0)
+    say_line(d, 61, 82, "Say \u201cPlace/drop\u201d")
+    return down(im)
+
+
+def comp_empty_frame(title):
+    im, d = ov_canvas(OV_ST_W, OV_ST_H)
+    text(d, (140, 33), title, font(FB, 14), WHITE, "mm")
+    gripper_line(d, 54, 13)
+    line(d, [(13, 74), (267, 74)], OV_LINE, 1.0)
+    text(d, (140, 105), "Ready to return home", font(FB, 10), OV_GREY, "mm")
+    line(d, [(14, 135), (269, 135)], OV_LINE, 1.0)
+    say_line(d, 88, 108, "Say \u201cHome\u201d")
+    return down(im)
+
+
 # ============================================================================ packing
 def rgb565_words(im):
     out = []
@@ -406,6 +676,38 @@ def main():
         add(f"GROUP_ARM_{g}", arm_tile(arm, G_PLACE, hl_group(g, G_PLACE), MODE_TILE_ARM), True)
     add("CART_ARM", arm_tile(arm, C_PLACE, hl_axes(), MODE_TILE_ARM), True)
 
+    # ---- voice mode pages and overlays
+    add("HDR_VOICE", comp_header(icon_mic_header, "VOICE MODE", 39))
+    add("PANEL_CAM", comp_panel_cam())
+    for i, (nm, col) in enumerate(BOXES):
+        add(f"CARD_{i}", comp_card(f"{nm} box", col))
+    add("CHECK", comp_check())
+    add("PANEL_PICK", comp_panel_pick())
+    for i, (nm, _) in enumerate(BOXES):
+        add(f"PICK_TXT_{i}", text_tile(255, 16, ROW_BG, f'" Pick the {nm.lower()} box "', 11, TEXT2, 0, left=2))
+    add("PICK_TXT_4", text_tile(255, 16, ROW_BG, '" Say: pick the <colour> box "', 11, (120, 128, 140), 0, left=2))
+    for i, (nm, _) in enumerate(BOXES):
+        add(f"DEST_HEAD_{i}", comp_dest_head(nm))
+    add("DEST_BODY", comp_dest_body())
+    add("PANEL_A", comp_panel_a())
+    for n in range(1, 21):
+        add(f"DIST_{n}", comp_dist(n))
+    add("SLIDER", comp_slider())
+    add("KNOB", comp_knob())
+    add("PANEL_SAY", comp_panel_say())
+    add("PANEL_QUEUE", comp_panel_queue())
+    add("OV_CONF_FRAME", comp_conf_frame())
+    for i, s in enumerate(CONF_TEXTS):
+        add(f"OV_CONF_SUB_{i}", comp_conf_sub(s))
+    add("OV_PROC_FRAME", comp_proc_frame())
+    for i, (nm, _) in enumerate(BOXES):
+        add(f"OV_PROC_LINE_{i}", holding_tile(200, 16, nm, 12))
+    add("OV_STOPH_FRAME", comp_stoph_frame())
+    for i, (nm, _) in enumerate(BOXES):
+        add(f"OV_STOPH_LINE_{i}", holding_tile(200, 18, nm, 13))
+    add("OV_STOPE", comp_empty_frame("Stopped"))
+    add("OV_COMPLETE", comp_empty_frame("Complete"))
+
     enc = []
     for name, im, big in assets:
         px = rgb565_words(im)
@@ -420,6 +722,8 @@ def main():
     gen = "/* generated by ProjectDevGuide/tools/build_lcd_assets.py - do not edit */\n"
     ids = "".join(f"  LCD_A_{n},\n" for n, _, _, _ in enc)
     pos = "".join(f"#define LCD_POS_{k}_X {v[0]}\n#define LCD_POS_{k}_Y {v[1]}\n" for k, v in POS.items())
+    pos += (f"#define LCD_CHECK_DX {CHECK_DX}\n#define LCD_CHECK_DY {CHECK_DY}\n#define LCD_CARD_W {CARD_W}\n#define LCD_CARD_H {CARD_H}\n"
+            f"#define LCD_OV_CONF_W {OV_CONF_W}\n#define LCD_OV_CONF_H {OV_CONF_H}\n#define LCD_OV_ST_W {OV_ST_W}\n#define LCD_OV_ST_H {OV_ST_H}\n")
     rows = (f"#define LCD_ROW_W {ROW_W}\n#define LCD_ROW_H {ROW_H}\n"
             f"#define LCD_ROWS_SINGLE_X {ROW_X_SINGLE}\n#define LCD_ROWS_GROUP_X {ROW_X_GROUP}\n#define LCD_ROWS_CART_X {ROW_X_CART}\n"
             f"#define LCD_ROWS_SINGLE_Y {{ {', '.join(map(str, ROW_Y_SINGLE))} }}\n"
@@ -431,7 +735,14 @@ def main():
         "typedef enum {\n" + ids + "  LCD_A_COUNT\n} lcd_asset_id_t;\n\n"
         "#define LCD_A_SINGLE_LABEL(i) (LCD_A_SINGLE_LABEL_0 + (i))\n#define LCD_A_SINGLE_ARM(i)   (LCD_A_SINGLE_ARM_0 + (i))\n"
         "#define LCD_A_GROUP_LABEL(i)  (LCD_A_GROUP_LABEL_0 + (i))\n#define LCD_A_GROUP_SUB(i)    (LCD_A_GROUP_SUB_0 + (i))\n"
-        "#define LCD_A_GROUP_ARM(i)    (LCD_A_GROUP_ARM_0 + (i))\n\n"
+        "#define LCD_A_GROUP_ARM(i)    (LCD_A_GROUP_ARM_0 + (i))\n"
+        "#define LCD_A_CARD(i)         (LCD_A_CARD_0 + (i))          /* 0 red, 1 green, 2 black, 3 blue */\n"
+        "#define LCD_A_PICK_TXT(i)     (LCD_A_PICK_TXT_0 + (i))      /* 0..3 colours, 4 = nothing picked */\n"
+        "#define LCD_A_DEST_HEAD(i)    (LCD_A_DEST_HEAD_0 + (i))\n"
+        "#define LCD_A_DIST(cm)        (LCD_A_DIST_1 + (cm) - 1)     /* 1..20 */\n"
+        "#define LCD_A_OV_CONF_SUB(i)  (LCD_A_OV_CONF_SUB_0 + (i))\n"
+        "#define LCD_A_OV_PROC_LINE(i) (LCD_A_OV_PROC_LINE_0 + (i))\n"
+        "#define LCD_A_OV_STOPH_LINE(i) (LCD_A_OV_STOPH_LINE_0 + (i))\n\n"
         "/* where each piece sits on its page (pixels) */\n" + pos + rows + "\n"
         "typedef struct { uint16_t w; uint16_t h; const uint8_t *rle; } lcd_asset_t;\n"
         "extern const lcd_asset_t lcd_assets[LCD_A_COUNT];\n\n"
@@ -483,6 +794,32 @@ def main():
         parts = [("HDR_CART", (0, 0)), ("CART_ARM", POS["CART_ARM"])]
         parts += [(f"ROW_{c}", (ROW_X_CART, y)) for c, y in zip("XYZ", ROW_Y_CART)] + btn
         page(parts).save(check / "cartesian.png")
+        # ---- voice pages (composed in the order lcd.c draws them) and the overlays on top of them
+        vp = page([("HDR_VOICE", (0, 0)), ("PANEL_CAM", POS["PANEL_CAM"])]
+                  + [(f"CARD_{i}", POS[f"CARD_{i}"]) for i in range(4)]
+                  + [("PANEL_PICK", POS["PANEL_PICK"]), ("PICK_TXT_3", POS["PICK_TXT"])] + btn)
+        for i in range(4):
+            vp.paste(img["CHECK"], (POS[f"CARD_{i}"][0] + CHECK_DX, POS[f"CARD_{i}"][1] + CHECK_DY))
+        vp.save(check / "voice.png")
+        page([("HDR_VOICE", (0, 0)), ("DEST_HEAD_3", POS["DEST_HEAD"]), ("DEST_BODY", POS["DEST_BODY"]),
+              ("BTN_BACK", POS["BTN_BACK"])]).save(check / "dest.png")
+        cp = page([("HDR_VOICE", (0, 0)), ("PANEL_A", POS["PANEL_A"]), ("DIST_2", POS["DIST_VAL"]), ("SLIDER", POS["SLIDER"]),
+                   ("PANEL_SAY", POS["PANEL_SAY"]), ("PANEL_QUEUE", POS["PANEL_QUEUE"])] + btn)
+        dr = ImageDraw.Draw(cp)
+        dr.rectangle([24, 104, 24 + 2 * 29 // 4 + 6, 106], fill=WHITE)
+        cp.paste(img["KNOB"], (24 + 2 * 29 // 4 - 6, 99))
+        cp.save(check / "custom.png")
+
+        def over(base_page, parts, name):
+            q = base_page.copy()
+            for n, xy in parts:
+                q.paste(img[n], xy)
+            q.save(check / name)
+        over(vp, [("OV_CONF_FRAME", POS["OV_CONF"]), ("OV_CONF_SUB_6", POS["OV_CONF_SUB"])], "ov_confirm.png")
+        over(vp, [("OV_PROC_FRAME", POS["OV_STATUS"]), ("OV_PROC_LINE_3", POS["OV_PROC_LINE"])], "ov_processing.png")
+        over(vp, [("OV_STOPH_FRAME", POS["OV_STATUS"]), ("OV_STOPH_LINE_3", POS["OV_STOPH_LINE"])], "ov_stopped_holding.png")
+        over(vp, [("OV_STOPE", POS["OV_STATUS"])], "ov_stopped_empty.png")
+        over(vp, [("OV_COMPLETE", POS["OV_STATUS"])], "ov_complete.png")
         img["HOME"].save(check / "home.png")
         img["SELECT"].save(check / "select.png")
     print("ok")

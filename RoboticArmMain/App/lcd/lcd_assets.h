@@ -39,6 +39,72 @@ typedef enum {
   LCD_A_GROUP_ARM_1,
   LCD_A_GROUP_ARM_2,
   LCD_A_CART_ARM,
+  LCD_A_HDR_VOICE,
+  LCD_A_PANEL_CAM,
+  LCD_A_CARD_0,
+  LCD_A_CARD_1,
+  LCD_A_CARD_2,
+  LCD_A_CARD_3,
+  LCD_A_CHECK,
+  LCD_A_PANEL_PICK,
+  LCD_A_PICK_TXT_0,
+  LCD_A_PICK_TXT_1,
+  LCD_A_PICK_TXT_2,
+  LCD_A_PICK_TXT_3,
+  LCD_A_PICK_TXT_4,
+  LCD_A_DEST_HEAD_0,
+  LCD_A_DEST_HEAD_1,
+  LCD_A_DEST_HEAD_2,
+  LCD_A_DEST_HEAD_3,
+  LCD_A_DEST_BODY,
+  LCD_A_PANEL_A,
+  LCD_A_DIST_1,
+  LCD_A_DIST_2,
+  LCD_A_DIST_3,
+  LCD_A_DIST_4,
+  LCD_A_DIST_5,
+  LCD_A_DIST_6,
+  LCD_A_DIST_7,
+  LCD_A_DIST_8,
+  LCD_A_DIST_9,
+  LCD_A_DIST_10,
+  LCD_A_DIST_11,
+  LCD_A_DIST_12,
+  LCD_A_DIST_13,
+  LCD_A_DIST_14,
+  LCD_A_DIST_15,
+  LCD_A_DIST_16,
+  LCD_A_DIST_17,
+  LCD_A_DIST_18,
+  LCD_A_DIST_19,
+  LCD_A_DIST_20,
+  LCD_A_SLIDER,
+  LCD_A_KNOB,
+  LCD_A_PANEL_SAY,
+  LCD_A_PANEL_QUEUE,
+  LCD_A_OV_CONF_FRAME,
+  LCD_A_OV_CONF_SUB_0,
+  LCD_A_OV_CONF_SUB_1,
+  LCD_A_OV_CONF_SUB_2,
+  LCD_A_OV_CONF_SUB_3,
+  LCD_A_OV_CONF_SUB_4,
+  LCD_A_OV_CONF_SUB_5,
+  LCD_A_OV_CONF_SUB_6,
+  LCD_A_OV_CONF_SUB_7,
+  LCD_A_OV_CONF_SUB_8,
+  LCD_A_OV_CONF_SUB_9,
+  LCD_A_OV_PROC_FRAME,
+  LCD_A_OV_PROC_LINE_0,
+  LCD_A_OV_PROC_LINE_1,
+  LCD_A_OV_PROC_LINE_2,
+  LCD_A_OV_PROC_LINE_3,
+  LCD_A_OV_STOPH_FRAME,
+  LCD_A_OV_STOPH_LINE_0,
+  LCD_A_OV_STOPH_LINE_1,
+  LCD_A_OV_STOPH_LINE_2,
+  LCD_A_OV_STOPH_LINE_3,
+  LCD_A_OV_STOPE,
+  LCD_A_OV_COMPLETE,
   LCD_A_COUNT
 } lcd_asset_id_t;
 
@@ -47,6 +113,13 @@ typedef enum {
 #define LCD_A_GROUP_LABEL(i)  (LCD_A_GROUP_LABEL_0 + (i))
 #define LCD_A_GROUP_SUB(i)    (LCD_A_GROUP_SUB_0 + (i))
 #define LCD_A_GROUP_ARM(i)    (LCD_A_GROUP_ARM_0 + (i))
+#define LCD_A_CARD(i)         (LCD_A_CARD_0 + (i))          /* 0 red, 1 green, 2 black, 3 blue */
+#define LCD_A_PICK_TXT(i)     (LCD_A_PICK_TXT_0 + (i))      /* 0..3 colours, 4 = nothing picked */
+#define LCD_A_DEST_HEAD(i)    (LCD_A_DEST_HEAD_0 + (i))
+#define LCD_A_DIST(cm)        (LCD_A_DIST_1 + (cm) - 1)     /* 1..20 */
+#define LCD_A_OV_CONF_SUB(i)  (LCD_A_OV_CONF_SUB_0 + (i))
+#define LCD_A_OV_PROC_LINE(i) (LCD_A_OV_PROC_LINE_0 + (i))
+#define LCD_A_OV_STOPH_LINE(i) (LCD_A_OV_STOPH_LINE_0 + (i))
 
 /* where each piece sits on its page (pixels) */
 #define LCD_POS_BTN_BACK_X 14
@@ -69,6 +142,52 @@ typedef enum {
 #define LCD_POS_GROUP_ARM_Y 42
 #define LCD_POS_CART_ARM_X 152
 #define LCD_POS_CART_ARM_Y 42
+#define LCD_POS_PANEL_CAM_X 14
+#define LCD_POS_PANEL_CAM_Y 49
+#define LCD_POS_CARD_0_X 23
+#define LCD_POS_CARD_0_Y 73
+#define LCD_POS_CARD_1_X 162
+#define LCD_POS_CARD_1_Y 73
+#define LCD_POS_CARD_2_X 23
+#define LCD_POS_CARD_2_Y 112
+#define LCD_POS_CARD_3_X 162
+#define LCD_POS_CARD_3_Y 112
+#define LCD_POS_PANEL_PICK_X 14
+#define LCD_POS_PANEL_PICK_Y 157
+#define LCD_POS_PICK_TXT_X 42
+#define LCD_POS_PICK_TXT_Y 177
+#define LCD_POS_DEST_HEAD_X 22
+#define LCD_POS_DEST_HEAD_Y 50
+#define LCD_POS_DEST_BODY_X 0
+#define LCD_POS_DEST_BODY_Y 92
+#define LCD_POS_PANEL_A_X 12
+#define LCD_POS_PANEL_A_Y 51
+#define LCD_POS_DIST_VAL_X 82
+#define LCD_POS_DIST_VAL_Y 81
+#define LCD_POS_SLIDER_X 18
+#define LCD_POS_SLIDER_Y 95
+#define LCD_POS_PANEL_SAY_X 12
+#define LCD_POS_PANEL_SAY_Y 145
+#define LCD_POS_PANEL_QUEUE_X 196
+#define LCD_POS_PANEL_QUEUE_Y 51
+#define LCD_POS_OV_CONF_X 30
+#define LCD_POS_OV_CONF_Y 40
+#define LCD_POS_OV_CONF_SUB_X 50
+#define LCD_POS_OV_CONF_SUB_Y 112
+#define LCD_POS_OV_STATUS_X 20
+#define LCD_POS_OV_STATUS_Y 20
+#define LCD_POS_OV_PROC_LINE_X 60
+#define LCD_POS_OV_PROC_LINE_Y 118
+#define LCD_POS_OV_STOPH_LINE_X 60
+#define LCD_POS_OV_STOPH_LINE_Y 66
+#define LCD_CHECK_DX 108
+#define LCD_CHECK_DY 10
+#define LCD_CARD_W 131
+#define LCD_CARD_H 35
+#define LCD_OV_CONF_W 260
+#define LCD_OV_CONF_H 160
+#define LCD_OV_ST_W 280
+#define LCD_OV_ST_H 200
 #define LCD_ROW_W 133
 #define LCD_ROW_H 27
 #define LCD_ROWS_SINGLE_X 14
