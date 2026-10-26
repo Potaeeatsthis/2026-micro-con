@@ -51,7 +51,7 @@ Fill in your name in this table in your first PR.
           ISR side (fast, short)                         main loop (app_loop, in this order)
   ┌──────────────────────────────────┐        ┌──────────────────────────────────────────────┐
   │ TIM6 50 Hz: input_tick           │        │ input_step   → posts button / encoder events │
-  │             safety_tick          │        │ safety_step  → posts e-stop / rail events    │
+  │             safety_tick          │        │ safety_step  → posts rail events             │
   │             motion_tick → PWM    │        │ voice_step   → CNN, posts EVT_VOICE_WORD     │
   │ SAI DMA:    voice_on_sai         │        │ pi_link_step → parses lines, posts EVT_PI_*  │
   │ ADC DMA:    input_on_adc         │        │ modes_step   → THE ONLY event consumer       │
@@ -97,9 +97,10 @@ Turning a flag off means the module is not started or called; its code still com
 ## 5. Safety behaviour everyone relies on
 
 - **No pulse at power-up** until safety allows; then the first pulse is the home pose from `servo_cal.c` (currently the 90° placeholder; the installed home is not yet measured).
-- **Manual modes move only while Hold-to-Enable is held.** On release, motion freezes in the same 20 ms tick and the target is reset to the current angle, so nothing jumps later.
-- **A jog that is not refreshed for 150 ms stops by itself.** Joystick modes call `manual_jog()` every pass, so a hung main loop cannot keep the arm moving.
-- **After the e-stop or a servo-rail loss, motion stays blocked** until power is back **and** someone presses the touch **OK** button (`safety_confirm_restart()`).
+- **No E-stop, MODE or Hold-to-Enable button (since 27 Oct 2026).** The mode is chosen on the LCD. Nothing cuts servo power in hardware; switch the servo supply off to stop for sure ([`core-config.md`](core-config.md) §11).
+- **Manual modes cannot move yet.** The code still lets them move only while Hold-to-Enable is held, and that input now always reads released. Proposed fix: move whenever safety allows (core change, open item 5 in [`core-config.md`](core-config.md) §12, Supanut to confirm).
+- **A jog that is not refreshed for 150 ms stops by itself.** Joystick modes call `manual_jog()` every pass, so a hung main loop or a released stick stops the arm.
+- **After a servo-rail loss, motion stays blocked** until power is back **and** someone presses the touch **OK** button (`safety_confirm_restart()`).
 - **A fatal fault** (`app_fault_raise(x, true)`) freezes motion until reset and lights LD3 (red).
 - **LEDs:** LD1 blinking = main loop alive; LD2 = voice word detected; LD3 = fatal fault.
 
@@ -141,7 +142,7 @@ If the linker edit or the MPU region is missing, `dma_buf_check()` stops all mot
 
 **A new mode** — new `mode_<x>.c` implementing `mode_ops_t`, one entry in `MODE_TABLE` in `modes.c`, one value in `arm_mode_t` (`app_types.h`). This is a core PR.
 
-**A new pin, timer, DMA stream** — open a GitHub issue for Supanut with: signal, wanted pin, mode, why. Free EXTI lines: 1, 3, 4, 5, 6, 9. Free DMA: DMA2 Stream 4.
+**A new pin, timer, DMA stream** — open a GitHub issue for Supanut with: signal, wanted pin, mode, why. Free EXTI lines: 1, 3, 4, 5, 6, 9 (and 7, 10, 12 once the removed buttons leave the `.ioc`). Free DMA: DMA2 Stream 4.
 
 ---
 

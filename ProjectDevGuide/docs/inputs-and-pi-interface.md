@@ -7,7 +7,7 @@ module reads it. Pins: [`core-config.md`](core-config.md) §3. How modules talk 
 ```text
  KY-023 joystick ──ADC (PA3, PC0)──┐
  KY-040 encoder ──TIM1 (PE9, PE11)─┤                       ┌─ events ─> modes (the only event consumer)
- buttons MODE/ENC/JOY ──EXTI───────┼──> input/  ───────────┤
+ buttons ENC/JOY ──EXTI────────────┼──> input/  ───────────┤
  servo-rail divider ──ADC (PC3)────┘                       └─ getters: input_joy_x/y(), input_rail_mv() ...
  D435 ──USB──> Pi (detect + depth + transform) ──USART6 text──> pi_link/ ──> events EVT_PI_*
 ```
@@ -24,12 +24,13 @@ Nothing in `input/` or `pi_link/` moves the arm. The active mode reads these val
 | **Joystick button** (SW) | EXTI, debounced 20–40 ms | `EVT_JOY_PRESS`, **only when the stick is centred** | one event per press | bounces ~4 edges, debounce absorbs it |
 | **KY-040 encoder** | quadrature, TIM1 | `EVT_ENC_STEP`, `v[0]` = detents turned | int, **+ = clockwise** | 4 counts per detent; very fast spins can lose half a detent |
 | **Encoder button** | EXTI, debounced | `EVT_ENC_PRESS` | one event per press | clean |
-| **MODE button** | EXTI, debounced | `EVT_BTN_MODE` | one event per press | |
+| **LCD mode card** (touch) | `lcd.c` touch zone | `EVT_TOUCH_MODE_TAB`, `arg` = `arm_mode_t` | one event per tap | replaces the MODE button (removed 27 Oct 2026) |
 | **Servo-rail sense** | 6 V rail divider, ADC | `input_rail_mv()` (getter); safety/ turns it into `EVT_RAIL_LOST` / `EVT_RAIL_BACK` | mV | |
 | **Depth camera via Pi** | text line on USART6 | `EVT_PI_OBJECT` / `EVT_PI_NOTFOUND` / `EVT_PI_TIMEOUT` (see §2) | mm | round trip 4–14 ms |
 
-Only presses become events (releases are tracked but not posted). Hold-to-enable and e-stop are not
-here: they belong to `safety/`.
+Only presses become events (releases are tracked but not posted). The arm has no MODE button,
+Hold-to-Enable or e-stop any more ([`core-config.md`](core-config.md) v1.3); their code in `input/` and
+`safety/` is still there until the core change, and the unwired pins read released.
 
 ## 2. Depth camera → Pi → STM32
 

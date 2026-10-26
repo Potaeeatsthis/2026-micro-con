@@ -1,4 +1,4 @@
-# Robotic Arm — Core STM32 Configuration (v1.2)
+# Robotic Arm — Core STM32 Configuration (v1.3)
 
 **Board:** NUCLEO-F767ZI (STM32F767ZIT6, LQFP144)
 **Tools (everyone, same versions):** STM32CubeMX 6.18.0 (standalone), STM32CubeIDE 2.2.0, FW_F7 V1.17.4, X-CUBE-AI 10.2.1
@@ -19,6 +19,11 @@ background region); CubeMX pin traps and setting order (§13); CubeIDE project s
 **Update 24 Oct 2026 (no `.ioc` change):** servo signals are wired **direct** for now, the SN74HC244N stage failed
 (§11); notes from the six-servo bench test (§4.1); voice-word timing for modules that use voice events (§9).
 
+**v1.3 (27 Oct 2026, no `.ioc` change yet):** the arm has **no E-stop, no MODE button and no Hold-to-Enable
+button**. Inputs are the KY-040 encoder, KY-023 joystick, LCD touch, 2 mics and the Pi link (USART6); outputs
+the 6 servos and the LCD. The mode is chosen on the LCD. PE7, PE10 and PE12 stay configured in the `.ioc` until
+the owner regenerates; nothing is wired to them and the pull-ups make them read "released" (§3).
+
 ---
 
 ## 1. What changed from `robotic-arm-guide.md`
@@ -34,9 +39,11 @@ background region); CubeMX pin traps and setting order (§13); CubeIDE project s
 | Clock | – | 216 MHz from the ST-Link 8 MHz (HSE bypass), needed for an exact 16 kHz audio rate |
 | Software | – | Bare-metal: main loop + interrupts (no RTOS), §9 |
 
-Unchanged: four modes, KY-023 joystick + KY-040 encoder, MODE and Hold-to-Enable buttons,
-1NO+1NC latching E-stop (NC cuts the relay, NO reports to the STM32), SN74AHCT244N buffer
+Unchanged: four modes, KY-023 joystick + KY-040 encoder, SN74AHCT244N buffer
 (planned; servos wired direct until it is fitted, §11), power architecture, shared motion pipeline (every mode only sets targets).
+
+Dropped (v1.3, 27 Oct 2026): MODE button (the LCD mode cards replace it), Hold-to-Enable button, and the
+1NO+1NC latching E-stop with its servo-power relay. Nothing cuts servo power in hardware now (§11).
 
 ---
 
@@ -91,9 +98,9 @@ USB (PA8–PA12, PG6, PG7), SWD (PA13, PA14, PB3), HSE (PH0, PH1), LSE (PC14, PC
 | **KY-040 encoder** (3.3 V) | CLK | PE9 | CN10-4 (D6) | TIM1_CH1 (encoder) |
 | | DT | PE11 | CN10-6 (D5) | TIM1_CH2 (encoder) |
 | | SW | PE14 | CN10-28 (D38) | GPIO_EXTI14, pull-up |
-| **Buttons** | MODE | PE10 | CN10-24 (D40) | GPIO_EXTI10, pull-up |
-| | Hold-to-Enable | PE12 | CN10-26 (D39) | GPIO_EXTI12, pull-up |
-| | E-stop status (NO contact) | PE7 | CN10-20 (D41) | GPIO_EXTI7, pull-up |
+| **Removed buttons** (v1.3: not wired, still in the `.ioc`) | ~~MODE~~ | PE10 | CN10-24 (D40) | GPIO_EXTI10, pull-up (reads released) |
+| | ~~Hold-to-Enable~~ | PE12 | CN10-26 (D39) | GPIO_EXTI12, pull-up (reads released) |
+| | ~~E-stop status (NO contact)~~ | PE7 | CN10-20 (D41) | GPIO_EXTI7, pull-up (reads released) |
 | **Limit switches** (optional, not fitted yet) | LIM1 | PE8 | CN10-18 (D42) | GPIO_EXTI8, pull-up |
 | | LIM2 | PB11 | CN10-34 (D35) | GPIO_EXTI11, pull-up |
 | | LIM3 | PE0 | CN10-33 (D34) | GPIO_EXTI0, pull-up |
@@ -106,7 +113,13 @@ USB (PA8–PA12, PG6, PG7), SWD (PA13, PA14, PB3), HSE (PH0, PH1), LSE (PC14, PC
 
 **EXTI lines are numbered by pin number, not port**, so each number may be used once in the
 whole project. Used: 0, 2, 7, 8, 10, 11, 12, 14, 15. Free for later: 1, 3–6, 9, 13 (avoid 13 if
-the user button ever becomes an interrupt).
+the user button ever becomes an interrupt). 7, 10 and 12 belong to the removed buttons and become free
+when the owner drops PE7 / PE10 / PE12 from the `.ioc` (§12).
+
+**Removed buttons, until the `.ioc` and the code change (§12):** leave PE7, PE10 and PE12 unconnected. The
+pull-up keeps each at 1 = released: no e-stop, no MODE press. Hold-to-Enable also reads released, and the
+current `motion.c` lets manual modes (Single Joint, Joint Group, Cartesian) move **only while Enable is held**,
+so **manual modes cannot move until the core change in §12 lands**. Voice mode is not affected.
 
 **Limit switches** are optional: the pins are configured so adding switches later needs no
 `.ioc` change. Wire each switch **NC contact between the pin and GND**: normal = 0, triggered or
@@ -118,7 +131,10 @@ boundaries get a switch is decided during mechanical testing.
 the stick is near its centre (so an accidental press while pushing the stick does nothing).
 The knob press (KY-040 SW) keeps the mode-specific actions from `robotic-arm-guide.md`.
 
-Buttons wire **pin → button → GND**; the internal pull-up makes "pressed = 0".
+The encoder and joystick buttons wire **pin → button → GND**; the internal pull-up makes "pressed = 0".
+
+**Mode selection = LCD touch.** A mode card posts `EVT_TOUCH_MODE_TAB` (arg = `arm_mode_t`); `modes.c`
+switches when motion is idle and the stick is centred.
 
 **PG9 (USART6 RX) floats while no Pi is connected.** The UART then sees noise at boot and the log shows
 one `fault: code 7` (`FAULT_UART_PI`); `pi_link` restarts its receiver and carries on. Harmless. If it
@@ -227,7 +243,7 @@ AM2320 / I2C1, RNG, Lab08's TIM3 backlight PWM, Lab08's ADC pot.
 | Priority | Interrupt | Why |
 |---|---|---|
 | 0 | DMA2 Stream 1 (SAI RX) | Audio must never be late. Callback only DC-filters and copies (≈ few µs) |
-| 1 | EXTI0 / EXTI2 (LIM3 / LIM4), EXTI9_5 (E-stop status, LIM1), EXTI15_10 (Hold-to-Enable, MODE, encoder SW, joystick SW, LIM2) | Hold-to-Enable release and a limit switch must stop motion at once |
+| 1 | EXTI0 / EXTI2 (LIM3 / LIM4), EXTI9_5 (LIM1; PE7 removed), EXTI15_10 (encoder SW, joystick SW, LIM2; PE10 / PE12 removed) | A limit switch must stop motion at once |
 | 2 | TIM6 (control tick) | Smooth servo motion even while the CNN or LCD is busy |
 | 3 | USART6 + DMA2 Streams 2/7 | Pi messages |
 | 4 | DMA2 Stream 0 (ADC) | Joystick |
@@ -304,7 +320,7 @@ interrupt; anything slow runs in the loop.
 |---|---|---|
 | SAI DMA interrupt (every 10 ms) | DC filter, push 160 samples per mic into the voice ring | µs |
 | TIM6 interrupt (every 20 ms) | `input_tick` → `safety_tick` → `motion_tick` (debounce, safety checks, trajectory step, write 6 CCRs) | < 0.5 ms target |
-| EXTI | set flags / timestamps (Hold-to-Enable release also freezes the target) | µs |
+| EXTI | set flags / timestamps (encoder / joystick buttons, limit switches) | µs |
 | USART6 idle-line callback | mark a Pi message as ready | µs |
 | Main loop (`app_loop`) | voice features + CNN every 100 ms (≈ 43 ms), Pi message parsing, mode logic + voice task state machine, IK, LCD updates | – |
 
@@ -350,10 +366,10 @@ word; finish or stop the move in `motion/`).
     │   ├── app.c/.h                app_init(), app_loop(), app_control_tick()
     │   ├── app_callbacks.c         THE only place that defines HAL_*Callback functions
     │   ├── common/                 app_config.h (feature flags), events, faults, log, timing, dma_buf
-    │   ├── safety/                 e-stop, hold-to-enable, rail sense, limit switches (always on)
+    │   ├── safety/                 rail sense, limit switches, restart latch (always on)
     │   ├── motion/                 servo PWM, calibration, trajectory (TIM6 tick)
     │   ├── kinematics/             IK / FK, arm_geometry.h
-    │   ├── input/                  joystick (ADC), encoder (TIM1), buttons (EXTI)
+    │   ├── input/                  joystick (ADC), encoder (TIM1), encoder / joystick buttons (EXTI)
     │   ├── voice/                  kws_features, kws_stream, KISS FFT, kws_classes.h
     │   ├── pi_link/                USART6 protocol
     │   ├── lcd/                    status screen + touch, lcd_port.c → Lab08 ILI9341 driver
@@ -405,7 +421,9 @@ word; finish or stop the move in `motion/`).
   the Pi reflash the board.
 - Servo-rail sense: 6 V rail → 10 kΩ → PC3 → 3.3 kΩ → GND (+ optional 100 nF from PC3 to
   GND) gives ≈ 1.5 V at 6 V and stays below 3.3 V even if 12 V reaches the rail by mistake.
-  ≈ 0 V means servo power is off (E-stop relay open, fuse or buck dead).
+  ≈ 0 V means servo power is off (switched off, fuse or buck dead).
+- **No E-stop (v1.3).** Nothing cuts servo power in hardware. Stops are: letting go of the joystick (a jog
+  not refreshed for 150 ms stops by itself) and switching the servo supply off. Keep a hand on the servo supply switch while the arm moves.
 - First run of new motion code: **servo signal wires disconnected**.
 
 ---
@@ -422,6 +440,9 @@ not fitted yet; joint limits are always enforced in software as well.
 | 2 | Pi message format details; Pi sends object XYZ in the **robot base frame**? | `pi_link/` only — not the `.ioc` |
 | 3 | Installed servo calibration: safe min/max, joint zero and home (unit-to-joint mapping confirmed J1-J6 = units 1-6) | `motion/` only — not the `.ioc` |
 | 4 | Optional PG9 pull-up (removes the boot-time `fault: code 7` without a Pi) | `.ioc`, owner's choice |
+| 5 | **Manual modes without Hold-to-Enable.** Proposed (27 Oct 2026): manual modes move whenever safety allows; the joystick dead man (150 ms jog timeout) stays. Supanut to confirm, or keep a Hold-to-Enable input for manual modes | `motion/`, `safety/`, `modes/` — core change; manual modes cannot move until then |
+| 6 | Remove the E-stop and MODE code paths (`EVT_ESTOP_*`, `EVT_BTN_MODE`, `SAFETY_ESTOP`); the restart latch stays for rail loss | `safety/`, `input/`, `modes/`, `common/`, host tests |
+| 7 | Drop PE7 / PE10 / PE12 from the `.ioc` (frees EXTI 7, 10, 12). Harmless to leave until then | `.ioc`, after #5 is decided |
 
 ---
 
@@ -448,6 +469,7 @@ function there, then set the mode. Afterwards check every pin against §3.
 6. **System Core → GPIO:** outputs CS / T_CS / RST start **High**, speed Very High for LCD + touch outputs;
    all button inputs **pull-up**; EXTI edge: `BTN_ENABLE`, `ESTOP_NO` and `LIM1`–`LIM4` **rising/falling**,
    `BTN_MODE`, `ENC_SW`, `JOY_SW` **falling**. SAI pin PE6: **pull-down**.
+   (v1.3: `BTN_MODE`, `BTN_ENABLE`, `ESTOP_NO` are no longer wired; they go away with §12 #7.)
 7. **Timers:** TIM3, TIM4 (§4.1), TIM1 (§4.2), TIM2 (§4.3), TIM6 (§4.7 — period **199**).
 8. **Analog → ADC1:** §4.3 (add the DMA request in its DMA Settings tab).
 9. **SAI1 DMA:** §4.4.
