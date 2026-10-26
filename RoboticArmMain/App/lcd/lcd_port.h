@@ -34,4 +34,13 @@ void lcd_port_text(int x, int y, const char *s, uint16_t fg, uint16_t bg, int si
 /* raw touch: true while pressed, x/y already mapped to screen pixels */
 bool lcd_port_touch(int *x, int *y);
 
+/* draw a packed picture from lcd_assets.h (id = LCD_A_xxx) with its top-left corner at x, y.
+ * pictures are RLE-compressed in flash and decoded while they stream to the panel (no RAM buffer).
+ * blocking: about 30 ms for the whole screen, about 1 ms for a button. */
+void lcd_port_asset(int id, int x, int y);
+
+/* big bold numbers: s may hold 0-9, '-' and ' '. drawn right-aligned so the last char ends at x_right,
+ * on a field_w pixel wide field filled with bg first (anti-aliased against fg / bg) */
+void lcd_port_digits(int x_right, int y, int field_w, const char *s, uint16_t fg, uint16_t bg);
+
 #endif /* APP_LCD_PORT_H */
