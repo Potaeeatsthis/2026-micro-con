@@ -16,15 +16,35 @@ The bench tools are separate from the HAL firmware:
 
 ## Safety warning
 
-**The installed calibration is not done.** In `App/motion/servo_cal.c` every
-joint still uses `min_deg = 0`, `max_deg = 180` and `home_deg = 90`. Those are
-**placeholders, not calibrated safe limits and not an installed home pose**.
-The values below are unloaded bench measurements only.
+**Integration blocked: do not run automatic gripper operations yet.** The calibration
+table is updated, but `App/common/app_config.h` still sets gripper closed to 120 deg
+and open to 30 deg. With the replacement servo, increasing J6 opens the jaws; the
+120 deg close request clamps to the 60 deg open endpoint. Required owner changes:
 
-Do not move the assembled arm from the current firmware table. Support the arm,
-keep a hardware power disconnect within reach, and keep the servo signal wires
-disconnected while bringing up new motion code. `off`/`select` detach the
-signal only; they do not cut servo power and do not hold the arm.
+- Core owner: set `APP_GRIPPER_CLOSED_DEG` to 0 and `APP_GRIPPER_OPEN_DEG` to 60,
+  retaining the 35 deg startup home. These are travel endpoints, not an
+  object-specific grip-force calibration.
+- Modes owner: correct Cartesian entry's closed-state comparison for lower-angle
+  closing, and validate voice gripper targets before commanding motion so a
+  clamped close is not reported as successful holding.
+- Add integration checks for open/close direction, valid unclamped targets,
+  recovery opening, and Cartesian entry/toggle at both endpoints. Existing host
+  tests verify calibration and clamping, not these physical gripper semantics.
+
+These changes are outside the authorized motion calibration files; do not widen
+the J6 limits or invert its pulse anchors to accommodate the old commands.
+
+The firmware table in `App/motion/servo_cal.c` now holds the confirmed installed
+home poses and conservative per-joint safe limits (27 Oct 2026). The home pose is
+a servo-angle pose, **not the kinematic joint zero**; startup sends it after
+safety allows. Joint zeros and direction signs are still uncalibrated.
+
+The independent per-joint limits give endpoint clearance only. They do **not**
+guarantee that every whole-arm pose or path is collision-free; there is no
+automatic collision checking. Keep the arm supported, keep a hardware power
+disconnect within reach, and keep the servo signal wires disconnected while
+bringing up new motion code. `off`/`select` detach the signal only; they do not
+cut servo power and do not hold the arm.
 
 ## Confirmed unit-to-joint mapping and bench pins
 
@@ -59,7 +79,12 @@ installed safe limits.
 | 3 | `MG996R-3` | J3 | 540 | 1530 | 2500 | 1530 | 500..2500 |
 | 4 | `SG92R-1` | J4 | 500 | 1440 | 2370 | 1440 | 500..2500 |
 | 5 | `SG92R-3` | J5 | 640 | 1580 | 2470 | 1580 | 500..2500 |
-| 6 | `SG90` | J6 | 580 | 1570 | 2500 | 1570 | 500..2500 |
+| 6 | `SG90` (replacement) | J6 | 500 | 1380 | 2300 | 1380 | not recorded |
+
+J6 was replaced after the original bench run, so the firmware uses the
+replacement anchors above rather than the earlier SG90 row (580 / 1570 /
+2500 µs). The reported 2490 µs maximum is **not** an angle anchor and **not**
+an installed limit; it is not used.
 
 **Reference pulse = the pulse measured at 90°**, not the arithmetic midpoint of
 the 0°/180° pulses. For example, J1's reference is 1460 µs; the midpoint of 500
@@ -67,7 +92,8 @@ and 2430 would be 1465 µs.
 
 **Values on the tool limit may be clipped.** The bench tool could not send less than 500 µs or more than
 2500 µs. These points landed exactly on that limit, so the true pulse for that angle may lie slightly beyond it:
-0° of `MG996R-1`, `MG996R-2` and `SG92R-1` (500 µs), and 180° of `MG996R-3` and `SG90` (2500 µs). The horn
+0° of `MG996R-1`, `MG996R-2` and `SG92R-1` (500 µs), and 180° of `MG996R-3` (2500 µs). The original SG90
+measurement also touched 2500 µs, but that row is superseded by the replacement J6 anchors above. The horn
 was seated one spline tooth (about 14° on the MG996R, 17° on the SG92R) closest to 90° at 1500 µs, so a
 different tooth moves all three points together.
 
@@ -137,32 +163,62 @@ Rules that follow:
 - A brown-out can **hang** an AVR board without resetting it: if a servo suddenly stops responding, reset the
   board before suspecting the servo.
 
-## Installed calibration status
+## Installed calibration (confirmed 27 Oct 2026)
 
-Everything below is still **to be measured after assembly**:
+The firmware table now contains the confirmed installed home and conservative
+joint limits. Home is a physical servo-angle pose loaded before the first pulse;
+it is **not** the kinematic joint zero. The pulse values below are derived from
+the anchors above at those home angles.
 
-- installed minimum and maximum pulse per joint;
-- installed joint zero pulse;
-- installed home pose/pulse;
-- joint direction sign;
-- mechanical clearance and self-collision limits.
+| Joint | Unit label | Safe min (°) | Safe max (°) | Home (°) | Home pulse (µs) | Installed zero | Direction sign |
+|---|---|---|---|---|---|---|---|
+| J1 | `MG996R-1` | 0 | 180 | 85 | 1407 | not measured | not calibrated |
+| J2 | `MG996R-2` | 100 | 180 | 125 | 1823 | not measured | not calibrated |
+| J3 | `MG996R-3` | 45 | 180 | 145 | 2123 | not measured | not calibrated |
+| J4 | `SG92R-1` | 0 | 180 | 90 | 1440 | not measured | not calibrated |
+| J5 | `SG92R-3` | 25 | 140 | 25 | 901 | not measured | not calibrated |
+| J6 | `SG90` (replacement) | 0 | 60 | 35 | 842 | not measured | not calibrated |
 
-| Joint | Unit label | Installed min (µs) | Installed max (µs) | Installed zero (µs) | Installed home (µs) | Direction sign |
-|---|---|---|---|---|---|---|
-| J1 | `MG996R-1` | | | | | |
-| J2 | `MG996R-2` | | | | | |
-| J3 | `MG996R-3` | | | | | |
-| J4 | `SG92R-1` | | | | | |
-| J5 | `SG92R-3` | | | | | |
-| J6 | `SG90` | | | | | |
+The limits were confirmed independently, one joint at a time, with the rest of
+the arm supported. J2 min = 100° is the conservative value confirmed with
+J5 = 25°. A J2 angle near 50° was observed only with the wrist above 75°, but
+that coupled rule is incomplete; the firmware keeps J2 min = 100° and does not
+implement speculative wrist coupling.
 
-These cells are deliberately blank. Do not fill them by inference.
+The 0/90/180 pulse anchors are the full-range conversion anchors, not installed
+limits. J6's safe range is 0..60° but its anchors still span 0..180°; do not
+confuse the two.
+
+### Directional observations (not signs)
+
+| Joint | Observed motion direction |
+|---|---|
+| J1 | top view: increasing toward 180° = left; toward 0° = right |
+| J2 | increasing = up |
+| J3 | increasing = down |
+| J4 | gripper looking at the shoulder: increasing = left; decreasing = right |
+| J5 | increasing = up |
+| J6 | increasing = opens |
+
+These are observed directions only. They are **not** calibrated joint signs, and
+the joint zeros remain uncalibrated. Do not turn them into IK or servo signs
+without a separate calibration.
+
+### Limit scope and collision caveat
+
+The safe limits are independent per-joint endpoint clearances. They do **not**
+guarantee collision-free whole-arm poses or paths, and the firmware has no
+automatic collision check. Validate each new pose or path on the assembled arm,
+supported, with the power disconnect within reach.
 
 Do not infer installed values from the unloaded table, from the unit label, or
-from the old IK sketches. The installed zero and home are physical poses, and
-the installed range can be narrower than the unloaded tested range.
+from the old IK sketches. The installed range can be narrower than the unloaded
+tested range.
 
 ## After-assembly checklist
+
+The confirmed limits and home are already in the firmware table. Use this list
+to revalidate them and to establish the remaining zeros and signs.
 
 - [ ] Assemble and support the arm before applying servo power.
 - [ ] Confirm on the real arm that each joint is driven by the unit in the
@@ -185,11 +241,14 @@ the installed range can be narrower than the unloaded tested range.
       test window. Move slowly to the physical joint zero, then save it with
       `zero` while armed. Only expand the test window within verified clearances.
 - [ ] Measure and record the installed home pose separately from joint zero.
+      The current home values are already in the table; revalidate them after any
+      mechanical change.
 - [ ] Confirm each joint's positive direction with a small, slow move and record
-      its sign.
+      its sign. The directional observations above are not signs.
 - [ ] Save `table` output before reset and keep the CSV outside the board.
-- [ ] Only after these values are measured, have the motion owner replace the
-      `0 / 180 / 90` placeholders in `App/motion/servo_cal.c`.
+- [ ] Revalidate the installed limits and home already recorded in
+      `App/motion/servo_cal.c` after assembly or any mechanical change. Do not
+      infer the remaining joint zeros or signs.
 - [ ] Verify the updated firmware with servo signal wires disconnected before
       moving the assembled arm under load.
 
