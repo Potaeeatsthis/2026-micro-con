@@ -56,7 +56,7 @@ void voice_set_accept_mask(uint32_t m) { g_voice_mask = m; }
 static int fails, passes;
 #define CHECK(cond, msg) do { if (cond) { passes++; } else { fails++; printf("  FAIL: %s (line %d)\n", msg, __LINE__); } } while (0)
 
-static void loop_pass(void) { safety_step(); pi_link_step(); modes_step(); }
+static void loop_pass(void) { pi_link_step(); modes_step(); }
 static int g_trace;
 static float tgt(int j);
 static float cur(int j);
@@ -64,7 +64,7 @@ static void run_ms(uint32_t ms)
 {
   for (uint32_t t = 0; t < ms; t += 20) {
     float b = tgt(5);
-    g_tick += 20; safety_tick(); motion_tick(); loop_pass();
+    g_tick += 20; motion_tick(); loop_pass();
     if (g_trace && tgt(5) != b) printf("  t=%lu J6 target %.6f -> %.6f (cur %.6f)\n", (unsigned long)g_tick, (double)b, (double)tgt(5), (double)cur(5));
   }
 }
@@ -137,7 +137,7 @@ static uint32_t word_bit(const char *w) { return 1u << voice_class_id(w); }
 
 static int voice_hand_dry_run(void)
 {
-  safety_init(); motion_init(); pi_link_init(); lcd_init(); modes_init();
+  motion_init(); pi_link_init(); lcd_init(); modes_init();
   run_ms(100);
 
   printf("== voice hand (dry run): live palm position from the pi\n");
@@ -221,7 +221,7 @@ int main(void)
   CHECK(servo_deg_to_us(0, 250.0f) == 2430, "out of range clamps");
 
   printf("== boot: no pulse until the first tick, then home\n");
-  safety_init(); motion_init(); pi_link_init(); lcd_init(); modes_init();
+  motion_init(); pi_link_init(); lcd_init(); modes_init();
   CHECK(htim3.ccr[0] == 0, "no pulse before the first control tick");
   CHECK(safety_state() == SAFETY_OK, "no e-stop: safety ok at boot");
   run_ms(100);
@@ -253,7 +253,7 @@ int main(void)
   app_events_drain();
   motion_toggle_speed();
   motion_set_joint_target(J3_ELBOW, 120.0f);
-  for (int i = 0; i < 60; i++) { g_tick += 20; safety_tick(); motion_tick(); }
+  for (int i = 0; i < 60; i++) { g_tick += 20; motion_tick(); }
   CHECK(cur(2) == 120.0f, "fast 45 deg/s reaches 120 within 1.2 s");
   CHECK(count_events_type(EVT_MOTION_DONE) == 1, "exactly one EVT_MOTION_DONE");
   motion_toggle_speed();

@@ -24,7 +24,7 @@ typedef enum {
 } motion_result_t;
 
 void            motion_init(void);
-void            motion_tick(void);                 /* TIM6 isr, after safety_tick() */
+void            motion_tick(void);                 /* TIM6 isr, after input_tick() */
 
 motion_result_t motion_set_target(const joint_vec_t *target);
 motion_result_t motion_set_joint_target(int joint, float deg);

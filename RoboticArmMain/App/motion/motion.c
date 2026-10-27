@@ -92,11 +92,6 @@ void motion_tick(void)
 
     float err = s_tgt.deg[j] - s_cur.deg[j];
     float step = clampf(err, -max_step, max_step);
-    int dir = (step > 0.0f) ? 1 : ((step < 0.0f) ? -1 : 0);
-    if (dir != 0 && safety_limit_blocks(j, dir)) {
-      step = 0.0f;
-      s_tgt.deg[j] = s_cur.deg[j];
-    }
     if (step != 0.0f && absf(err) <= max_step) {
       s_cur.deg[j] = s_tgt.deg[j];                  /* last step lands exactly on the target */
     } else {

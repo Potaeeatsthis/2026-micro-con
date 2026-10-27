@@ -1,6 +1,6 @@
 ST Edge AI Core v2.2.0-20266 2adc00962
-Created date          : 2026-10-23 01:28:14
-Parameters            : generate --target stm32f7 --name network -m D:/Microcon69/ProjectRoboticArm/ProjectSpace/2026-micro-con/RoboticArmMain/Models/kws.onnx --compression none --verbosity 1 --workspace C:/Users/ASUS/AppData/Local/Temp/mxAI_workspace2382252677980014460227301549914776 --output C:/Users/ASUS/.stm32cubemx/network_output
+Created date          : 2026-10-27 15:16:38
+Parameters            : generate --target stm32f7 --name network -m D:/Microcon69/ProjectRoboticArm/ProjectSpace/2026-micro-con/RoboticArmMain/Models/kws.onnx --compression none --verbosity 1 --workspace C:/Users/ASUS/AppData/Local/Temp/mxAI_workspace2400011465766006518770910400254748 --output C:/Users/ASUS/.stm32cubemx/network_output
 
 Exec/report summary (generate)
 --------------------------------------------------------------------------------------------------------------------
@@ -11,7 +11,7 @@ compression        :   none
 options            :   allocate-inputs, allocate-outputs                                                            
 optimization       :   balanced                                                                                     
 target/series      :   stm32f7                                                                                      
-workspace dir      :   C:\Users\ASUS\AppData\Local\Temp\mxAI_workspace2382252677980014460227301549914776            
+workspace dir      :   C:\Users\ASUS\AppData\Local\Temp\mxAI_workspace2400011465766006518770910400254748            
 output dir         :   C:\Users\ASUS\.stm32cubemx\network_output                                                    
 model_fmt          :   float                                                                                        
 model_name         :   kws                                                                                          

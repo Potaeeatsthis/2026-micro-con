@@ -36,11 +36,10 @@
 #include "adc.h"
 #include "tim.h"
 
-#define ADC_CH            3u
+#define ADC_CH            2u
 #define ADC_SAMPLES       20u                    /* per channel in the whole buffer */
 #define ADC_HALF_SAMPLES  (ADC_SAMPLES / 2u)     /* 10 per channel per half = 10 ms */
 #define ADC_FULL_SCALE    4095u
-#define ADC_VREF_MV       3300u
 
 #define JOY_DEADZONE      0.08f                  /* fraction of full deflection */
 #define JOY_CENTER_TOL    0.15f                  /* "near centre" for the fine/fast press */
@@ -67,7 +66,7 @@
 #include <string.h>
 #endif
 
-static uint16_t s_adc_buf[ADC_CH * ADC_SAMPLES] DMA_BUF;  /* [x, y, rail, x, y, rail, ...] */
+static uint16_t s_adc_buf[ADC_CH * ADC_SAMPLES] DMA_BUF;  /* [x, y, x, y, ...] */
 static volatile uint16_t s_raw[ADC_CH];
 static uint16_t s_center_x = 2048u, s_center_y = 2048u;
 static bool     s_center_done;
@@ -118,7 +117,7 @@ void input_init(void)
 void input_on_adc(int half)
 {
   const uint16_t *p = &s_adc_buf[(half ? ADC_HALF_SAMPLES : 0u) * ADC_CH];
-  uint32_t sum[ADC_CH] = { 0u, 0u, 0u };
+  uint32_t sum[ADC_CH] = { 0u, 0u };
 #if APP_INPUT_TEST
   uint16_t mn[2] = { s_t_min[0], s_t_min[1] };
   uint16_t mx[2] = { s_t_max[0], s_t_max[1] };
@@ -128,10 +127,8 @@ void input_on_adc(int half)
       uint16_t v = p[i * ADC_CH + c];
       sum[c] += v;
 #if APP_INPUT_TEST
-      if (c < 2u) {
-        if (v < mn[c]) mn[c] = v;
-        if (v > mx[c]) mx[c] = v;
-      }
+      if (v < mn[c]) mn[c] = v;
+      if (v > mx[c]) mx[c] = v;
 #endif
     }
   }
@@ -192,15 +189,8 @@ bool input_joy_centered(void)
   return absf(x) < JOY_CENTER_TOL && absf(y) < JOY_CENTER_TOL;
 }
 
-uint32_t input_rail_mv(void)
-{
-  uint32_t pin_mv = ((uint32_t)s_raw[2] * ADC_VREF_MV) / ADC_FULL_SCALE;
-  return (pin_mv * APP_RAIL_DIV_NUM) / APP_RAIL_DIV_DEN;
-}
-
 uint16_t input_raw_x(void)    { return s_raw[0]; }
 uint16_t input_raw_y(void)    { return s_raw[1]; }
-uint16_t input_raw_rail(void) { return s_raw[2]; }
 
 static void calibrate_center_once(void)
 {

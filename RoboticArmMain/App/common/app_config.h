@@ -32,7 +32,7 @@
 #define APP_USE_MOTION          1   /* servo pwm + trajectory (TIM3/TIM4, TIM6 tick) */
 #endif
 #ifndef APP_USE_INPUT
-#define APP_USE_INPUT           1   /* joystick + rail adc, encoder, buttons */
+#define APP_USE_INPUT           1   /* joystick adc, encoder, encoder / joystick buttons */
 #endif
 #ifndef APP_USE_KINEMATICS
 #define APP_USE_KINEMATICS      1   /* ik / fk */
@@ -48,14 +48,6 @@
 #endif
 #ifndef APP_USE_MODES
 #define APP_USE_MODES           1   /* mode state machine (voice / cartesian / joint group / single joint) */
-#endif
-
-/* hardware that is not fitted yet: keep 0 until it is wired and tested */
-#ifndef APP_USE_LIMIT_SWITCHES
-#define APP_USE_LIMIT_SWITCHES  0   /* PE8, PB11, PE0, PE2 - NC to GND, 1 = triggered */
-#endif
-#ifndef APP_USE_RAIL_SENSE
-#define APP_USE_RAIL_SENSE      0   /* 6 V rail divider on PC3; needs APP_USE_INPUT */
 #endif
 
 /* ---------------------------------------------------------------- timing */
@@ -83,20 +75,6 @@
 #define APP_GRIPPER_CLOSED_DEG  120.0f
 #endif
 
-/* ---------------------------------------------------------------- safety */
-#ifndef APP_RAIL_OK_MV
-#define APP_RAIL_OK_MV          5000u /* rail counts as powered above this */
-#endif
-#ifndef APP_RAIL_LOST_MV
-#define APP_RAIL_LOST_MV        4500u /* and as lost below this (hysteresis) */
-#endif
-#ifndef APP_RAIL_DIV_NUM
-#define APP_RAIL_DIV_NUM        133u  /* (10k + 3.3k) / 3.3k = 133 / 33 */
-#endif
-#ifndef APP_RAIL_DIV_DEN
-#define APP_RAIL_DIV_DEN        33u
-#endif
-
 /* ---------------------------------------------------------------- pi link */
 #ifndef APP_PI_TIMEOUT_MS
 #define APP_PI_TIMEOUT_MS       3000u /* TODO(pi): set after testing the camera pipeline */
@@ -115,9 +93,6 @@
 #endif
 
 /* ---------------------------------------------------------------- sanity checks */
-#if APP_USE_RAIL_SENSE && !APP_USE_INPUT
-#error "APP_USE_RAIL_SENSE needs APP_USE_INPUT (the rail is read by the input adc)"
-#endif
 #if APP_USE_MODES && !APP_USE_MOTION
 #error "APP_USE_MODES needs APP_USE_MOTION (modes only set motion targets)"
 #endif

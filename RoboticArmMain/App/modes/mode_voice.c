@@ -23,7 +23,7 @@
  *
  * multi-step moves (grasp, place, go home, jog queue) are "scripts": a short list of
  * steps run one after another, the next step starts on EVT_MOTION_DONE. a stop or a
- * rail loss aborts the script and goes to S10.
+ * fatal fault aborts the script and goes to S10.
  *
  * bench flags (app_config_local.h only), to walk every state before the arm exists:
  *   APP_VOICE_DRY_RUN  each script step is logged ("dry-run: ...") and counts as done after
@@ -677,8 +677,6 @@ static void on_event(const app_event_t *e)
 
     case EVT_FAULT:
       if (e->v[0] == 0) break;                        /* only fatal faults stop the task */
-      /* fall through */
-    case EVT_RAIL_LOST:
       if (is_moving_state(s_state) || s_script_running) controlled_stop();
       cancel_pi();
       break;

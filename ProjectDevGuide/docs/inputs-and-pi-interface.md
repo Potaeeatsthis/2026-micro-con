@@ -7,8 +7,8 @@ module reads it. Pins: [`core-config.md`](core-config.md) §3. How modules talk 
 ```text
  KY-023 joystick ──ADC (PA3, PC0)──┐
  KY-040 encoder ──TIM1 (PE9, PE11)─┤                       ┌─ events ─> modes (the only event consumer)
- buttons ENC/JOY ──EXTI────────────┼──> input/  ───────────┤
- servo-rail divider ──ADC (PC3)────┘                       └─ getters: input_joy_x/y(), input_rail_mv() ...
+ buttons ENC/JOY ──EXTI────────────┴──> input/  ───────────┤
+                                                           └─ getters: input_joy_x/y(), input_joy_centered() ...
  D435 ──USB──> Pi (detect + depth + transform) ──USART6 text──> pi_link/ ──> events EVT_PI_*
 ```
 
@@ -25,12 +25,11 @@ Nothing in `input/` or `pi_link/` moves the arm. The active mode reads these val
 | **KY-040 encoder** | quadrature, TIM1 | `EVT_ENC_STEP`, `v[0]` = detents turned | int, **+ = clockwise** | 4 counts per detent; very fast spins can lose half a detent |
 | **Encoder button** | EXTI, debounced | `EVT_ENC_PRESS` | one event per press | clean |
 | **LCD mode card** (touch) | `lcd.c` touch zone | `EVT_TOUCH_MODE_TAB`, `arg` = `arm_mode_t` | one event per tap | replaces the MODE button (removed 27 Oct 2026) |
-| **Servo-rail sense** | 6 V rail divider, ADC | `input_rail_mv()` (getter); safety/ turns it into `EVT_RAIL_LOST` / `EVT_RAIL_BACK` | mV | |
 | **Depth camera via Pi** | text line on USART6 | `EVT_PI_OBJECT` / `EVT_PI_NOTFOUND` / `EVT_PI_TIMEOUT` (see §2) | mm | round trip 4–14 ms |
 
 Only presses become events (releases are tracked but not posted). The arm has no MODE button,
-Hold-to-Enable or e-stop any more ([`core-config.md`](core-config.md) v1.3); the firmware does not read
-PE7, PE10 or PE12.
+Hold-to-Enable or e-stop, no limit switches and no servo-rail sense ([`core-config.md`](core-config.md) v1.4);
+those pins are no longer in the `.ioc`.
 
 ## 2. Depth camera → Pi → STM32
 
@@ -144,7 +143,7 @@ The service passes `--camera-frame`. Once the team relies on calibration, remove
 
 | Part | File | Owner |
 |---|---|---|
-| Joystick, encoder, buttons, rail ADC | `RoboticArmMain/App/input/input.c` / `.h` | input member |
+| Joystick, encoder, buttons | `RoboticArmMain/App/input/input.c` / `.h` | input member |
 | Pi link, protocol parser | `RoboticArmMain/App/pi_link/pi_link.c`, `pi_proto.c` | Pi member |
 | Pi bridge (text protocol, uses the detector) + service | `ProjectDevGuide/tools/pi/pi_bridge.py`, `pi_bridge.service` → `~/arm/tools/` on the Pi | Pi member |
 | Hand detection (MediaPipe worker, palm XYZ) | `ProjectDevGuide/tools/pi/pi_hand.py` → `~/arm/tools/`; MediaPipe 0.10.18 in `~/hand-env` (not in `~/arm-env`) | Pi member |

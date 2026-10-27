@@ -51,11 +51,10 @@ Fill in your name in this table in your first PR.
           ISR side (fast, short)                         main loop (app_loop, in this order)
   ┌──────────────────────────────────┐        ┌──────────────────────────────────────────────┐
   │ TIM6 50 Hz: input_tick           │        │ input_step   → posts button / encoder events │
-  │             safety_tick          │        │ safety_step  → posts rail events             │
   │             motion_tick → PWM    │        │ voice_step   → CNN, posts EVT_VOICE_WORD     │
   │ SAI DMA:    voice_on_sai         │        │ pi_link_step → parses lines, posts EVT_PI_*  │
   │ ADC DMA:    input_on_adc         │        │ modes_step   → THE ONLY event consumer       │
-  │ EXTI:       safety / input       │        │                active mode sets motion targets│
+  │ EXTI:       input (edge stats)   │        │                active mode sets motion targets│
   │ USART6:     pi_link_on_rx_event  │        │ lcd_step     → pulls state, redraws changes  │
   └──────────────────────────────────┘        └──────────────────────────────────────────────┘
 ```
@@ -89,8 +88,6 @@ Turning a flag off means the module is not started or called; its code still com
 | Flag | Default | Notes |
 |---|---|---|
 | `APP_USE_MOTION`, `INPUT`, `KINEMATICS`, `VOICE`, `PI`, `LCD`, `MODES` | 1 | `MODES` needs `MOTION` |
-| `APP_USE_LIMIT_SWITCHES` | 0 | set to 1 only when the switches are wired (NC to GND) |
-| `APP_USE_RAIL_SENSE` | 0 | set to 1 when the 10 k / 3.3 k divider is on PC3; needs `INPUT` |
 
 ---
 
@@ -100,11 +97,10 @@ Turning a flag off means the module is not started or called; its code still com
 - **No E-stop, MODE or Hold-to-Enable button (since 27 Oct 2026).** The mode is chosen on the LCD. Nothing cuts servo power in hardware; switch the servo supply off to stop for sure ([`core-config.md`](core-config.md) §11).
 - **Manual modes move whenever safety allows** (no Hold-to-Enable since 27 Oct 2026). Single Joint and Joint Group jog: let go of the stick and the jog stops (next point). Cartesian sets a new IK target each pass while the stick is pushed and stops when it is centred; an encoder turn moves Z and a knob press opens / closes the gripper at once, so an accidental knob touch in Cartesian moves the arm.
 - **A jog that is not refreshed for 150 ms stops by itself.** Joystick modes call `manual_jog()` every pass, so a hung main loop or a released stick stops the arm.
-- **After a servo-rail loss, motion stays blocked** until power is back **and** someone presses the touch **OK** button (`safety_confirm_restart()`).
 - **A fatal fault** (`app_fault_raise(x, true)`) freezes motion until reset and lights LD3 (red).
 - **LEDs:** LD1 blinking = main loop alive; LD2 = voice word detected; LD3 = fatal fault.
 
-These are covered by host tests (74 checks + the voice dry runs), except the restart latch: the host build runs without rail sense, so nothing in it can set the latch. CI runs them on every PR; run them yourself with `sh ProjectDevGuide/tests/host/run.sh` (gcc on a PC; on Windows use Git Bash).
+These are covered by host tests (74 checks + the voice dry runs). No limit switches or servo-rail sense since v1.4 ([`core-config.md`](core-config.md)). CI runs them on every PR; run them yourself with `sh ProjectDevGuide/tests/host/run.sh` (gcc on a PC; on Windows use Git Bash).
 
 ---
 
@@ -142,7 +138,7 @@ If the linker edit or the MPU region is missing, `dma_buf_check()` stops all mot
 
 **A new mode** — new `mode_<x>.c` implementing `mode_ops_t`, one entry in `MODE_TABLE` in `modes.c`, one value in `arm_mode_t` (`app_types.h`). This is a core PR.
 
-**A new pin, timer, DMA stream** — open a GitHub issue for Supanut with: signal, wanted pin, mode, why. Free EXTI lines: 1, 3, 4, 5, 6, 9 (and 7, 10, 12 once the removed buttons leave the `.ioc`). Free DMA: DMA2 Stream 4.
+**A new pin, timer, DMA stream** — open a GitHub issue for Supanut with: signal, wanted pin, mode, why. Free EXTI lines: 0–12 (13 is kept for the user button). Free DMA: DMA2 Stream 4.
 
 ---
 

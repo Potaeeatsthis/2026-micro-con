@@ -1,4 +1,4 @@
-# Robotic Arm — Core STM32 Configuration (v1.3)
+# Robotic Arm — Core STM32 Configuration (v1.4)
 
 **Board:** NUCLEO-F767ZI (STM32F767ZIT6, LQFP144)
 **Tools (everyone, same versions):** STM32CubeMX 6.18.0 (standalone), STM32CubeIDE 2.2.0, FW_F7 V1.17.4, X-CUBE-AI 10.2.1
@@ -21,8 +21,12 @@ background region); CubeMX pin traps and setting order (§13); CubeIDE project s
 
 **v1.3 (27 Oct 2026, no `.ioc` change yet):** the arm has **no E-stop, no MODE button and no Hold-to-Enable
 button**. Inputs are the KY-040 encoder, KY-023 joystick, LCD touch, 2 mics and the Pi link (USART6); outputs
-the 6 servos and the LCD. The mode is chosen on the LCD. PE7, PE10 and PE12 stay configured in the `.ioc` until
-the owner regenerates; nothing is wired to them and the pull-ups make them read "released" (§3).
+the 6 servos and the LCD. The mode is chosen on the LCD.
+
+**v1.4 (27 Oct 2026, `.ioc` regenerated):** every pin with nothing wired to it is out of the `.ioc` and the code:
+PE7 / PE10 / PE12 (removed buttons), the four limit-switch inputs PE8 / PB11 / PE0 / PE2, and the servo-rail
+sense PC3 (ADC1 IN13). ADC1 now converts 2 channels (joystick X / Y); EXTI0, EXTI2 and EXTI9_5 are off.
+`safety/` is only the fatal-fault gate; joint limits stay in software (`motion/`, `servo_cal.c`).
 
 ---
 
@@ -44,6 +48,8 @@ Unchanged: four modes, KY-023 joystick + KY-040 encoder, SN74AHCT244N buffer
 
 Dropped (v1.3, 27 Oct 2026): MODE button (the LCD mode cards replace it), Hold-to-Enable button, and the
 1NO+1NC latching E-stop with its servo-power relay. Nothing cuts servo power in hardware now (§11).
+Dropped (v1.4, 27 Oct 2026): the optional limit switches and the servo-rail sense (no room on the arm; nothing
+was fitted).
 
 ---
 
@@ -94,17 +100,9 @@ USB (PA8–PA12, PG6, PG7), SWD (PA13, PA14, PB3), HSE (PH0, PH1), LSE (PC14, PC
 | **KY-023 joystick** (3.3 V) | VRx | PA3 | CN9-1 (A0) | ADC1_IN3 |
 | | VRy | PC0 | CN9-3 (A1) | ADC1_IN10 |
 | | SW (Fine/Fast speed) | PE15 | CN10-30 (D37) | GPIO_EXTI15, pull-up |
-| **Servo-rail sense** | 6 V rail via 10 k / 3.3 k divider | PC3 | CN9-5 (A2) | ADC1_IN13 |
 | **KY-040 encoder** (3.3 V) | CLK | PE9 | CN10-4 (D6) | TIM1_CH1 (encoder) |
 | | DT | PE11 | CN10-6 (D5) | TIM1_CH2 (encoder) |
 | | SW | PE14 | CN10-28 (D38) | GPIO_EXTI14, pull-up |
-| **Removed buttons** (v1.3: not wired, still in the `.ioc`) | ~~MODE~~ | PE10 | CN10-24 (D40) | GPIO_EXTI10, pull-up (reads released) |
-| | ~~Hold-to-Enable~~ | PE12 | CN10-26 (D39) | GPIO_EXTI12, pull-up (reads released) |
-| | ~~E-stop status (NO contact)~~ | PE7 | CN10-20 (D41) | GPIO_EXTI7, pull-up (reads released) |
-| **Limit switches** (optional, not fitted yet) | LIM1 | PE8 | CN10-18 (D42) | GPIO_EXTI8, pull-up |
-| | LIM2 | PB11 | CN10-34 (D35) | GPIO_EXTI11, pull-up |
-| | LIM3 | PE0 | CN10-33 (D34) | GPIO_EXTI0, pull-up |
-| | LIM4 | PE2 | CN10-25 (D31) | GPIO_EXTI2, pull-up |
 | **Pi link** | STM32 TX → Pi GPIO15 (RXD, pin 10) | PG14 | CN10-14 (D1) | USART6_TX |
 | | STM32 RX ← Pi GPIO14 (TXD, pin 8) | PG9 | CN10-16 (D0) | USART6_RX |
 | **Debug** | ST-Link virtual COM port | PD8 / PD9 | (USB) | USART3_TX / RX |
@@ -112,19 +110,14 @@ USB (PA8–PA12, PG6, PG7), SWD (PA13, PA14, PB3), HSE (PH0, PH1), LSE (PC14, PC
 | | User button (blue) | PC13 | – | GPIO in, label `USER_BTN` (not EXTI) |
 
 **EXTI lines are numbered by pin number, not port**, so each number may be used once in the
-whole project. Used: 0, 2, 7, 8, 10, 11, 12, 14, 15. Free for later: 1, 3–6, 9, 13 (avoid 13 if
-the user button ever becomes an interrupt). 7, 10 and 12 belong to the removed buttons and become free
-when the owner drops PE7 / PE10 / PE12 from the `.ioc` (§12).
+whole project. Used: 14, 15. Free for later: 0–13 (avoid 13 if the user button ever becomes an
+interrupt).
 
-**Removed buttons, until the `.ioc` change (§12 #7):** leave PE7, PE10 and PE12 unconnected. The firmware
-no longer reads them (27 Oct 2026); manual modes (Single Joint, Joint Group, Cartesian) move whenever safety
-allows, with no Enable button.
-
-**Limit switches** are optional: the pins are configured so adding switches later needs no
-`.ioc` change. Wire each switch **NC contact between the pin and GND**: normal = 0, triggered or
-broken wire = 1 (fail-safe). An unconnected pin also reads 1 through the pull-up, so the firmware
-ignores these inputs until `APP_USE_LIMIT_SWITCHES` is set to 1 in `app_config.h`. Which joint
-boundaries get a switch is decided during mechanical testing.
+**Removed in v1.4 (27 Oct 2026), now unassigned in the `.ioc`:** PE7, PE10, PE12 (E-stop, MODE, Hold-to-Enable),
+PE8, PB11, PE0, PE2 (limit switches) and PC3 (servo-rail sense). Nothing is wired to them; an unassigned pin
+stays in its reset state (an input nobody reads), which is harmless. ("Set all free pins as analog" in Project
+Manager stays off: it would reconfigure every free pin on the board.) Manual modes (Single Joint, Joint
+Group, Cartesian) move whenever no fatal fault is latched, with no Enable button.
 
 **Joystick press (KY-023 SW) = Fine/Fast speed toggle in every manual mode**, accepted only while
 the stick is near its centre (so an accidental press while pushing the stick does nothing).
@@ -176,14 +169,14 @@ never merged): the timers and pins above work on all six channels. Lessons for `
 Combined channels: Encoder Mode, **Encoder Mode TI1 and TI2**, prescaler 0, period 65535,
 IC1/IC2 polarity rising, **input filter 15** (debounce). One detent ≈ 4 counts.
 
-### 4.3 Joystick + rail sense — ADC1 triggered by TIM2
+### 4.3 Joystick — ADC1 triggered by TIM2
 | Setting | Value |
 |---|---|
 | TIM2 | internal clock, prescaler 107, period 999 → **1 kHz**, TRGO = Update Event, no interrupt |
 | ADC1 | 12-bit, clock PCLK2 /4 (27 MHz), **scan on**, continuous off, **DMA continuous requests on**, EOC at end of sequence |
 | Trigger | external, **Timer 2 Trigger Out event**, rising edge |
-| Ranks | 1 = IN3 (PA3, joy X), 2 = IN10 (PC0, joy Y), 3 = IN13 (PC3, rail) — all **480 cycles** |
-| DMA | DMA2 Stream 0, circular, half-word, priority low; buffer 3 × 20 samples (half-transfer every 10 ms) |
+| Ranks | **Number of conversion 2**: 1 = IN3 (PA3, joy X), 2 = IN10 (PC0, joy Y) — both **480 cycles** |
+| DMA | DMA2 Stream 0, circular, half-word, priority low; buffer 2 × 20 samples (half-transfer every 10 ms) |
 
 ### 4.4 Microphones — SAI1 Block A
 Master receive, **master clock output disabled**, I2S standard, **32-bit data, 2 slots, stereo, 16 kHz**.
@@ -242,7 +235,7 @@ AM2320 / I2C1, RNG, Lab08's TIM3 backlight PWM, Lab08's ADC pot.
 | Priority | Interrupt | Why |
 |---|---|---|
 | 0 | DMA2 Stream 1 (SAI RX) | Audio must never be late. Callback only DC-filters and copies (≈ few µs) |
-| 1 | EXTI0 / EXTI2 (LIM3 / LIM4), EXTI9_5 (LIM1; PE7 removed), EXTI15_10 (encoder SW, joystick SW, LIM2; PE10 / PE12 removed) | A limit switch must stop motion at once |
+| 1 | EXTI15_10 (encoder SW, joystick SW) | Button edges (stats only; the press is decided in the TIM6 tick) |
 | 2 | TIM6 (control tick) | Smooth servo motion even while the CNN or LCD is busy |
 | 3 | USART6 + DMA2 Streams 2/7 | Pi messages |
 | 4 | DMA2 Stream 0 (ADC) | Joystick |
@@ -295,7 +288,7 @@ section or the MPU region is wrong), the CI build (fails if `.dma_buffer` is not
 16 KB), and a look at the `.ld` after every regenerate.
 
 Size today (CubeIDE 2.2.0, Debug): text 324,300 B, data 7,980 B, bss 127,712 B — far below 2 MB / 512 KB.
-DMA buffers use 0xF00 B of the 16 KB.
+DMA buffers use 0xF00 B of the 16 KB (measured before v1.4; the ADC buffer shrank by one channel since).
 
 ---
 
@@ -318,8 +311,8 @@ interrupt; anything slow runs in the loop.
 | Runs in | Job | Time |
 |---|---|---|
 | SAI DMA interrupt (every 10 ms) | DC filter, push 160 samples per mic into the voice ring | µs |
-| TIM6 interrupt (every 20 ms) | `input_tick` → `safety_tick` → `motion_tick` (debounce, safety checks, trajectory step, write 6 CCRs) | < 0.5 ms target |
-| EXTI | set flags / timestamps (encoder / joystick buttons, limit switches) | µs |
+| TIM6 interrupt (every 20 ms) | `input_tick` → `motion_tick` (debounce, fatal-fault check, trajectory step, write 6 CCRs) | < 0.5 ms target |
+| EXTI | count edges (encoder / joystick buttons) | µs |
 | USART6 idle-line callback | mark a Pi message as ready | µs |
 | Main loop (`app_loop`) | voice features + CNN every 100 ms (≈ 43 ms), Pi message parsing, mode logic + voice task state machine, IK, LCD updates | – |
 
@@ -365,7 +358,7 @@ word; finish or stop the move in `motion/`).
     │   ├── app.c/.h                app_init(), app_loop(), app_control_tick()
     │   ├── app_callbacks.c         THE only place that defines HAL_*Callback functions
     │   ├── common/                 app_config.h (feature flags), events, faults, log, timing, dma_buf
-    │   ├── safety/                 rail sense, limit switches, restart latch (always on)
+    │   ├── safety/                 fatal-fault gate for motion (always on)
     │   ├── motion/                 servo PWM, calibration, trajectory (TIM6 tick)
     │   ├── kinematics/             IK / FK, arm_geometry.h
     │   ├── input/                  joystick (ADC), encoder (TIM1), encoder / joystick buttons (EXTI)
@@ -418,9 +411,6 @@ word; finish or stop the move in `motion/`).
   Not through E5V: the 8 MHz HSE clock comes from the ST-LINK's MCO, and without the ST-LINK running
   there is no clock (the board stops in `Error_Handler` after the 5 s HSE timeout). The USB link also lets
   the Pi reflash the board.
-- Servo-rail sense: 6 V rail → 10 kΩ → PC3 → 3.3 kΩ → GND (+ optional 100 nF from PC3 to
-  GND) gives ≈ 1.5 V at 6 V and stays below 3.3 V even if 12 V reaches the rail by mistake.
-  ≈ 0 V means servo power is off (switched off, fuse or buck dead).
 - **No E-stop (v1.3).** Nothing cuts servo power in hardware. Stops are: letting go of the joystick (a jog
   not refreshed for 150 ms stops by itself) and switching the servo supply off. Keep a hand on the servo supply switch while the arm moves.
 - First run of new motion code: **servo signal wires disconnected**.
@@ -429,9 +419,8 @@ word; finish or stop the move in `motion/`).
 
 ## 12. Open items
 
-Decided 20 Oct 2026: LCD = the 2.8″ ILI9341 board from Lab08 (with touch); servo-rail sense = yes;
-KY-023 press = Fine/Fast. 21 Oct 2026: 4 optional limit-switch inputs reserved (PE8, PB11, PE0, PE2),
-not fitted yet; joint limits are always enforced in software as well.
+Decided 20 Oct 2026: LCD = the 2.8″ ILI9341 board from Lab08 (with touch); KY-023 press = Fine/Fast.
+27 Oct 2026 (v1.4): no limit switches and no servo-rail sense; joint limits are enforced in software.
 
 | # | Item | Needed for |
 |---|---|---|
@@ -440,8 +429,9 @@ not fitted yet; joint limits are always enforced in software as well.
 | 3 | Installed servo calibration: safe min/max, joint zero and home (unit-to-joint mapping confirmed J1-J6 = units 1-6) | `motion/` only — not the `.ioc` |
 | 4 | Optional PG9 pull-up (removes the boot-time `fault: code 7` without a Pi) | `.ioc`, owner's choice |
 | 5 | **Manual modes without Hold-to-Enable.** Decided 27 Oct 2026 (Supanut): no Hold-to-Enable; manual modes move whenever safety allows. Single Joint / Joint Group keep the 150 ms jog timeout; Cartesian moves only while the stick is pushed, and an encoder turn / knob press moves Z / the gripper at once | **done 27 Oct 2026** on `dev` (`motion/`, `modes/`, `safety/`) |
-| 6 | Remove the E-stop and MODE code paths (`EVT_ESTOP_*`, `EVT_BTN_MODE`, `SAFETY_ESTOP`); the restart latch stays for rail loss | **done 27 Oct 2026** on `dev`; the event numbers stay, marked unused |
-| 7 | Drop PE7 / PE10 / PE12 from the `.ioc` (frees EXTI 7, 10, 12). Decided 27 Oct 2026 (Supanut): the pins will not be used again | `.ioc`, with #6 (`main.h` loses the labels) |
+| 6 | Remove the E-stop and MODE code paths (`EVT_ESTOP_*`, `EVT_BTN_MODE`, `SAFETY_ESTOP`) | **done 27 Oct 2026** on `dev`; the event numbers stay, marked unused |
+| 7 | Drop PE7 / PE10 / PE12 from the `.ioc` | **done 27 Oct 2026** (v1.4 regenerate) |
+| 8 | Drop the limit switches (PE8 / PB11 / PE0 / PE2) and the servo-rail sense (PC3, ADC1 rank 3) from the `.ioc` and the code (`safety/`, `input/`, `app_config.h`, restart latch). Decided 27 Oct 2026 (Supanut) | **done 27 Oct 2026** (v1.4 regenerate); `EVT_RAIL_*` / `EVT_LIMIT_HIT` numbers stay, marked unused |
 
 ---
 
@@ -451,7 +441,7 @@ How `RoboticArmMain.ioc` was built (standalone CubeMX 6.18.0), and how to rebuil
 Work top to bottom; each step refers to the section with the values.
 
 **Pin traps:** when a peripheral mode is set from the left-hand peripheral list, CubeMX assigns its
-**default** pins, which collide with our map: USART6 → PC6/PC7 (servos), USART3 → PB10/PB11 (LIM2),
+**default** pins, which collide with our map: USART6 → PC6/PC7 (servos), USART3 → PB10/PB11 (ours is PD8/PD9),
 TIM1 → PA8/PA9 (USB), TIM4 → PB6–PB9. Always **click the pin in the Pinout view first** and pick the
 function there, then set the mode. Afterwards check every pin against §3.
 
@@ -462,20 +452,18 @@ function there, then set the mode. Afterwards check every pin against §3.
 3. **Multimedia → SAI1:** set Block A to **Master** first (§4.4) — the PLLSAI /Q divider is only editable after that.
 4. **Clock Configuration tab:** §2. Check SYSCLK 216 MHz, APB1 54, APB2 108, SAI1 clock 8.192 MHz.
 5. **Pins** (§3, mind the pin traps): click each pin, pick its function, right-click → *Enter User Label*.
-   Labels: `LCD_CS`, `LCD_DC`, `LCD_RST`, `T_CLK`, `T_CS`, `T_MOSI`, `T_MISO`, `T_IRQ`, `BTN_MODE`,
-   `BTN_ENABLE`, `ESTOP_NO`, `ENC_SW`, `JOY_SW`, `LIM1`, `LIM2`, `LIM3`, `LIM4`, `LD1`, `LD2`, `LD3`, `USER_BTN`.
+   Labels: `LCD_CS`, `LCD_DC`, `LCD_RST`, `T_CLK`, `T_CS`, `T_MOSI`, `T_MISO`, `T_IRQ`, `ENC_SW`, `JOY_SW`,
+   `LD1`, `LD2`, `LD3`, `USER_BTN`.
    TIM3 may show an ETR pin conflict warning: ignore it, ETR is not used.
 6. **System Core → GPIO:** outputs CS / T_CS / RST start **High**, speed Very High for LCD + touch outputs;
-   all button inputs **pull-up**; EXTI edge: `BTN_ENABLE`, `ESTOP_NO` and `LIM1`–`LIM4` **rising/falling**,
-   `BTN_MODE`, `ENC_SW`, `JOY_SW` **falling**. SAI pin PE6: **pull-down**.
-   (v1.3: `BTN_MODE`, `BTN_ENABLE`, `ESTOP_NO` are no longer wired; they go away with §12 #7.)
+   `ENC_SW`, `JOY_SW`: **pull-up**, EXTI **falling**. SAI pin PE6: **pull-down**.
 7. **Timers:** TIM3, TIM4 (§4.1), TIM1 (§4.2), TIM2 (§4.3), TIM6 (§4.7 — period **199**).
 8. **Analog → ADC1:** §4.3 (add the DMA request in its DMA Settings tab).
 9. **SAI1 DMA:** §4.4.
 10. **Connectivity → SPI5** (§4.5), **USART6** and **USART3** (§4.6, + DMA requests).
 11. **Computing → CRC:** Activated (§4.8).
 12. **DMA:** compare all streams with §5.
-13. **NVIC:** priority group 4 bits; priorities from §6 (check DMA2 Stream 7 = **3**); tick TIM6, EXTI0, EXTI2, EXTI9_5 and EXTI15_10.
+13. **NVIC:** priority group 4 bits; priorities from §6 (check DMA2 Stream 7 = **3**); tick TIM6 and EXTI15_10.
 14. **CORTEX_M7:** §7 (caches, MPU region 1; leave region 0 as CubeMX made it).
 15. **X-CUBE-AI:** Software Packs → Select Components → X-CUBE-AI 10.2.1 (Core + Application
     Template) → add network `network` from `Models/kws.onnx` (copy the file into the project folder

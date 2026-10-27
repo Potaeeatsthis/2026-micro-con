@@ -10,7 +10,6 @@
 #include "common/app_log.h"
 #include "common/app_timing.h"
 #include "common/dma_buf.h"
-#include "safety/safety.h"
 #include "main.h"
 #include "tim.h"
 
@@ -49,17 +48,16 @@ void app_init(void)
   app_log_init();
   timing_init();
   LOG("\r\n=== RoboticArmMain %s ===\r\n", APP_FW_VERSION);
-  LOG("flags: motion %d input %d ik %d voice %d pi %d lcd %d modes %d | limits %d rail %d%s\r\n",
+  LOG("flags: motion %d input %d ik %d voice %d pi %d lcd %d modes %d%s\r\n",
       APP_USE_MOTION, APP_USE_INPUT, APP_USE_KINEMATICS, APP_USE_VOICE, APP_USE_PI, APP_USE_LCD,
-      APP_USE_MODES, APP_USE_LIMIT_SWITCHES, APP_USE_RAIL_SENSE,
+      APP_USE_MODES,
       APP_CONFIG_LOCAL_ACTIVE ? "  (LOCAL OVERRIDES)" : "");
 
   app_events_init();
   if (!dma_buf_check()) app_fault_raise(FAULT_DMA_REGION, true);
 
-  safety_init();                                  /* always first: everything below may move */
 #if APP_USE_MOTION
-  motion_init();
+  motion_init();                                  /* motion asks safety (fatal faults) every tick */
 #endif
 #if APP_USE_INPUT
   input_init();
@@ -81,7 +79,7 @@ void app_init(void)
   modes_init();                                   /* last: it starts using every module above */
 #endif
 
-  if (HAL_TIM_Base_Start_IT(&htim6) != HAL_OK) {  /* control tick on: safety + motion run from here */
+  if (HAL_TIM_Base_Start_IT(&htim6) != HAL_OK) {  /* control tick on: input + motion run from here */
     LOG_ERR("app: TIM6 start failed\r\n");
     app_fault_raise(FAULT_INIT, true);
   }
@@ -93,9 +91,8 @@ void app_control_tick(void)
 #if APP_USE_INPUT
   input_tick();
 #endif
-  safety_tick();
 #if APP_USE_MOTION
-  motion_tick();                                  /* after safety: sees this tick's state */
+  motion_tick();
 #endif
   /* EXTENSION POINT 2: a new 50 Hz job goes here only if it MUST be in an isr (< 50 us) */
 }
@@ -107,7 +104,6 @@ void app_loop(void)
 #if APP_USE_INPUT
   input_step();
 #endif
-  safety_step();
 #if APP_USE_VOICE
   voice_step();
 #endif

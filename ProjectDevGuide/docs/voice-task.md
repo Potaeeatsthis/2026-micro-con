@@ -36,7 +36,7 @@ centre at that moment. The answer is read once and kept for the whole place scri
 hand that moves during the place). The gripper opens `HAND_RELEASE_MM` (30 mm placeholder, team decision) above
 the palm and never goes down to it.
 
-Other events: e-stop, servo-rail loss or a fatal fault stop a moving state (→ S10) and cancel a Pi
+Other events: a fatal fault stops a moving state (→ S10) and cancel a Pi
 request; a mode change holds the motion and cancels the task (back in voice mode: S0, or S4 if holding).
 Touch: STOP = `stop`, UNDO = `undo` in S6, the slider sets the jog step.
 

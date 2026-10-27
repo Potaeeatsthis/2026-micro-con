@@ -11,7 +11,6 @@
 #include "modes/modes.h"
 #include "modes/mode_ops.h"
 #include "motion/motion.h"
-#include "safety/safety.h"
 #include "common/app_config.h"
 #include "common/app_events.h"
 #include "common/app_fault.h"
@@ -86,15 +85,6 @@ static bool handle_global(const app_event_t *e)
     case EVT_JOY_PRESS:
       if (ops(s_cur)->manual) motion_toggle_speed();   /* fine/fast in manual modes */
       return true;
-    case EVT_TOUCH_CONFIRM:
-      if (safety_state() == SAFETY_RESTART_REQUIRED) {
-        safety_confirm_restart();
-        return true;
-      }
-      return false;
-    case EVT_RAIL_LOST:
-      lcd_show_message("SERVO POWER OFF", 3000u);
-      return false;                                             /* modes also react */
     case EVT_FAULT:
       if (e->v[0] != 0) lcd_show_message("FAULT - RESET BOARD", 10000u);
       return false;

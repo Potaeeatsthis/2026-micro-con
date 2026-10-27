@@ -344,9 +344,7 @@ static void build_screen(void)
   snprintf(s_want[0], LCD_COLS, "NO MODES");
 #endif
 
-  safety_status_t st;
-  safety_get_status(&st);
-  snprintf(s_want[1], LCD_COLS, "%s  %s", safety_state_name(st.state),
+  snprintf(s_want[1], LCD_COLS, "%s  %s", safety_state_name(safety_state()),
            motion_get_speed() == SPEED_FAST ? "FAST" : "FINE");
 
 #if APP_USE_MODES

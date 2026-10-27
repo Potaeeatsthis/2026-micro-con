@@ -30,9 +30,9 @@ typedef enum {
   /* safety (owner: core/safety) */
   EVT_ESTOP_PRESSED = 30,   /* unused since 27 Oct 2026 (no e-stop) */
   EVT_ESTOP_RELEASED,       /* unused since 27 Oct 2026 (no e-stop) */
-  EVT_RAIL_LOST,            /* servo power gone: targets frozen */
-  EVT_RAIL_BACK,            /* servo power back: still needs safety_confirm_restart() */
-  EVT_LIMIT_HIT,            /* arg = switch index 0..3 */
+  EVT_RAIL_LOST,            /* unused since 27 Oct 2026 (no servo-rail sense) */
+  EVT_RAIL_BACK,            /* unused since 27 Oct 2026 (no servo-rail sense) */
+  EVT_LIMIT_HIT,            /* unused since 27 Oct 2026 (no limit switches) */
   EVT_FAULT,                /* arg = app_fault_t */
 
   /* voice (owner: voice) */
