@@ -11,11 +11,11 @@ A planned six-joint robotic arm that finds a coloured block, picks it up and pla
 | **Joint Group** | Use the joystick to move two selected joints. |
 | **Single-Joint Service** | Select and test one joint at a time. |
 
-Short presses of **MODE** cycle through these four modes. Manual movement requires the separate **Hold-to-Enable** button.
+The mode is chosen on the touch LCD (mode cards). There is no MODE or Hold-to-Enable button (`core-config.md` v1.3).
 
 ## How it works
 
-The **Raspberry Pi 4** processes the RGB-D camera and sends object positions to the **STM32 NUCLEO-F767ZI** over a 3.3 V GPIO UART link. The STM32 is planned to run a TC-ResNet voice-command model through two INMP441 microphones, calculate inverse kinematics (joint angles from a target position), and drive six servos through an SN74AHCT244N signal buffer (until it is fitted, the servos are wired direct through 330 Ω; see `ProjectDevGuide/docs/core-config.md` §11). A **2.4-inch ILI9341 LCD** shows status. There is no hardware emergency stop, limit switch or servo-rail sense (`core-config.md` v1.4): switch the servo supply off to stop for sure.
+The **Raspberry Pi 4** processes the RGB-D camera and sends object positions to the **STM32 NUCLEO-F767ZI** over a 3.3 V GPIO UART link. The STM32 runs a TC-ResNet voice-command model through two INMP441 microphones and will calculate inverse kinematics (joint angles from a target position); it drives six servos through an SN74AHCT244N signal buffer (until it is fitted, the servos are wired direct through 330 Ω; see `ProjectDevGuide/docs/core-config.md` §11). A **2.8-inch ILI9341 touch LCD** (the Lab 8 board) shows status. There is no hardware emergency stop, limit switch or servo-rail sense (`core-config.md` v1.4): switch the servo supply off to stop for sure.
 
 ## Project files
 
@@ -23,4 +23,4 @@ The **Raspberry Pi 4** processes the RGB-D camera and sends object positions to 
 - [System guide](study/robotic-arm-guide.md): mode controls and STM32 responsibilities.
 - [Code and bench tests](code/README.md): the servo calibration bench and the merged STM32 firmware skeleton.
 
-**Current code status:** the servo bench tests and the merged STM32 HAL skeleton are in the repository. The skeleton includes the app loop, safety, motion/calibration, modes, voice, Pi link and LCD framework, but IK/FK and arm geometry are still placeholders and the installed servo limits/home are not calibrated. The measured unloaded servo values are in [the canonical calibration table](ProjectDevGuide/docs/servo-calibration.md). The Pi camera program and installed-arm validation are still open.
+**Current code status:** the servo bench tests and the merged STM32 HAL skeleton are in the repository. The skeleton includes the app loop, safety, motion/calibration, modes, voice, Pi link and LCD framework, but IK/FK and arm geometry are still placeholders and the installed servo limits/home are not calibrated. The measured unloaded servo values are in [the canonical calibration table](ProjectDevGuide/docs/servo-calibration.md). The Pi bridge (`ProjectDevGuide/tools/pi/`) answers block and hand requests from the D435, but sends camera-frame mm until the camera-to-robot calibration is done. Installed-arm validation is still open.

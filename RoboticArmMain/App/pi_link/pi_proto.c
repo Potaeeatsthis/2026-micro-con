@@ -8,7 +8,8 @@
 
 #define MAX_TOK 6           /* one more than the longest message, so extra fields are seen */
 
-static const char *const OBJ_NAMES[OBJ_COUNT] = { "blue_box", "green_box", "red_box", "black_box", "hand" };
+static const char *const OBJ_NAMES[OBJ_COUNT] = { "blue_box", "green_box", "red_box", "black_box", "hand",
+                                                   "station" };
 
 typedef struct {
   const char   *keyword;
