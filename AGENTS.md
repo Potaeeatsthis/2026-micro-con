@@ -36,6 +36,8 @@ Paths like `App/lcd/` below mean `RoboticArmMain/App/lcd/`.
 - Never edit `App/common/app_config.h` to test. Per-developer overrides go in `App/common/app_config_local.h`
   (gitignored), e.g. `#define APP_USE_VOICE 0`.
 - Do not add docs, tests or notes inside `RoboticArmMain/`; they go in `ProjectDevGuide/`.
+- No AI-tool memory files in the repo (`CLAUDE.md`, `.claude/`; gitignored). Task notes, decisions and rules go
+  in the matching `ProjectDevGuide/docs/` file, e.g. `station-detection.md`.
 
 ## Rules the code must follow
 1. **HAL callbacks** (`HAL_*Callback`) exist only in `App/app_callbacks.c`. A module offers a function such as

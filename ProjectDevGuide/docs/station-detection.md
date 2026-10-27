@@ -11,8 +11,8 @@ find the station: 47% of the depth was missing (laser already ON: 74% holes off,
 end; it passes a simulated copy of that snapshot. **Real camera with the tray, 27 Oct, after raising the camera and tilting it
 more toward the work area (nothing else changed): station found** (conf 78, top measured 82 mm, drop spot between
 the two blocks), and both blocks on it found with surface "station" (red conf 55 with built-in colours). The low,
-shallow camera position was the cause of the missing depth. The STM32 does not send `FIND station` yet (see "What
-the STM32 still needs").
+shallow camera position was the cause of the missing depth. The STM32 side is done (section 7); the round trip
+on the board is not tested yet.
 
 **Real camera, kraft box (27 Oct):** found, conf 83, top 45 mm (exact), size 191 x 95 mm (box specified as
 200 x 100: the top's real size is to be measured, 9 mm short is close to the 10 mm trust limit), yaw -2 deg, 23%
@@ -160,3 +160,17 @@ Bench check without voice: `APP_INPUT_TEST 1` + `APP_INPUT_TEST_CYCLE 1` in `app
 - Partly visible station: today it is rejected, not guessed.
 - Drop-spot clearance (45 mm) checked against the real gripper.
 - Camera -> robot calibration (`calib_T.npy`): until then all positions are camera-frame mm.
+
+## 9. Rules for changing the detector
+
+- Setup: Pi 4 + RealSense D435, Python 3.12. `tools/pi/pi_vision_uart.py` is the repo copy of
+  `~/arm/pi_vision_uart.py` on the Pi: change both together.
+- Do not change how blocks on the **table** are detected unless a test shows it is needed.
+- It must keep working on USB 2 (depth 480x270) and on the Pi 4 CPU.
+- Test in simulation first (`tools/pi/test_station_sim.py`), then on the real camera.
+- Do not try the "grow / leave the hand out" rebuild again (section 1, known limit): with patchy depth it placed
+  the station 80-100 mm off. A missed station (NOTFOUND) is better than a wrong centre.
+- `scp` needs the destination as its **last** argument: a missing one once overwrote `color_refs.json`.
+- STM32 files outside `App/modes/` and `App/pi_link/` (e.g. `App/common/`) belong to the core owner: ask first
+  (`AGENTS.md`). `OBJ_STATION` was agreed with Supanut on 27 Oct 2026.
+- When a decision or test result changes, update this file (it is the task's notes; there is no other copy).
