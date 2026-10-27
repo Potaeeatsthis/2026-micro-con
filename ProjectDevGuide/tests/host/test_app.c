@@ -17,6 +17,7 @@
 #include "modes/modes.h"
 #include "modes/gripper.h"
 #include "kinematics/kinematics.h"
+#include "lcd/lcd_assets.h"
 #include "lcd/lcd.h"
 
 /* pi_link.c included so the test can inject bytes into its private rx ring */
@@ -103,6 +104,31 @@ static const char *screen_line(int i)
   modes_describe(lines, LCD_DETAIL_LINES);
   return lines[i];
 }
+/* scripted touch on the fake lcd (fake/lcd_port_fake.c): a tap = finger down for one poll, then up */
+extern int fake_lcd_touch_x, fake_lcd_touch_y, fake_lcd_touch_down;
+extern int fake_lcd_assets[256], fake_lcd_n;
+extern char fake_lcd_texts[32][32];
+extern int fake_lcd_text_n;
+static void lcd_pass(uint32_t ms) { for (uint32_t t = 0; t < ms; t += 20) { g_tick += 20; motion_tick(); loop_pass(); lcd_step(); } }
+static void tap(int x, int y)
+{
+  fake_lcd_touch_x = x; fake_lcd_touch_y = y; fake_lcd_touch_down = 1;
+  lcd_pass(200);
+  fake_lcd_touch_down = 0;
+  lcd_pass(200);
+}
+static int lcd_drew_asset(int id)
+{
+  for (int i = 0; i < fake_lcd_n; i++) if (fake_lcd_assets[i] == id) return 1;
+  return 0;
+}
+static int lcd_drew_text(const char *s)
+{
+  for (int i = 0; i < fake_lcd_text_n; i++) if (strcmp(fake_lcd_texts[i], s) == 0) return 1;
+  return 0;
+}
+static void lcd_clear_log(void) { fake_lcd_n = 0; fake_lcd_text_n = 0; }
+
 static int count_events_type(uint16_t type)
 {
   /* peeks by draining into a temp array and re-posting */
@@ -651,6 +677,52 @@ int main(void)
           cur(J4_WRIST_ROLL) == 90.0f && cur(J5_WRIST_PITCH) == 25.0f, "every arm joint is at its home");
     CHECK(cur(J6_GRIPPER) == j6, "home from S0 does not move the gripper");
   }
+
+  printf("== lcd follows the knob: one selection, owned by the mode; FINE / FAST tag\n");
+  lcd_pass(100);
+  tap(100, 160);                                       /* home: Start */
+  tap(80, 60);                                         /* select: Single card */
+  lcd_pass(200);
+  CHECK(modes_current() == MODE_SINGLE_JOINT, "Single card -> single joint mode");
+  CHECK(mode_single_joint_selected() == 0, "starts on J1");
+  CHECK(lcd_drew_text(motion_get_speed() == SPEED_FAST ? "FAST" : "FINE"), "the page shows the speed tag on entry");
+  lcd_clear_log();
+  app_event_post(EVT_ENC_STEP, 0, 2, 0, 0);            /* knob: two clicks */
+  lcd_pass(40);
+  CHECK(mode_single_joint_selected() == 2, "knob +2 -> the joystick now moves J3");
+  CHECK(lcd_drew_asset(LCD_A_SINGLE_ARM(2)) && lcd_drew_asset(LCD_A_SINGLE_LABEL(2)), "the page redraws J3 at once");
+  lcd_clear_log();
+  tap(100, 70);                                        /* on-screen ">" */
+  CHECK(mode_single_joint_selected() == 3, "the > arrow moves the mode's selection too (J4)");
+  CHECK(lcd_drew_asset(LCD_A_SINGLE_ARM(3)), "and the page shows J4");
+  tap(30, 70);                                         /* on-screen "<" */
+  CHECK(mode_single_joint_selected() == 2, "the < arrow goes back to J3");
+  {
+    speed_level_t before = motion_get_speed();
+    lcd_clear_log();
+    app_event_post(EVT_JOY_PRESS, 0, 0, 0, 0);         /* joystick press = fine / fast */
+    lcd_pass(40);
+    CHECK(motion_get_speed() != before, "joystick press toggles the speed");
+    CHECK(lcd_drew_text(motion_get_speed() == SPEED_FAST ? "FAST" : "FINE"), "the tag shows the new speed");
+    app_event_post(EVT_JOY_PRESS, 0, 0, 0, 0);
+    lcd_pass(40);
+    CHECK(motion_get_speed() == before, "press again: back");
+  }
+  tap(40, 210);                                        /* Back -> select */
+  tap(230, 60);                                        /* Group card */
+  lcd_pass(200);
+  CHECK(modes_current() == MODE_JOINT_GROUP, "Group card -> joint group mode");
+  lcd_clear_log();
+  app_event_post(EVT_ENC_STEP, 0, 1, 0, 0);
+  lcd_pass(40);
+  CHECK(mode_joint_group_selected() == 1, "knob +1 -> group 2 (J3/J4)");
+  CHECK(lcd_drew_asset(LCD_A_GROUP_ARM(1)) && lcd_drew_asset(LCD_A_GROUP_LABEL(1)), "the page redraws group 2");
+  tap(130, 60);                                        /* on-screen ">" */
+  CHECK(mode_joint_group_selected() == 2, "the > arrow -> group 3 (J5/J6)");
+  tap(40, 210);                                        /* Back */
+  tap(230, 170);                                       /* Voice card: leave the joint modes */
+  lcd_pass(200);
+  CHECK(modes_current() == MODE_VOICE, "back to voice mode");
 
   printf("== fatal fault during motion: freezes (last test, latches until reset)\n");
   motion_set_joint_target(J1_BASE, 120.0f);

@@ -84,6 +84,10 @@ typedef enum { OV_NONE = 0, OV_CONFIRM, OV_STATUS } overlay_t;
 #define SINGLE_VALUE_X   100       /* last digit of X/Y/Z ends here */
 #define SINGLE_VALUE_W   50
 #define SINGLE_VALUES_MS 250u
+#define SPEED_TAG_X      LCD_POS_BTN_PROCEED_X   /* FINE / FAST tag where Proceed sits on other pages */
+#define SPEED_TAG_Y      LCD_POS_BTN_PROCEED_Y
+#define SPEED_TAG_W      78
+#define SPEED_TAG_H      28
 #define SERVO_COUNT      6
 #define GROUP_COUNT      3
 #define NAV_NONE 0xFFu
@@ -98,6 +102,7 @@ static bool     s_touch_down;
 static int      s_servo;                      /* single page: 0..5 */
 static int      s_group;                      /* group page: 0..2 */
 static char     s_val_shown[3][8];
+static int      s_speed_shown = -1;           /* -1 = tag not drawn yet, else 0 FINE / 1 FAST */
 static uint32_t s_last_values;
 static overlay_t    s_ov;                     /* pop-up on top of the page */
 static confirm_t    s_conf;
@@ -219,6 +224,30 @@ static void begin_value_page(void)
   lcd_port_fill(0, 0, LCD_WIDTH_PX, LCD_HEIGHT_PX, LCD_BG);
   memset(s_val_shown, 0, sizeof s_val_shown);   /* the numbers are drawn by lcd_step */
   s_last_values = 0;
+  s_speed_shown = -1;                           /* FINE / FAST tag drawn by lcd_step */
+}
+
+/* FINE / FAST tag of the joystick speed (KY-023 press). manual pages have no Proceed button, so its
+ * spot at the bottom right is free */
+static void draw_speed_tag(int fast)
+{
+  lcd_port_fill(SPEED_TAG_X, SPEED_TAG_Y, SPEED_TAG_W, SPEED_TAG_H, LCD_BG);
+  lcd_port_text(SPEED_TAG_X + 15, SPEED_TAG_Y + 6, fast ? "FAST" : "FINE", fast ? LCD_YELLOW : LCD_WHITE, LCD_BG, 2);
+  s_speed_shown = fast;
+}
+
+/* the page shows the joint / group the joystick really moves: the mode owns the selection */
+static void sync_selection(void)
+{
+#if APP_USE_MODES
+  if (s_screen == SCR_SINGLE && mode_single_joint_selected() != s_servo) {
+    s_servo = mode_single_joint_selected();
+    draw_single_selection();
+  } else if (s_screen == SCR_GROUP && mode_joint_group_selected() != s_group) {
+    s_group = mode_joint_group_selected();
+    draw_group_selection();
+  }
+#endif
 }
 
 /* ---------------------------------------------------------------- voice pages */
@@ -270,6 +299,9 @@ static void show_screen(screen_t s)
     case SCR_HOME:   lcd_port_asset(LCD_A_HOME, 0, 0); break;
     case SCR_SELECT: lcd_port_asset(LCD_A_SELECT, 0, 0); break;
     case SCR_SINGLE:
+#if APP_USE_MODES
+      s_servo = mode_single_joint_selected();   /* open on the joint the joystick moves */
+#endif
       begin_value_page();
       lcd_port_asset(LCD_A_HDR_SINGLE, 0, 0);
       lcd_port_asset(LCD_A_SEL_NARROW, LCD_POS_SINGLE_SEL_X, LCD_POS_SINGLE_SEL_Y);
@@ -278,6 +310,9 @@ static void show_screen(screen_t s)
       draw_back();
       break;
     case SCR_GROUP:
+#if APP_USE_MODES
+      s_group = mode_joint_group_selected();
+#endif
       begin_value_page();
       lcd_port_asset(LCD_A_HDR_GROUP, 0, 0);
       draw_group_selection();
@@ -555,13 +590,22 @@ static void run_action(uint8_t act, uint16_t arg)
   switch (act) {
     case ACT_SERVO_PREV:
     case ACT_SERVO_NEXT:
+#if APP_USE_MODES
+      /* the mode changes its selection like a knob click; sync_selection() redraws from it */
+      (void)app_event_post(EVT_TOUCH_SELECT, 0, (act == ACT_SERVO_NEXT) ? 1 : -1, 0, 0);
+#else
       s_servo = (act == ACT_SERVO_NEXT) ? (s_servo + 1) % SERVO_COUNT : (s_servo + SERVO_COUNT - 1) % SERVO_COUNT;
       draw_single_selection();
+#endif
       break;
     case ACT_GROUP_PREV:
     case ACT_GROUP_NEXT:
+#if APP_USE_MODES
+      (void)app_event_post(EVT_TOUCH_SELECT, 0, (act == ACT_GROUP_NEXT) ? 1 : -1, 0, 0);
+#else
       s_group = (act == ACT_GROUP_NEXT) ? (s_group + 1) % GROUP_COUNT : (s_group + GROUP_COUNT - 1) % GROUP_COUNT;
       draw_group_selection();
+#endif
       break;
     case ACT_CONFIRM_PICK:      if (s_pick >= 0) open_confirm(CF_PICK); break;     /* needs a colour first */
     case ACT_CONFIRM_DROP_DEST: open_confirm(CF_DROP_DEST); break;
@@ -637,6 +681,9 @@ void lcd_step(void)
     return;
   }
   if (s_screen == SCR_SINGLE || s_screen == SCR_GROUP || s_screen == SCR_CART) {
+    sync_selection();                           /* every pass: the picture follows a knob click at once */
+    int fast = (motion_get_speed() == SPEED_FAST) ? 1 : 0;
+    if (fast != s_speed_shown) draw_speed_tag(fast);
     if (s_last_values == 0u || ms_since(now, s_last_values) >= SINGLE_VALUES_MS) {
       s_last_values = now | 1u;                 /* never 0, so 0 can mean "draw now" */
       page_values_for(s_screen);

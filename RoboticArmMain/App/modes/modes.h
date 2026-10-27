@@ -20,6 +20,11 @@ const char *modes_name(arm_mode_t m);
 bool        modes_switch_pending(void);
 void        modes_request(arm_mode_t m);     /* starts the safe switching procedure */
 
+/* the joint / group the joystick moves. the mode owns it; the knob (EVT_ENC_STEP) and the lcd arrows
+ * (EVT_TOUCH_SELECT) both change it, and the lcd pages draw whatever these return */
+int         mode_single_joint_selected(void);   /* 0..5 = J1..J6 */
+int         mode_joint_group_selected(void);    /* 0..2 = J1/J2, J3/J4, J5/J6 */
+
 /* fills `n` text lines for the lcd from the active mode (or the switching status) */
 void        modes_describe(char (*lines)[LCD_COLS], int n);
 

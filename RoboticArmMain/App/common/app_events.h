@@ -49,6 +49,7 @@ typedef enum {
   EVT_TOUCH_UNDO,           /* jog queue undo */
   EVT_TOUCH_STEP_CM,        /* jog step slider: v[0] = step in mm */
   EVT_TOUCH_CONFIRM,        /* "safe restart" confirm button */
+  EVT_TOUCH_SELECT,         /* lcd < / > on the single-joint or group page: v[0] = +1 next, -1 previous */
 
   /* motion (owner: motion) */
   EVT_MOTION_DONE = 110,    /* trajectory reached its target and is idle */
