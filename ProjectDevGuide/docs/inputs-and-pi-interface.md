@@ -29,8 +29,8 @@ Nothing in `input/` or `pi_link/` moves the arm. The active mode reads these val
 | **Depth camera via Pi** | text line on USART6 | `EVT_PI_OBJECT` / `EVT_PI_NOTFOUND` / `EVT_PI_TIMEOUT` (see §2) | mm | round trip 4–14 ms |
 
 Only presses become events (releases are tracked but not posted). The arm has no MODE button,
-Hold-to-Enable or e-stop any more ([`core-config.md`](core-config.md) v1.3); their code in `input/` and
-`safety/` is still there until the core change, and the unwired pins read released.
+Hold-to-Enable or e-stop any more ([`core-config.md`](core-config.md) v1.3); the firmware does not read
+PE7, PE10 or PE12.
 
 ## 2. Depth camera → Pi → STM32
 

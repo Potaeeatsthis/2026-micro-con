@@ -116,10 +116,9 @@ whole project. Used: 0, 2, 7, 8, 10, 11, 12, 14, 15. Free for later: 1, 3–6, 9
 the user button ever becomes an interrupt). 7, 10 and 12 belong to the removed buttons and become free
 when the owner drops PE7 / PE10 / PE12 from the `.ioc` (§12).
 
-**Removed buttons, until the `.ioc` and the code change (§12):** leave PE7, PE10 and PE12 unconnected. The
-pull-up keeps each at 1 = released: no e-stop, no MODE press. Hold-to-Enable also reads released, and the
-current `motion.c` lets manual modes (Single Joint, Joint Group, Cartesian) move **only while Enable is held**,
-so **manual modes cannot move until the core change in §12 lands**. Voice mode is not affected.
+**Removed buttons, until the `.ioc` change (§12 #7):** leave PE7, PE10 and PE12 unconnected. The firmware
+no longer reads them (27 Oct 2026); manual modes (Single Joint, Joint Group, Cartesian) move whenever safety
+allows, with no Enable button.
 
 **Limit switches** are optional: the pins are configured so adding switches later needs no
 `.ioc` change. Wire each switch **NC contact between the pin and GND**: normal = 0, triggered or
@@ -440,9 +439,9 @@ not fitted yet; joint limits are always enforced in software as well.
 | 2 | Pi message format details; Pi sends object XYZ in the **robot base frame**? | `pi_link/` only — not the `.ioc` |
 | 3 | Installed servo calibration: safe min/max, joint zero and home (unit-to-joint mapping confirmed J1-J6 = units 1-6) | `motion/` only — not the `.ioc` |
 | 4 | Optional PG9 pull-up (removes the boot-time `fault: code 7` without a Pi) | `.ioc`, owner's choice |
-| 5 | **Manual modes without Hold-to-Enable.** Proposed (27 Oct 2026): manual modes move whenever safety allows; the joystick dead man (150 ms jog timeout) stays. Supanut to confirm, or keep a Hold-to-Enable input for manual modes | `motion/`, `safety/`, `modes/` — core change; manual modes cannot move until then |
-| 6 | Remove the E-stop and MODE code paths (`EVT_ESTOP_*`, `EVT_BTN_MODE`, `SAFETY_ESTOP`); the restart latch stays for rail loss | `safety/`, `input/`, `modes/`, `common/`, host tests |
-| 7 | Drop PE7 / PE10 / PE12 from the `.ioc` (frees EXTI 7, 10, 12). Harmless to leave until then | `.ioc`, after #5 is decided |
+| 5 | **Manual modes without Hold-to-Enable.** Decided 27 Oct 2026 (Supanut): no Hold-to-Enable; manual modes move whenever safety allows. Single Joint / Joint Group keep the 150 ms jog timeout; Cartesian moves only while the stick is pushed, and an encoder turn / knob press moves Z / the gripper at once | **done 27 Oct 2026** on `dev` (`motion/`, `modes/`, `safety/`) |
+| 6 | Remove the E-stop and MODE code paths (`EVT_ESTOP_*`, `EVT_BTN_MODE`, `SAFETY_ESTOP`); the restart latch stays for rail loss | **done 27 Oct 2026** on `dev`; the event numbers stay, marked unused |
+| 7 | Drop PE7 / PE10 / PE12 from the `.ioc` (frees EXTI 7, 10, 12). Decided 27 Oct 2026 (Supanut): the pins will not be used again | `.ioc`, with #6 (`main.h` loses the labels) |
 
 ---
 
@@ -522,7 +521,7 @@ Checks:
 | Check | What it proves |
 |---|---|
 | `build (Debug)`, `build (Release)` | `ProjectDevGuide/ci/build_firmware.py` compiles and links RoboticArmMain with the source folders, defines, include paths, libraries and linker script **read from `.cproject`** (Ubuntu `arm-none-eabi-gcc`). Fails on any error, flash/RAM overflow, `.dma_buffer` not at 0x2007C000 or over 16 KB, and any warning in `App/` (third-party code exempt: KISS FFT, `App/lcd/driver/`) |
-| `host-tests` | `ProjectDevGuide/tests/host/run.sh`: safety / motion / modes / voice-mode / pi_link / screen-logic behaviour on a PC (76 checks). The real `lcd_port.c` (ILI9341 driver, HAL) is replaced by `ProjectDevGuide/tests/host/fake/lcd_port_fake.c` |
+| `host-tests` | `ProjectDevGuide/tests/host/run.sh`: safety / motion / modes / voice-mode / pi_link / screen-logic behaviour on a PC (74 checks + the voice-mode and voice-hand dry runs). The real `lcd_port.c` (ILI9341 driver, HAL) is replaced by `ProjectDevGuide/tests/host/fake/lcd_port_fake.c` |
 | `repo-rules` | `ProjectDevGuide/ci/check_rules.py`: `RoboticArmMain/` holds only the project (no build output, IDE state, `app_config_local.h`, `.md` notes, `docs/` or `tests/`); no file over 3 MB; `.cproject` source folders, `../App`, AI library and linker script in both configurations; `main.c` and `app_x-cube-ai.c` USER CODE as in §10; USER CODE markers paired; callbacks and `__io_putchar` in one place; the `.ioc` model file committed |
 
 Run the same checks locally from the repo root before pushing:

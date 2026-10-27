@@ -98,13 +98,13 @@ Turning a flag off means the module is not started or called; its code still com
 
 - **No pulse at power-up** until safety allows; then the first pulse is the home pose from `servo_cal.c` (currently the 90° placeholder; the installed home is not yet measured).
 - **No E-stop, MODE or Hold-to-Enable button (since 27 Oct 2026).** The mode is chosen on the LCD. Nothing cuts servo power in hardware; switch the servo supply off to stop for sure ([`core-config.md`](core-config.md) §11).
-- **Manual modes cannot move yet.** The code still lets them move only while Hold-to-Enable is held, and that input now always reads released. Proposed fix: move whenever safety allows (core change, open item 5 in [`core-config.md`](core-config.md) §12, Supanut to confirm).
+- **Manual modes move whenever safety allows** (no Hold-to-Enable since 27 Oct 2026). Single Joint and Joint Group jog: let go of the stick and the jog stops (next point). Cartesian sets a new IK target each pass while the stick is pushed and stops when it is centred; an encoder turn moves Z and a knob press opens / closes the gripper at once, so an accidental knob touch in Cartesian moves the arm.
 - **A jog that is not refreshed for 150 ms stops by itself.** Joystick modes call `manual_jog()` every pass, so a hung main loop or a released stick stops the arm.
 - **After a servo-rail loss, motion stays blocked** until power is back **and** someone presses the touch **OK** button (`safety_confirm_restart()`).
 - **A fatal fault** (`app_fault_raise(x, true)`) freezes motion until reset and lights LD3 (red).
 - **LEDs:** LD1 blinking = main loop alive; LD2 = voice word detected; LD3 = fatal fault.
 
-These are covered by host tests (76 checks). CI runs them on every PR; run them yourself with `sh ProjectDevGuide/tests/host/run.sh` (gcc on a PC; on Windows use Git Bash).
+These are covered by host tests (74 checks + the voice dry runs), except the restart latch: the host build runs without rail sense, so nothing in it can set the latch. CI runs them on every PR; run them yourself with `sh ProjectDevGuide/tests/host/run.sh` (gcc on a PC; on Windows use Git Bash).
 
 ---
 

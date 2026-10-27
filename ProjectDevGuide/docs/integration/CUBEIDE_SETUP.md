@@ -50,7 +50,7 @@ After every regenerate, check these three files and section 2, build, run on the
 ```text
 === RoboticArmMain 0.1.0 ===
 flags: motion 1 input 1 ik 1 voice 1 pi 1 lcd 1 modes 1 | limits 0 rail 0
-safety: init, estop released, rail sense off (APP_USE_RAIL_SENSE 0), limit switches off (APP_USE_LIMIT_SWITCHES 0)
+safety: init, rail sense off (APP_USE_RAIL_SENSE 0), limit switches off (APP_USE_LIMIT_SWITCHES 0)
 motion: init, home pose loaded, pulses start when safety allows
 input: init
 voice: listening, 23 classes, threshold 75%, min snr 12 dB, gain 15 dB
