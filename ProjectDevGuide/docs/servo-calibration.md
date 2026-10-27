@@ -287,24 +287,34 @@ candidate signs below; they are still tentative.
 ### Candidate kinematic reference and servo-to-joint mapping
 
 The installed-arm alignment check used the control-screen pose `POSE43`:
-J1 = 85, J2 = 140, J3 = 85, J4 = 75, J5 = 100, J6 = 0 (degrees). This is a
-**candidate kinematic zero**, not a confirmed joint zero. It was reached with
-the controls screen; the start-up home was not changed.
+J1 = 85, J2 = 140, J3 = 85, J4 = 75, J5 = 100, J6 = 0 (degrees). Those raw
+values are the **original** historical measurement and stay factual; they are
+superseded as the candidate kinematic zero by the revised J2 = 145 and J4 = 87
+below.
+
+The active candidate reference is J1..J5 = 85, 145, 85, 87, 100° (J6 = 0): the
+user confirmed that J2 = 145° and J4 = 87° are vertical. This is a **candidate
+kinematic zero**, not a confirmed joint zero. It was reached with the controls
+screen; the start-up home was not changed.
+
+J4 = 87° is an operator-selected roll reference, not a CAD match: J4 roll being
+vertical alone does not establish that the joint zero aligns with the CAD
+reference, so the J4 value remains pending alignment validation.
 
 Robot frame for this candidate mapping: origin at the J1 axis on the table
 underplate, +X forward along the black arrow on the robot, +Y left, +Z up
 (right-handed). J6 is the gripper and is excluded from the mapping.
 
 The start-up home pose is unchanged in `servo_cal.c`
-(J1..J6 = 85, 125, 145, 90, 25, 35°). Under the candidate mapping, the five
-positioning joints map to model angles 0, 15, 60, 15, 75°:
+(J1..J6 = 85, 125, 145, 90, 25, 35°). Under the revised candidate mapping, the
+five positioning joints map to model angles 0, 20, 60, 3, 75°:
 
 | Joint | Home servo (°) | Candidate zero (°) | Candidate sign | Home model q (°) |
 |---|---|---|---|---|
 | J1 | 85 | 85 | +1 | 0 |
-| J2 | 125 | 140 | -1 | 15 |
+| J2 | 125 | 145 | -1 | 20 |
 | J3 | 145 | 85 | +1 | 60 |
-| J4 | 90 | 75 | +1 | 15 |
+| J4 | 90 | 87 | +1 | 3 |
 | J5 | 25 | 100 | -1 | 75 |
 
 The candidate mapping is:
@@ -314,7 +324,10 @@ q = sign * (servo - zero)
 servo = zero + sign * q
 ```
 
-The signs come from a small 1° servo-angle check at the candidate pose:
+The signs come from a small 1° servo-angle check at the original POSE43 pose.
+Those observations keep their original joint positions: the J2 check was raw
+servo 140° → 141° (backward) and is not re-dated to 145°; the J4 check and the
+J5 check were both made with J4 at 75°, not the revised 87°:
 
 - J1: increasing the servo angle moved the base counter-clockwise seen from above -> sign +1.
 - J2: increasing the servo angle moved the shoulder backward -> sign -1.
@@ -322,21 +335,94 @@ The signs come from a small 1° servo-angle check at the candidate pose:
 - J4: increasing the servo angle moved the wrist counter-clockwise seen looking from the
   gripper toward the shoulder -> sign +1.
 - J5: increasing the servo angle moved the wrist backward, with J4 at 75° -> sign -1.
+  This sign still needs rechecking with J4 at the new 87° roll before it is
+  treated as validated at the revised alignment.
 
-The candidate values are zeros 85, 140, 85, 75, 100° and signs
-+1, -1, +1, +1, -1. They remain **alignment-tentative**: the J4 candidate zero
-has not been matched to the CAD reference, and none of this is production
-FK/IK or hardware validation. No firmware, config or servo sign constant was
-changed by this record.
+The candidate values are zeros 85, 145, 85, 87, 100° and signs
++1, -1, +1, +1, -1. They remain **alignment-tentative**: J4 = 87° is an
+operator-selected roll reference that has not been matched to the CAD
+reference, and the J5 sign still needs rechecking with J4 at 87° (the original
+check used J4 = 75°). None of this is production FK/IK or hardware validation.
+No firmware, config or servo sign constant was changed by this record.
+
+### Latest unloaded reference check (28 Oct 2026)
+
+The active candidate zeros/signs above and the start-up home are unchanged.
+On the installed arm, supported and unloaded, the five positioning joints were
+set to exactly J1..J5 = 85, 145, 85, 87, 100° with J6 = 0. The two jaw-tip
+heights measured from the floor/underplate were 445 and 440 mm; their mean is
+442.5 mm. These are jaw-tip heights, not a held-block or object-centre
+measurement. The 5 mm difference between the two tips is unexplained; it is not
+turned into individual tip coordinates. No block was held during this check, so
+object-centre alignment is **not** validated.
+
+The straight-up measured chain is shoulder 94 + upper arm 114 + forearm 127 +
+jaw tip 107 = 442 mm. The mean measured tip is 0.5 mm above that:
+`442.5 - 442 = +0.5 mm`. This is one height comparison, not a validation of
+either individual tip.
+
+Geometry recorded for the offline reference (mm):
+
+| Quantity | Value | Source |
+|---|---|---|
+| Floor/underplate -> shoulder | 94 | measured |
+| Upper arm | 114 | measured |
+| Forearm | 127 | measured |
+| Wrist pitch -> jaw tip | 107 | measured |
+| Object centre setback from the jaw tip | 3.5 | confirmed |
+| Wrist pitch -> object centre along the tool (107 - 3.5) | 103.5 | derived |
+| J1 axis -> shoulder forward | 23.15 | CAD |
+| J1 axis -> wrist roll line lateral | 15.25 | CAD |
+| Object x offset, CAD `+13` mapped to robot | -13 | CAD |
+| Roll line -> object sideways (CAD midplane 27.7 - roll axis 33.43) | -5.73 | CAD |
+| J1 axis CAD X, Z | 0, 18.18 | CAD |
+
+The current workbook puts the table surface at CAD `Y = -34.5` (base plate
+fitted), so its CAD floor-to-J2 is 94.22 mm. The older
+[`arm-measurement-calculations.md`](arm-measurement-calculations.md) still uses
+the pre-plate `-30.5` / 90.22 mm values. This check uses the measured 94 mm,
+not either CAD floor value.
+
+The offline reference `ProjectDevGuide/tests/host/arm_fk_reference.py` is an
+explicit **hybrid position model**, not exact CAD and not production FK/IK.
+It composes, for model angles q1..q5 in degrees:
+
+```text
+Rz(q1) * T(23.15, 0, 94) * Ry(q2) * T(0, 0, 114) * Ry(q3) *
+T(0, 15.25, 127) * Rz(q4) * Ry(q5) * T(-13, -5.73, 103.5)
+```
+
+It uses the measured link lengths plus the CAD-only forward, lateral and
+object offsets. It treats the three pitch axes as parallel `+Y` on the shared
+forward line `x = 23.15` and collapses the J4 roll and J5 pitch points to the
+end of the forearm. That is defensible for position: the roll axis is parallel
+to the forearm, so its height along that line does not change the x/y offset it
+rotates, and a pitch about `+Y` leaves the lateral y offset unchanged. It is
+not the exact CAD axis layout: orientation, the J6 gripper, collisions and
+servo limits are not modelled.
+
+CAD places the shoulder at X = 23.15 but the wrist axes at X = 23.14. The model
+folds that 0.01 mm difference into the 23.15 line, so the zero object is
+x = 10.15 mm instead of the 10.14 mm CAD/measured target. The 0.01 mm is below
+the recorded measurement resolution and is kept as a documented model offset,
+not hidden as exact CAD. The mean jaw-tip height is not used to invent
+individual tip 3D coordinates.
+
+At q = 0 the model object centre is (10.15, 9.52, 438.5) mm, and the separate
+straight-up jaw-tip height is 442 mm. The physical mean tip height was 442.5 mm,
+so the observed residual is +0.5 mm. Because the two tip heights differ by
+5 mm and no block was held, this remains a height cross-check, not an
+object-centre, tool-centre or individual-jaw validation.
 
 The offline check
-`ProjectDevGuide/tests/host/test_kinematic_reference.py` only exercises the
-zero/sign mapping above. It does not command hardware, does not implement
-FK/IK, and does not certify the J2/J5 coupled limits or whole-arm collision
-safety. Run it with:
+`ProjectDevGuide/tests/host/test_kinematic_reference.py` exercises the
+zero/sign mapping above and the position model in `arm_fk_reference.py`. It
+does not command hardware, does not implement IK or orientation, and does not
+certify the J2/J5 coupled limits or whole-arm collision safety. Run both with:
 
 ```text
 python3 ProjectDevGuide/tests/host/test_kinematic_reference.py
+python3 ProjectDevGuide/tests/host/arm_fk_reference.py 0 0 0 0 0
 ```
 
 ### Limit scope and collision caveat
