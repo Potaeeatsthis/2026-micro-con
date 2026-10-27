@@ -43,22 +43,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Install arm-none-eabi-gcc
-        # Ubuntu package mirrors sometimes stall. Short network timeouts turn a stall into an error,
-        # and the loop tries again (3 attempts) instead of hanging.
-        run: |
-          APT="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30"
-          for i in 1 2 3; do
-            if timeout 180 sudo apt-get $APT update -qq &&
-               timeout 300 sudo apt-get $APT install -y -qq --no-install-recommends \
-                 gcc-arm-none-eabi libnewlib-arm-none-eabi; then
-              arm-none-eabi-gcc --version | head -1
-              exit 0
-            fi
-            echo "apt attempt $i failed, retrying in 15 s"
-            sleep 15
-          done
-          echo "::error::could not install arm-none-eabi-gcc (Ubuntu mirror problem) - re-run the job"
-          exit 1
+        # ARM's official toolchain, downloaded once and then cached by the action (no Ubuntu apt mirror:
+        # it stalled or failed on 23 and 27 Oct). 13.3.Rel1 = the GCC 13 generation CubeIDE 2.2 uses.
+        uses: carlosperate/arm-none-eabi-gcc-action@v1
+        with:
+          release: '13.3.Rel1'
+      - run: arm-none-eabi-gcc --version | head -1
       - name: Build RoboticArmMain
         run: python3 ProjectDevGuide/ci/build_firmware.py RoboticArmMain --config ${{ matrix.config }}
 
