@@ -281,7 +281,63 @@ confuse the two.
 
 These are observed directions only. They are **not** calibrated joint signs, and
 the joint zeros remain uncalibrated. Do not turn them into IK or servo signs
-without a separate calibration.
+without a separate calibration. A separate small-angle alignment check gives the
+candidate signs below; they are still tentative.
+
+### Candidate kinematic reference and servo-to-joint mapping
+
+The installed-arm alignment check used the control-screen pose `POSE43`:
+J1 = 85, J2 = 140, J3 = 85, J4 = 75, J5 = 100, J6 = 0 (degrees). This is a
+**candidate kinematic zero**, not a confirmed joint zero. It was reached with
+the controls screen; the start-up home was not changed.
+
+Robot frame for this candidate mapping: origin at the J1 axis on the table
+underplate, +X forward along the black arrow on the robot, +Y left, +Z up
+(right-handed). J6 is the gripper and is excluded from the mapping.
+
+The start-up home pose is unchanged in `servo_cal.c`
+(J1..J6 = 85, 125, 145, 90, 25, 35°). Under the candidate mapping, the five
+positioning joints map to model angles 0, 15, 60, 15, 75°:
+
+| Joint | Home servo (°) | Candidate zero (°) | Candidate sign | Home model q (°) |
+|---|---|---|---|---|
+| J1 | 85 | 85 | +1 | 0 |
+| J2 | 125 | 140 | -1 | 15 |
+| J3 | 145 | 85 | +1 | 60 |
+| J4 | 90 | 75 | +1 | 15 |
+| J5 | 25 | 100 | -1 | 75 |
+
+The candidate mapping is:
+
+```text
+q = sign * (servo - zero)
+servo = zero + sign * q
+```
+
+The signs come from a small 1° servo-angle check at the candidate pose:
+
+- J1: increasing the servo angle moved the base counter-clockwise seen from above -> sign +1.
+- J2: increasing the servo angle moved the shoulder backward -> sign -1.
+- J3: increasing the servo angle moved the elbow forward -> sign +1.
+- J4: increasing the servo angle moved the wrist counter-clockwise seen looking from the
+  gripper toward the shoulder -> sign +1.
+- J5: increasing the servo angle moved the wrist backward, with J4 at 75° -> sign -1.
+
+The candidate values are zeros 85, 140, 85, 75, 100° and signs
++1, -1, +1, +1, -1. They remain **alignment-tentative**: the J4 candidate zero
+has not been matched to the CAD reference, and none of this is production
+FK/IK or hardware validation. No firmware, config or servo sign constant was
+changed by this record.
+
+The offline check
+`ProjectDevGuide/tests/host/test_kinematic_reference.py` only exercises the
+zero/sign mapping above. It does not command hardware, does not implement
+FK/IK, and does not certify the J2/J5 coupled limits or whole-arm collision
+safety. Run it with:
+
+```text
+python3 ProjectDevGuide/tests/host/test_kinematic_reference.py
+```
 
 ### Limit scope and collision caveat
 
