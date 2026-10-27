@@ -1,5 +1,9 @@
 # Controls bench test: MODE, Hold-to-Enable, LCD (no servos)
 
+> **Obsolete since 27 Oct 2026.** The MODE and Hold-to-Enable buttons and the e-stop were removed from the
+> hardware ([`core-config.md`](core-config.md) v1.3); the mode is chosen on the LCD. Kept as the record of the
+> 24 Oct 2026 test. Do not wire PE7, PE10 or PE12.
+
 Part C of the input check. Parts A and B are done (2026-10-24, [`input-and-pilink-test.md`](input-and-pilink-test.md)
 §7): the joystick, the encoder and their buttons give correct values and exactly one event per press / click.
 This part checks that **the modes react** to them, with the MODE and Hold-to-Enable buttons and the LCD

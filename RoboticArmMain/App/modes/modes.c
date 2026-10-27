@@ -3,16 +3,14 @@
  * safe switch (guide section 9):
  *   1-2  old mode exit(): stop taking input, cancel voice task / pi request
  *   3-4  motion_hold() and wait until the trajectory is idle
- *   5    wait until hold-to-enable is released
- *   6    wait until the joystick is centred
- *   7-8  targets already equal the current pose (motion_hold), old jogs cleared
- *   9    new mode enter()
- *   10   the lcd picks the new mode up by itself (pull model)
+ *   5    wait until the joystick is centred
+ *   6-7  targets already equal the current pose (motion_hold), old jogs cleared
+ *   8    new mode enter()
+ *   9    the lcd picks the new mode up by itself (pull model)
  */
 #include "modes/modes.h"
 #include "modes/mode_ops.h"
 #include "motion/motion.h"
-#include "safety/safety.h"
 #include "common/app_config.h"
 #include "common/app_events.h"
 #include "common/app_fault.h"
@@ -40,7 +38,6 @@ static const mode_ops_t *ops(arm_mode_t m) { return MODE_TABLE[m]; }
 static void enter_mode(arm_mode_t m)
 {
   s_cur = m;
-  motion_require_enable(ops(m)->requires_enable);
   ops(m)->enter();
   LOG("modes: -> %s\r\n", ops(m)->name);
 }
@@ -71,7 +68,6 @@ static bool joystick_centred(void)
 static void switch_step(void)
 {
   if (!motion_is_idle())         { s_wait_reason = "STOPPING";       return; }
-  if (safety_enable_held())      { s_wait_reason = "RELEASE ENABLE"; return; }
   if (!joystick_centred())       { s_wait_reason = "CENTRE STICK";   return; }
   motion_hold();
   s_switching = false;
@@ -83,27 +79,12 @@ static void switch_step(void)
 static bool handle_global(const app_event_t *e)
 {
   switch ((evt_type_t)e->type) {
-    case EVT_BTN_MODE:
-      modes_request((arm_mode_t)((s_cur + 1) % MODE_COUNT));
-      return true;
     case EVT_TOUCH_MODE_TAB:
       modes_request((arm_mode_t)e->arg);
       return true;
     case EVT_JOY_PRESS:
-      if (ops(s_cur)->requires_enable) motion_toggle_speed();   /* fine/fast in manual modes */
+      if (ops(s_cur)->manual) motion_toggle_speed();   /* fine/fast in manual modes */
       return true;
-    case EVT_TOUCH_CONFIRM:
-      if (safety_state() == SAFETY_RESTART_REQUIRED) {
-        safety_confirm_restart();
-        return true;
-      }
-      return false;
-    case EVT_RAIL_LOST:
-      lcd_show_message("SERVO POWER OFF", 3000u);
-      return false;                                             /* modes also react */
-    case EVT_ESTOP_PRESSED:
-      lcd_show_message("E-STOP", 3000u);
-      return false;
     case EVT_FAULT:
       if (e->v[0] != 0) lcd_show_message("FAULT - RESET BOARD", 10000u);
       return false;

@@ -24,7 +24,7 @@ typedef enum {
 } motion_result_t;
 
 void            motion_init(void);
-void            motion_tick(void);                 /* TIM6 isr, after safety_tick() */
+void            motion_tick(void);                 /* TIM6 isr, after input_tick() */
 
 motion_result_t motion_set_target(const joint_vec_t *target);
 motion_result_t motion_set_joint_target(int joint, float deg);
@@ -39,8 +39,5 @@ bool            motion_is_idle(void);
 void            motion_set_speed(speed_level_t s);
 speed_level_t   motion_get_speed(void);
 void            motion_toggle_speed(void);
-
-/* modes call this on enter: manual modes need hold-to-enable, voice mode does not */
-void            motion_require_enable(bool required);
 
 #endif /* APP_MOTION_H */

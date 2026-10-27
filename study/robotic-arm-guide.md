@@ -94,8 +94,8 @@ STM32 NUCLEO-F767ZI - Main Controller
    |- Servo 1: base
    |- Servo 2: shoulder
    |- Servo 3: elbow
-   |- Servo 4: wrist pitch
-   |- Servo 5: wrist rotation
+   |- Servo 4: wrist roll
+   |- Servo 5: wrist pitch
    `- Servo 6: gripper
               |
               v
@@ -208,8 +208,8 @@ The STM32 calculates inverse kinematics from the XYZ target and rejects position
 | Group | Joystick X | Joystick Y |
 |---|---|---|
 | Group 1 | J1 Base | J2 Shoulder |
-| Group 2 | J3 Elbow | J4 Wrist pitch |
-| Group 3 | J5 Wrist rotation | J6 Gripper |
+| Group 2 | J3 Elbow | J4 Wrist roll |
+| Group 3 | J5 Wrist pitch | J6 Gripper |
 
 Rotate the KY-040 to select a group. Press the joystick to change between Fine and Fast speed. Joint limits and the Hold-to-Enable button still apply.
 
@@ -409,8 +409,8 @@ The STM32 uses hardware timers to generate stable servo PWM. Software delays mus
 | J1 Base | PC6 | TIM3 CH1 |
 | J2 Shoulder | PC7 | TIM3 CH2 |
 | J3 Elbow | PD12 | TIM4 CH1 |
-| J4 Wrist pitch | PD13 | TIM4 CH2 |
-| J5 Wrist rotation | PD14 | TIM4 CH3 |
+| J4 Wrist roll | PD13 | TIM4 CH2 |
+| J5 Wrist pitch | PD14 | TIM4 CH3 |
 | J6 Gripper | PD15 | TIM4 CH4 |
 
 Both timers count in 1 µs steps with a 20 ms period (50 Hz). The compare value equals the pulse width in microseconds, and any pulse from 500 to 2500 µs is possible.
@@ -590,7 +590,7 @@ MODE: JOINT GROUP
 Group: 2
 
 X: J3 ELBOW
-Y: J4 WRIST PITCH
+Y: J4 WRIST ROLL
 Speed: FINE
 ```
 

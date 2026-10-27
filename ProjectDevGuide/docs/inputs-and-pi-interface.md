@@ -7,8 +7,8 @@ module reads it. Pins: [`core-config.md`](core-config.md) §3. How modules talk 
 ```text
  KY-023 joystick ──ADC (PA3, PC0)──┐
  KY-040 encoder ──TIM1 (PE9, PE11)─┤                       ┌─ events ─> modes (the only event consumer)
- buttons MODE/ENC/JOY ──EXTI───────┼──> input/  ───────────┤
- servo-rail divider ──ADC (PC3)────┘                       └─ getters: input_joy_x/y(), input_rail_mv() ...
+ buttons ENC/JOY ──EXTI────────────┴──> input/  ───────────┤
+                                                           └─ getters: input_joy_x/y(), input_joy_centered() ...
  D435 ──USB──> Pi (detect + depth + transform) ──USART6 text──> pi_link/ ──> events EVT_PI_*
 ```
 
@@ -24,12 +24,12 @@ Nothing in `input/` or `pi_link/` moves the arm. The active mode reads these val
 | **Joystick button** (SW) | EXTI, debounced 20–40 ms | `EVT_JOY_PRESS`, **only when the stick is centred** | one event per press | bounces ~4 edges, debounce absorbs it |
 | **KY-040 encoder** | quadrature, TIM1 | `EVT_ENC_STEP`, `v[0]` = detents turned | int, **+ = clockwise** | 4 counts per detent; very fast spins can lose half a detent |
 | **Encoder button** | EXTI, debounced | `EVT_ENC_PRESS` | one event per press | clean |
-| **MODE button** | EXTI, debounced | `EVT_BTN_MODE` | one event per press | |
-| **Servo-rail sense** | 6 V rail divider, ADC | `input_rail_mv()` (getter); safety/ turns it into `EVT_RAIL_LOST` / `EVT_RAIL_BACK` | mV | |
+| **LCD mode card** (touch) | `lcd.c` touch zone | `EVT_TOUCH_MODE_TAB`, `arg` = `arm_mode_t` | one event per tap | replaces the MODE button (removed 27 Oct 2026) |
 | **Depth camera via Pi** | text line on USART6 | `EVT_PI_OBJECT` / `EVT_PI_NOTFOUND` / `EVT_PI_TIMEOUT` (see §2) | mm | round trip 4–14 ms |
 
-Only presses become events (releases are tracked but not posted). Hold-to-enable and e-stop are not
-here: they belong to `safety/`.
+Only presses become events (releases are tracked but not posted). The arm has no MODE button,
+Hold-to-Enable or e-stop, no limit switches and no servo-rail sense ([`core-config.md`](core-config.md) v1.4);
+those pins are no longer in the `.ioc`.
 
 ## 2. Depth camera → Pi → STM32
 
@@ -53,8 +53,22 @@ What the numbers mean:
 
 - **Colour** = the name: `red_box`, `green_box`, `blue_box`, `black_box` (`OBJ_RED_BOX` … in `object_id_t`,
   `OBJ_BOX_COUNT` of them). `hand` (`OBJ_HAND`) comes after the boxes, see below.
-- **x y z** = integer mm, **robot-base frame**: origin on the base axis at the mounting plane, +X forward,
-  +Y left, +Z up. The point is the **centre of the block's top face**.
+- **x y z** = integer mm, **robot-base frame**: right-handed, +X forward, +Y left, +Z up. The intended
+  origin is on the base axis at the floor, but the floor-to-base-bottom (stand) offset is not measured,
+  so the floor-origin transform is not confirmed. The CAD conversion below maps to the **base-bottom
+  (mounting/table) plane**, with `z_B = 0` there; floor height is `z_floor = z_B + s` for the unknown
+  stand offset `s`.
+  CAD **direction vectors** map as `x = -X_cad`, `y = Z_cad`, `z = Y_cad` (CAD is Y-up). For **points**,
+  use `x = -X_cad`, `y = Z_cad - 18.18`, `z_B = Y_cad + 30.5` mm, i.e. `p_B = R * (p_cad - o)` with
+  `R * (X,Y,Z) = (-X,Z,Y)` and `o = (0, -30.5, 18.18)` mm in CAD coordinates. This is the
+  **base-bottom-plane origin**, not a floor origin; do not claim a measured floor transform without
+  measuring the stand. The workbook records measured floor-to-J2 = `94 mm` and CAD base-bottom-to-J2 =
+  `90.22 mm` (`Real Arm Check` C6 is `CHECK`, 3.78 mm > 2 mm tolerance); the 3.78 mm difference is not
+  an independently measured stand thickness. The reported point is the **centre of the block's top face**.
+- At the straight-up zero pose the positive joint axes (right-hand rule) are **J1 +Z** base yaw,
+  **J2 +Y** shoulder pitch, **J3 +Y** elbow pitch, **J4 +Z** wrist roll, **J5 +Y** wrist pitch.
+  J6 is the gripper and is not part of positioning IK. These are chosen model signs, not measured servo
+  or PWM directions; the definitions live in `App/kinematics/kinematics.h` and `arm_geometry.h`.
 - The Pi does detection, depth and the camera → base transform. **The STM32 does IK and the grasp offset**
   (where to close the gripper below the top face).
 - One request at a time. A reply for a request that is no longer pending is ignored and logged.
@@ -143,7 +157,7 @@ The service passes `--camera-frame`. Once the team relies on calibration, remove
 
 | Part | File | Owner |
 |---|---|---|
-| Joystick, encoder, buttons, rail ADC | `RoboticArmMain/App/input/input.c` / `.h` | input member |
+| Joystick, encoder, buttons | `RoboticArmMain/App/input/input.c` / `.h` | input member |
 | Pi link, protocol parser | `RoboticArmMain/App/pi_link/pi_link.c`, `pi_proto.c` | Pi member |
 | Pi bridge (text protocol, uses the detector) + service | `ProjectDevGuide/tools/pi/pi_bridge.py`, `pi_bridge.service` → `~/arm/tools/` on the Pi | Pi member |
 | Hand detection (MediaPipe worker, palm XYZ) | `ProjectDevGuide/tools/pi/pi_hand.py` → `~/arm/tools/`; MediaPipe 0.10.18 in `~/hand-env` (not in `~/arm-env`) | Pi member |

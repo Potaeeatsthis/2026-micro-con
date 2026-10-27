@@ -2,7 +2,7 @@
   ******************************************************************************
   * @file    network.c
   * @author  AST Embedded Analytics Research Platform
-  * @date    2026-10-23T01:28:13+0700
+  * @date    2026-10-27T15:16:37+0700
   * @brief   AI Tool Automatic Code Generator for Embedded NN computing
   ******************************************************************************
   * @attention
@@ -42,7 +42,7 @@
 #endif
 
 #undef AI_TOOLS_DATE_TIME
-#define AI_TOOLS_DATE_TIME   "2026-10-23T01:28:13+0700"
+#define AI_TOOLS_DATE_TIME   "2026-10-27T15:16:37+0700"
 
 #undef AI_TOOLS_COMPILE_TIME
 #define AI_TOOLS_COMPILE_TIME    __DATE__ " " __TIME__
@@ -1277,7 +1277,7 @@ AI_NETWORK_OBJ_DECLARE(
     32320, NULL, NULL),
   AI_TENSOR_LIST_IO_OBJ_INIT(AI_FLAG_NONE, AI_NETWORK_IN_NUM, &logmel_output),
   AI_TENSOR_LIST_IO_OBJ_INIT(AI_FLAG_NONE, AI_NETWORK_OUT_NUM, &probs_output),
-  &logmel_Transpose_layer, 0x8ff1a8b6, NULL)
+  &logmel_Transpose_layer, 0xd1befbba, NULL)
 
 #else
 
@@ -1297,7 +1297,7 @@ AI_NETWORK_OBJ_DECLARE(
   ),
   AI_TENSOR_LIST_IO_OBJ_INIT(AI_FLAG_NONE, AI_NETWORK_IN_NUM, &logmel_output),
   AI_TENSOR_LIST_IO_OBJ_INIT(AI_FLAG_NONE, AI_NETWORK_OUT_NUM, &probs_output),
-  &logmel_Transpose_layer, 0x8ff1a8b6, NULL)
+  &logmel_Transpose_layer, 0xd1befbba, NULL)
 
 #endif	/*(AI_TOOLS_API_VERSION < AI_TOOLS_API_VERSION_1_5)*/
 
@@ -1522,7 +1522,7 @@ ai_bool ai_network_get_info(
       .params            = AI_STRUCT_INIT,
       .activations       = AI_STRUCT_INIT,
       .n_nodes           = 0,
-      .signature         = 0x8ff1a8b6,
+      .signature         = 0xd1befbba,
     };
 
     if (!ai_platform_api_get_network_report(network, &r)) return false;
@@ -1570,7 +1570,7 @@ ai_bool ai_network_get_report(
       .map_weights       = AI_STRUCT_INIT,
       .map_activations   = AI_STRUCT_INIT,
       .n_nodes           = 0,
-      .signature         = 0x8ff1a8b6,
+      .signature         = 0xd1befbba,
     };
 
     if (!ai_platform_api_get_network_report(network, &r)) return false;

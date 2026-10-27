@@ -16,11 +16,10 @@
  *        min-max = single samples in the last 100 ms, out = dead-zone output x1000
  *   joy: 2s window min / mean / max / peak-to-peak of single samples, every 2 s
  *   enc: TIM1 counter, raw delta since the last line, direction, total (only when it moved)
- *   btn: debounced press / release of MODE, ENC, JOY
+ *   btn: debounced press / release of ENC, JOY
  *   evt: every event input posts (what the modes receive), ENC_STEP with a running sum
  * APP_INPUT_LOG_EVENTS (app_config_local.h only): just the evt: lines, allowed with modes and
- * motion on (bench test of the modes, see ProjectDevGuide/docs/controls-bench-test.md). also
- * logs hold-to-enable changes, read through safety_enable_held() (safety itself does not log it).
+ * motion on (bench test of the modes, see ProjectDevGuide/docs/controls-bench-test.md).
  * with the modes on it also prints what the lcd would show (mode, fine/fast, the mode's
  * describe() lines) whenever it changes, at most 4 times a second: "screen: ...". read-only
  * getters, so the modes' reactions are visible while the lcd driver is not connected.
@@ -37,11 +36,10 @@
 #include "adc.h"
 #include "tim.h"
 
-#define ADC_CH            3u
+#define ADC_CH            2u
 #define ADC_SAMPLES       20u                    /* per channel in the whole buffer */
 #define ADC_HALF_SAMPLES  (ADC_SAMPLES / 2u)     /* 10 per channel per half = 10 ms */
 #define ADC_FULL_SCALE    4095u
-#define ADC_VREF_MV       3300u
 
 #define JOY_DEADZONE      0.08f                  /* fraction of full deflection */
 #define JOY_CENTER_TOL    0.15f                  /* "near centre" for the fine/fast press */
@@ -60,9 +58,6 @@
 #define APP_INPUT_LOG_EVENTS 0
 #endif
 #define INPUT_EVT_LOG (APP_INPUT_TEST || APP_INPUT_LOG_EVENTS)
-#if INPUT_EVT_LOG
-#include "safety/safety.h"
-#endif
 #define INPUT_SCREEN_LOG (APP_INPUT_LOG_EVENTS && APP_USE_MODES)
 #if INPUT_SCREEN_LOG
 #include "modes/modes.h"
@@ -71,17 +66,16 @@
 #include <string.h>
 #endif
 
-static uint16_t s_adc_buf[ADC_CH * ADC_SAMPLES] DMA_BUF;  /* [x, y, rail, x, y, rail, ...] */
+static uint16_t s_adc_buf[ADC_CH * ADC_SAMPLES] DMA_BUF;  /* [x, y, x, y, ...] */
 static volatile uint16_t s_raw[ADC_CH];
 static uint16_t s_center_x = 2048u, s_center_y = 2048u;
 static bool     s_center_done;
 static uint32_t s_init_ms;
 
 /* buttons */
-typedef enum { BTN_MODE_I = 0, BTN_ENC_I, BTN_JOY_I, BTN_COUNT } btn_index_t;
+typedef enum { BTN_ENC_I = 0, BTN_JOY_I, BTN_COUNT } btn_index_t;
 typedef struct { GPIO_TypeDef *port; uint16_t pin; } btn_hw_t;
 static const btn_hw_t BTN_HW[BTN_COUNT] = {
-  { BTN_MODE_GPIO_Port, BTN_MODE_Pin },
   { ENC_SW_GPIO_Port,   ENC_SW_Pin },
   { JOY_SW_GPIO_Port,   JOY_SW_Pin },
 };
@@ -123,7 +117,7 @@ void input_init(void)
 void input_on_adc(int half)
 {
   const uint16_t *p = &s_adc_buf[(half ? ADC_HALF_SAMPLES : 0u) * ADC_CH];
-  uint32_t sum[ADC_CH] = { 0u, 0u, 0u };
+  uint32_t sum[ADC_CH] = { 0u, 0u };
 #if APP_INPUT_TEST
   uint16_t mn[2] = { s_t_min[0], s_t_min[1] };
   uint16_t mx[2] = { s_t_max[0], s_t_max[1] };
@@ -133,10 +127,8 @@ void input_on_adc(int half)
       uint16_t v = p[i * ADC_CH + c];
       sum[c] += v;
 #if APP_INPUT_TEST
-      if (c < 2u) {
-        if (v < mn[c]) mn[c] = v;
-        if (v > mx[c]) mx[c] = v;
-      }
+      if (v < mn[c]) mn[c] = v;
+      if (v > mx[c]) mx[c] = v;
 #endif
     }
   }
@@ -170,7 +162,7 @@ void input_tick(void)
 
 void input_on_exti(uint16_t gpio_pin)
 {
-  if (gpio_pin == BTN_MODE_Pin || gpio_pin == ENC_SW_Pin || gpio_pin == JOY_SW_Pin) {
+  if (gpio_pin == ENC_SW_Pin || gpio_pin == JOY_SW_Pin) {
     s_exti_edges++;
   }
 }
@@ -197,15 +189,8 @@ bool input_joy_centered(void)
   return absf(x) < JOY_CENTER_TOL && absf(y) < JOY_CENTER_TOL;
 }
 
-uint32_t input_rail_mv(void)
-{
-  uint32_t pin_mv = ((uint32_t)s_raw[2] * ADC_VREF_MV) / ADC_FULL_SCALE;
-  return (pin_mv * APP_RAIL_DIV_NUM) / APP_RAIL_DIV_DEN;
-}
-
 uint16_t input_raw_x(void)    { return s_raw[0]; }
 uint16_t input_raw_y(void)    { return s_raw[1]; }
-uint16_t input_raw_rail(void) { return s_raw[2]; }
 
 static void calibrate_center_once(void)
 {
@@ -222,17 +207,6 @@ static void calibrate_center_once(void)
 
 #if INPUT_EVT_LOG
 static int32_t s_t_detents;              /* sum of posted EVT_ENC_STEP v[0] since boot */
-static bool    s_t_enable;               /* last logged safety_enable_held() */
-
-static void test_enable_log(void)
-{
-  bool en = safety_enable_held();
-  if (en != s_t_enable) {
-    s_t_enable = en;
-    LOG("evt: ENABLE %s (safety)\r\n", en ? "held" : "released");
-  }
-}
-
 static void test_evt(evt_type_t type, const char *name, int32_t v0, bool ok)
 {
   if (type == EVT_ENC_STEP) {
@@ -293,7 +267,6 @@ void input_step(void)
   s_btn_release_flags = 0u;
   __set_PRIMASK(p);
 
-  if (flags & (1u << BTN_MODE_I)) post(EVT_BTN_MODE, "BTN_MODE", 0);
   if (flags & (1u << BTN_ENC_I))  post(EVT_ENC_PRESS, "ENC_PRESS", 0);
   if ((flags & (1u << BTN_JOY_I)) && input_joy_centered()) post(EVT_JOY_PRESS, "JOY_PRESS", 0);
 
@@ -306,9 +279,6 @@ void input_step(void)
     s_enc_accum -= detents * ENC_COUNTS_PER_DETENT;
     post(EVT_ENC_STEP, "ENC_STEP", detents * ENC_SIGN);
   }
-#if INPUT_EVT_LOG
-  test_enable_log();
-#endif
 #if INPUT_SCREEN_LOG
   test_screen_log();
 #endif
@@ -325,7 +295,7 @@ void input_step(void)
 #define TEST_PRINT_MS   100u
 #define TEST_WINDOW_MS  2000u
 
-static const char *const BTN_NAME[BTN_COUNT] = { "MODE", "ENC", "JOY" };
+static const char *const BTN_NAME[BTN_COUNT] = { "ENC", "JOY" };
 
 static uint32_t s_t_print_ms;
 static uint32_t s_t_win_ms;

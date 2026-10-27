@@ -12,7 +12,7 @@
 
 typedef struct {
   const char *name;            /* shown on the lcd */
-  bool requires_enable;        /* manual modes: motion only while hold-to-enable is held */
+  bool manual;                 /* manual modes: joystick press = fine/fast */
   void (*enter)(void);         /* targets already = current pose when this is called */
   void (*exit)(void);          /* stop accepting input, cancel tasks / pi requests */
   void (*on_event)(const app_event_t *e);

@@ -18,7 +18,6 @@
 #include "app.h"
 #include "common/app_config.h"
 #include "common/app_fault.h"
-#include "safety/safety.h"
 #include "tim.h"
 #include "adc.h"
 #include "sai.h"
@@ -37,7 +36,7 @@
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   if (htim->Instance == TIM6) {
-    app_control_tick();                           /* 50 Hz: input sample, safety, motion */
+    app_control_tick();                           /* 50 Hz: input sample, motion */
   }
 }
 
@@ -45,13 +44,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
  * every module checks whether the pin is one of its own, so the order does not matter */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-  safety_on_exti(GPIO_Pin);                       /* BTN_ENABLE, ESTOP_NO, LIM1..4 */
 #if APP_USE_INPUT
-  input_on_exti(GPIO_Pin);                        /* BTN_MODE, ENC_SW, JOY_SW */
+  input_on_exti(GPIO_Pin);                        /* ENC_SW, JOY_SW */
 #endif
 }
 
-/* ---------------------------------------------------------------- adc1 (joystick + rail) */
+/* ---------------------------------------------------------------- adc1 (joystick) */
 void HAL_ADC_ConvHalfCpltCallback(ADC_HandleTypeDef *hadc)
 {
 #if APP_USE_INPUT
