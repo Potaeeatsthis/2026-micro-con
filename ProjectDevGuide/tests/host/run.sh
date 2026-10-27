@@ -34,6 +34,13 @@ gcc -std=gnu11 -O1 -g -Wall -Wextra -Wshadow -Wno-unused-parameter \
   -I"$HERE/fake" -I"$A" -o "$T/test_servo_cal" "$HERE/test_servo_cal.c" "$A/servo_cal_test/servo_cal_test.c" \
   "$A/common/app_events.c" "$A/common/app_fault.c" "$A/safety/safety.c" \
   "$A/motion/motion.c" "$A/motion/servo.c" "$A/motion/servo_cal.c" "$HERE/fake/lcd_port_fake.c"
+# kinematics: the default build must stay fail-closed; the second build enables the math for the test only.
+gcc -std=gnu11 -O1 -g -Wall -Wextra -Werror -Wshadow -Wno-unused-parameter \
+  -I"$A" -o "$T/test_kinematics_failclosed" "$HERE/test_kinematics.c" \
+  "$A/kinematics/kinematics.c" "$A/motion/servo_cal.c"
+gcc -std=gnu11 -O1 -g -Wall -Wextra -Werror -Wshadow -Wno-unused-parameter \
+  -DARM_GEOMETRY_MEASURED=1 -I"$A" -o "$T/test_kinematics" "$HERE/test_kinematics.c" \
+  "$A/kinematics/kinematics.c" "$A/motion/servo_cal.c" -lm
 # keep the test's own exit code (a pipe into grep would hide a failure)
 rc=0
 "$HERE/test_app" > "$HERE/test_app.log" || rc=$?
@@ -47,7 +54,15 @@ grep -E "^==|FAIL|passed" "$T/test_app_dry.log"
 rc4=0
 "$T/test_servo_cal" > "$T/test_servo_cal.log" || rc4=$?
 grep -E "^==|FAIL|passed" "$T/test_servo_cal.log"
+rc5=0
+"$T/test_kinematics_failclosed" > "$T/test_kinematics_failclosed.log" || rc5=$?
+grep -E "^==|FAIL|passed" "$T/test_kinematics_failclosed.log"
+rc6=0
+"$T/test_kinematics" > "$T/test_kinematics.log" || rc6=$?
+grep -E "^==|FAIL|passed" "$T/test_kinematics.log"
 [ $rc -ne 0 ] && exit $rc
 [ $rc2 -ne 0 ] && exit $rc2
 [ $rc3 -ne 0 ] && exit $rc3
-exit $rc4
+[ $rc4 -ne 0 ] && exit $rc4
+[ $rc5 -ne 0 ] && exit $rc5
+exit $rc6
