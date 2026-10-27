@@ -287,7 +287,8 @@ Three checks keep this honest: `dma_buf_check()` at boot (motion blocked and `ER
 section or the MPU region is wrong), the CI build (fails if `.dma_buffer` is not at 0x2007C000 or exceeds
 16 KB), and a look at the `.ld` after every regenerate.
 
-Size today (CubeIDE 2.2.0, Debug): text 324,300 B, data 7,980 B, bss 127,712 B — far below 2 MB / 512 KB.
+Size (CubeIDE 2.2.0, v1.4 on `dev`, 27 Oct 2026): text 808,044 B, data 8,000 B, bss 130,560 B — far below 2 MB / 512 KB.
+(v1.2 on 23 Oct was text 324,300 B; the LCD pictures added most of the difference.)
 DMA buffers use 0xF00 B of the 16 KB (measured before v1.4; the ADC buffer shrank by one channel since).
 
 ---
