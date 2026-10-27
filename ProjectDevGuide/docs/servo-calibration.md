@@ -19,7 +19,8 @@ The bench tools are separate from the HAL firmware:
 **Gripper and HOME integration: fixed in code (27 Oct 2026), hardware checks still open.**
 
 - `App/common/app_config.h`: `APP_GRIPPER_CLOSED_DEG` = 0, `APP_GRIPPER_OPEN_DEG` = 60 (the J6 safe
-  endpoints; the 35 deg startup home is unchanged). Travel endpoints, not a grip-force calibration.
+  endpoints; the startup home was raised from 35 to 40 deg on 28 Oct 2026). Travel endpoints, not a
+  grip-force calibration.
 - `App/modes/gripper.c` (new, used by Cartesian and voice): a gripper command counts only if motion
   accepts it unchanged. A `MOTION_CLAMPED` result is cancelled (`motion_hold_joint(J6)`) and reported as
   failed, so a clamped close is never taken as holding an object (voice: the script stops with
@@ -37,7 +38,8 @@ signal wires disconnected, then supported, controlled hardware tests. Not covere
 reachable today): Cartesian moves and voice pose steps still accept `MOTION_CLAMPED` IK targets.
 
 The firmware table in `App/motion/servo_cal.c` now holds the confirmed installed
-home poses and conservative per-joint safe limits (27 Oct 2026). The home pose is
+home poses and conservative per-joint safe limits (27 Oct 2026; J6's home was
+raised from 35 to 40 deg on 28 Oct 2026). The home pose is
 a servo-angle pose, **not the kinematic joint zero**; startup sends it after
 safety allows, one joint every 500 ms (gripper first, then J1-J5) so the servos do not all draw
 start-up current at once. Joint zeros and direction signs are still uncalibrated.
@@ -67,6 +69,10 @@ though the current mapping is one unit per joint.
 The Arduino Uno bench still uses one servo on **pin 9** at a time. On the STM32
 bench, use the physical NUCLEO pin names above, not Arduino pin numbers. The
 authoritative pin/timer map remains [`core-config.md`](core-config.md) §3–§4.1.
+
+J6's servo model is unresolved: the mapping was recorded as `SG90`, but the user
+later reported `SG92R`. The J6 anchors (500 / 1380 / 2300 µs) are unchanged
+either way.
 
 ## Canonical unloaded measurements
 
@@ -216,7 +222,7 @@ the anchors above at those home angles.
 | J3 | `MG996R-3` | 45 | 180 | 145 | 2123 | not measured | not calibrated |
 | J4 | `SG92R-1` | 0 | 180 | 90 | 1440 | not measured | not calibrated |
 | J5 | `SG92R-3` | 25 | 140 | 25 | 901 | not measured | not calibrated |
-| J6 | `SG90` (replacement) | 0 | 60 | 35 | 842 | not measured | not calibrated |
+| J6 | `SG90` (user later reported `SG92R`) | 0 | 60 | 40 | 891 | not measured | not calibrated |
 
 The limits were confirmed independently, one joint at a time, with the rest of
 the arm supported. J2's table floor is the absolute **50°**, but that value is
@@ -289,33 +295,35 @@ candidate signs below; they are still tentative.
 The installed-arm alignment check used the control-screen pose `POSE43`:
 J1 = 85, J2 = 140, J3 = 85, J4 = 75, J5 = 100, J6 = 0 (degrees). Those raw
 values are the **original** historical measurement and stay factual; they are
-superseded as the candidate kinematic zero by the revised J2 = 145 and J4 = 87
-below.
+superseded as the candidate kinematic zero by the later J2 = 145, J3 = 88,
+J4 = 88 and J5 = 96 values below.
 
-The active candidate reference is J1..J5 = 85, 145, 85, 87, 100° (J6 = 0): the
-user confirmed that J2 = 145° and J4 = 87° are vertical. This is a **candidate
-kinematic zero**, not a confirmed joint zero. It was reached with the controls
-screen; the start-up home was not changed.
+The active candidate reference is J1..J5 = 85, 145, 88, 88, 96° (J6 = 0): the
+user reported J2 = 145° as vertical and supplied J3 = 88°, J4 = 88° and J5 = 96°
+as the revised references. This is a **candidate kinematic zero**, not a
+confirmed joint zero. It was reached with the controls screen; the positioning
+start-up home was not changed by this mapping (only J6's home was later raised
+from 35 to 40 deg).
 
-J4 = 87° is an operator-selected roll reference, not a CAD match: J4 roll being
-vertical alone does not establish that the joint zero aligns with the CAD
-reference, so the J4 value remains pending alignment validation.
+J3 = 88°, J4 = 88° and J5 = 96° are user-supplied references. Exact CAD and
+physical verification are not established, so none is a confirmed joint zero.
 
 Robot frame for this candidate mapping: origin at the J1 axis on the table
 underplate, +X forward along the black arrow on the robot, +Y left, +Z up
 (right-handed). J6 is the gripper and is excluded from the mapping.
 
-The start-up home pose is unchanged in `servo_cal.c`
-(J1..J6 = 85, 125, 145, 90, 25, 35°). Under the revised candidate mapping, the
-five positioning joints map to model angles 0, 20, 60, 3, 75°:
+The positioning start-up home is unchanged in `servo_cal.c`; J6's home was
+raised from 35 to 40° on 28 Oct 2026 (J1..J6 = 85, 125, 145, 90, 25, 40°).
+Under the revised candidate mapping, the five positioning joints map to model
+angles 0, 20, 57, 2, 71°:
 
 | Joint | Home servo (°) | Candidate zero (°) | Candidate sign | Home model q (°) |
 |---|---|---|---|---|
 | J1 | 85 | 85 | +1 | 0 |
 | J2 | 125 | 145 | -1 | 20 |
-| J3 | 145 | 85 | +1 | 60 |
-| J4 | 90 | 87 | +1 | 3 |
-| J5 | 25 | 100 | -1 | 75 |
+| J3 | 145 | 88 | +1 | 57 |
+| J4 | 90 | 88 | +1 | 2 |
+| J5 | 25 | 96 | -1 | 71 |
 
 The candidate mapping is:
 
@@ -327,7 +335,7 @@ servo = zero + sign * q
 The signs come from a small 1° servo-angle check at the original POSE43 pose.
 Those observations keep their original joint positions: the J2 check was raw
 servo 140° → 141° (backward) and is not re-dated to 145°; the J4 check and the
-J5 check were both made with J4 at 75°, not the revised 87°:
+J5 check were both made with J4 at 75°, not the current 88°:
 
 - J1: increasing the servo angle moved the base counter-clockwise seen from above -> sign +1.
 - J2: increasing the servo angle moved the shoulder backward -> sign -1.
@@ -335,31 +343,59 @@ J5 check were both made with J4 at 75°, not the revised 87°:
 - J4: increasing the servo angle moved the wrist counter-clockwise seen looking from the
   gripper toward the shoulder -> sign +1.
 - J5: increasing the servo angle moved the wrist backward, with J4 at 75° -> sign -1.
-  This sign still needs rechecking with J4 at the new 87° roll before it is
-  treated as validated at the revised alignment.
+  This historical observation keeps J4 = 75°; the sign still needs rechecking
+  with J4 at the active 88° roll before it is treated as validated at the
+  revised alignment.
 
-The candidate values are zeros 85, 145, 85, 87, 100° and signs
-+1, -1, +1, +1, -1. They remain **alignment-tentative**: J4 = 87° is an
-operator-selected roll reference that has not been matched to the CAD
-reference, and the J5 sign still needs rechecking with J4 at 87° (the original
-check used J4 = 75°). None of this is production FK/IK or hardware validation.
-No firmware, config or servo sign constant was changed by this record.
+The candidate values are zeros 85, 145, 88, 88, 96° and signs
++1, -1, +1, +1, -1. They remain **alignment-tentative**: J3 = 88°, J4 = 88°
+and J5 = 96° are user-supplied references, but exact CAD and physical
+verification are not established, and the J5 sign still needs rechecking with
+J4 at 88° (the historical check used J4 = 75°). None of this is production FK/IK or hardware
+validation. No servo sign constant was changed by this record.
 
-### Latest unloaded reference check (28 Oct 2026)
+### Unloaded reference check at the prior J4 = 87° reference (28 Oct 2026)
 
-The active candidate zeros/signs above and the start-up home are unchanged.
-On the installed arm, supported and unloaded, the five positioning joints were
-set to exactly J1..J5 = 85, 145, 85, 87, 100° with J6 = 0. The two jaw-tip
-heights measured from the floor/underplate were 445 and 440 mm; their mean is
-442.5 mm. These are jaw-tip heights, not a held-block or object-centre
-measurement. The 5 mm difference between the two tips is unexplained; it is not
-turned into individual tip coordinates. No block was held during this check, so
-object-centre alignment is **not** validated.
+This check belongs to the **prior** J4 = 87° reference and was not repeated at
+the active J3 = 88° / J4 = 88° reference. At that time the then-active candidate
+zeros were 85, 145, 85, 87, 100° and the start-up home was unchanged. On the
+installed arm, supported and unloaded, the five positioning joints were set to
+exactly J1..J5 = 85, 145, 85, 87, 100° with J6 = 0. The two jaw-tip heights
+measured from the floor/underplate were 445 and 440 mm; their mean is 442.5 mm.
+These are jaw-tip heights at J4 = 87°, not a held-block or object-centre
+measurement, and must not be relabelled as a measurement at the active
+J3 = 88° / J4 = 88° reference. The 5 mm difference between the two tips is
+unexplained; it is not turned into individual tip coordinates. No block was held
+during this check, so object-centre alignment is **not** validated. This 445/440
+pair is kept only as history at the prior reference; the gear-corrected closed
+check below reports both tips at 445 mm.
 
 The straight-up measured chain is shoulder 94 + upper arm 114 + forearm 127 +
-jaw tip 107 = 442 mm. The mean measured tip is 0.5 mm above that:
-`442.5 - 442 = +0.5 mm`. This is one height comparison, not a validation of
-either individual tip.
+jaw tip 107 = 442 mm. The mean of those two prior tips is 0.5 mm above that:
+`442.5 - 442 = +0.5 mm`. This is one historical height comparison, not a
+validation of either individual tip.
+
+### Gripper gear correction and reference heights (28 Oct 2026)
+
+The user corrected/re-fitted the gripper gear. At the closed setpoint
+(J6 = 0°) the jaws now just touch without binding. With the gripper closed, both
+jaw-tip heights measured **445 mm** from the floor/underplate datum. This
+corrects the prior 445/440 pair for the corrected gear; the prior pair is kept
+above only as history.
+
+At the J1..J5 reference (85, 145, 88, 88, 96°; the candidate kinematic zeros),
+the top face of a held object measured **446 mm** from the floor/underplate. The
+block is 15 x 25 x 15 mm with its 15 mm dimension vertical. Assuming that top
+face is level, the object centre is `446 - 15/2 = 438.5 mm`. That matches the
+model zero-pose object-centre z of 438.5 mm within ruler precision, but it is a
+z-only cross-check: it does not validate x/y, orientation or the full FK, and it
+is not a joint-zero check. The loaded J6 holding angle was not specified, so
+40° is only the empty-gripper start-up home, not a loaded angle.
+
+The earlier 453/425 mm readings were separate object-top attempts made before
+the gear correction, not jaw-tip heights. They are superseded and are not used
+for calibration. Do not adjust the link lengths, the object-centre setback
+(3.5 mm) or any other geometry from these readings.
 
 Geometry recorded for the offline reference (mm):
 
@@ -409,10 +445,15 @@ not hidden as exact CAD. The mean jaw-tip height is not used to invent
 individual tip 3D coordinates.
 
 At q = 0 the model object centre is (10.15, 9.52, 438.5) mm, and the separate
-straight-up jaw-tip height is 442 mm. The physical mean tip height was 442.5 mm,
-so the observed residual is +0.5 mm. Because the two tip heights differ by
-5 mm and no block was held, this remains a height cross-check, not an
-object-centre, tool-centre or individual-jaw validation.
+straight-up jaw-tip height is 442 mm. The physical jaw-tip readings at the prior
+J4 = 87° reference were 445/440 mm (mean 442.5, a +0.5 mm historical residual;
+kept only as history). With the corrected gear the closed jaw tips are both
+445 mm, and a held object's top face at the J1..J5 reference is 446 mm. Using
+the block's 15 mm vertical dimension and a level top assumption gives an
+object-centre height of 438.5 mm, which matches the model z within ruler
+precision. This is a z-only cross-check: it does not validate x/y, orientation,
+the J6 loaded angle or the full FK. None of these readings is a tool-centre or
+individual-jaw validation.
 
 The offline check
 `ProjectDevGuide/tests/host/test_kinematic_reference.py` exercises the

@@ -6,13 +6,22 @@ Owner: IK / mechanical member.
 The original alignment pose was POSE43 on the installed arm: servo J1..J5 =
 85, 140, 85, 75, 100 deg, with J6 = 0. Those historical values are kept as
 recorded, and the small 1 deg direction checks were made at that pose. The
-active candidate reference is now J1..J5 = 85, 145, 85, 87, 100 deg: the user
-reported J2 = 145 and J4 = 87 as vertical, so those are the candidate zeros
-used by the mapping. J4 = 87 is an operator-selected roll reference pending
-validation; roll vertical alone does not establish CAD alignment. The signs
-come from the 1 deg checks recorded in
-ProjectDevGuide/docs/servo-calibration.md (the J2 check was 140 -> 141, not
-re-dated to 145; the J5 check was made with J4 at 75, so recheck it at 87).
+active candidate reference is now J1..J5 = 85, 145, 88, 88, 96 deg: the user
+reported J2 = 145 as vertical and supplied J3 = 88, J4 = 88 and J5 = 96 as the
+revised candidate references, so those are the candidate zeros used by the
+mapping. J3 = 88, J4 = 88 and J5 = 96 are user-supplied references; exact CAD
+and physical verification are not established. The signs come from the 1 deg
+checks recorded in ProjectDevGuide/docs/servo-calibration.md (the J2 check was
+140 -> 141, not re-dated to 145; the J4 and J5 checks were made with J4 at 75,
+so the J5 sign still needs a recheck at the active 88). With the corrected
+gripper gear, the closed jaws just touch without binding and both closed
+jaw-tip heights are 445 mm from the floor/underplate. At the J1..J5 reference
+(candidate zeros) a held 15 x 25 x 15 mm block (15 mm vertical, top face assumed level)
+had its top at 446 mm, giving an object-centre height of 438.5 mm. That matches
+the model z within ruler precision only; x/y and the full FK are not validated.
+The loaded J6 holding angle was not specified. The earlier 453/425 mm readings
+were separate object-top attempts before the gear fix, not jaw tips, and are
+superseded.
 
 This is not production FK/IK and not a hardware command. It checks the
 documented zero/sign round trip (excluding the J6 gripper) and the offline
@@ -33,10 +42,10 @@ from arm_fk_reference import (
 )
 
 JOINTS = ("J1", "J2", "J3", "J4", "J5")
-ZERO = dict(zip(JOINTS, (85.0, 145.0, 85.0, 87.0, 100.0)))
+ZERO = dict(zip(JOINTS, (85.0, 145.0, 88.0, 88.0, 96.0)))
 SIGN = dict(zip(JOINTS, (1.0, -1.0, 1.0, 1.0, -1.0)))
 HOME = dict(zip(JOINTS, (85.0, 125.0, 145.0, 90.0, 25.0)))
-REFERENCE = dict(zip(JOINTS, (85.0, 145.0, 85.0, 87.0, 100.0)))
+REFERENCE = dict(zip(JOINTS, (85.0, 145.0, 88.0, 88.0, 96.0)))
 HISTORICAL_POSE43 = dict(zip(JOINTS, (85.0, 140.0, 85.0, 75.0, 100.0)))
 INSTALLED = {  # table min/max from servo_cal.c, used only as sample bounds
     "J1": (0.0, 180.0),
@@ -65,8 +74,8 @@ class KinematicReference(unittest.TestCase):
         observed = (1.0, -1.0, 1.0, 1.0, -1.0)
         for joint, direction in zip(JOINTS, observed):
             # The 1 deg checks were made at the historical POSE43 positions, so
-            # J2 and J4 start at their old zeros. J5's check used J4 = 75; its
-            # sign still needs a recheck at the new J4 = 87 roll.
+            # J2, J3 and J4 start at their old positions. The J5 check used
+            # J4 = 75; its sign still needs a recheck at the active J4 = 88 roll.
             start = HISTORICAL_POSE43[joint]
             delta = joint_from_servo(joint, start + 1.0) - joint_from_servo(joint, start)
             self.assertAlmostEqual(delta, direction)
@@ -91,7 +100,7 @@ class KinematicReference(unittest.TestCase):
                 self.assertAlmostEqual(servo_from_joint(joint, q), servo)
 
     def test_unchanged_home_maps_to_expected_angles(self):
-        expected = (0.0, 20.0, 60.0, 3.0, 75.0)
+        expected = (0.0, 20.0, 57.0, 2.0, 71.0)
         for joint, angle in zip(JOINTS, expected):
             self.assertAlmostEqual(joint_from_servo(joint, HOME[joint]), angle)
 
