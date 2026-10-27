@@ -107,6 +107,37 @@ static void check_servo_cal(int joint, uint16_t us0, uint16_t us90, uint16_t us1
   CHECK(servo_deg_to_us(joint, 135.0f) == (uint16_t)((us90 + us180) / 2u), msg);
 }
 
+static void check_cal_limits_home(int joint, float min_deg, float max_deg,
+                                  float home_deg, uint16_t home_us)
+{
+  char msg[64];
+  const servo_cal_t *c = servo_cal(joint);
+  snprintf(msg, sizeof msg, "J%d safe min limit", joint + 1);
+  CHECK(c->min_deg == min_deg, msg);
+  snprintf(msg, sizeof msg, "J%d safe max limit", joint + 1);
+  CHECK(c->max_deg == max_deg, msg);
+  snprintf(msg, sizeof msg, "J%d home angle", joint + 1);
+  CHECK(c->home_deg == home_deg, msg);
+  snprintf(msg, sizeof msg, "J%d home pulse", joint + 1);
+  CHECK(servo_deg_to_us(joint, c->home_deg) == home_us, msg);
+}
+
+static void check_joint_clamp(int joint, float min_deg, float max_deg)
+{
+  char msg[64];
+  snprintf(msg, sizeof msg, "J%d below-min target clamps", joint + 1);
+  CHECK(motion_set_joint_target(joint, min_deg - 10.0f) == MOTION_CLAMPED &&
+        tgt(joint) == min_deg, msg);
+  snprintf(msg, sizeof msg, "J%d above-max target clamps", joint + 1);
+  CHECK(motion_set_joint_target(joint, max_deg + 10.0f) == MOTION_CLAMPED &&
+        tgt(joint) == max_deg, msg);
+  snprintf(msg, sizeof msg, "J%d boundaries are accepted", joint + 1);
+  CHECK(motion_set_joint_target(joint, min_deg) == MOTION_OK &&
+        tgt(joint) == min_deg &&
+        motion_set_joint_target(joint, max_deg) == MOTION_OK &&
+        tgt(joint) == max_deg, msg);
+}
+
 #if APP_VOICE_DRY_RUN
 /* second build (run.sh, -DAPP_VOICE_DRY_RUN=1): ik is not measured yet, so only a dry run can
  * reach S4 HOLDING and walk "hand" and "station" end to end. moves are read back from the dry-run log. */
@@ -242,28 +273,53 @@ int main(void)
   CHECK(e.v[0] == 0, "fifo order");
   app_events_drain(); app_events_init();
 
-  printf("== servo calibration (measured unloaded endpoints; limits/home are placeholders)\n");
+  printf("== servo calibration (measured unloaded endpoints; installed homes/limits)\n");
   check_servo_cal(J1_BASE,         500, 1460, 2430);
   check_servo_cal(J2_SHOULDER,     500, 1430, 2440);
   check_servo_cal(J3_ELBOW,        540, 1530, 2500);
   check_servo_cal(J4_WRIST_ROLL,   500, 1440, 2370);
   check_servo_cal(J5_WRIST_PITCH,  640, 1580, 2470);
-  check_servo_cal(J6_GRIPPER,      580, 1570, 2500);
+  check_servo_cal(J6_GRIPPER,      500, 1380, 2300);
   CHECK(strcmp(servo_cal(J4_WRIST_ROLL)->name, "J4 WRIST ROLL") == 0, "J4 is wrist roll");
   CHECK(strcmp(servo_cal(J5_WRIST_PITCH)->name, "J5 WRIST PITCH") == 0, "J5 is wrist pitch");
   CHECK(servo_deg_to_us(0, 250.0f) == 2430, "out of range clamps");
+  CHECK(servo_deg_to_us(J6_GRIPPER, 60.0f) == 1087, "J6 60 deg safe max pulse");
+  CHECK(servo_deg_to_us(J6_GRIPPER, 250.0f) == 2300, "J6 clamps to its 180 deg anchor");
+  CHECK(servo_deg_to_us(J6_GRIPPER, -10.0f) == 500, "J6 clamps to its 0 deg anchor");
+
+  printf("== installed homes and conservative limits\n");
+  check_cal_limits_home(J1_BASE,         0.0f, 180.0f,  85.0f, 1407);
+  check_cal_limits_home(J2_SHOULDER,   100.0f, 180.0f, 125.0f, 1823);
+  check_cal_limits_home(J3_ELBOW,       45.0f, 180.0f, 145.0f, 2123);
+  check_cal_limits_home(J4_WRIST_ROLL,   0.0f, 180.0f,  90.0f, 1440);
+  check_cal_limits_home(J5_WRIST_PITCH, 25.0f, 140.0f,  25.0f, 901);
+  check_cal_limits_home(J6_GRIPPER,      0.0f,  60.0f,  35.0f, 842);
+
+  printf("== motion clamps to the installed boundaries\n");
+  motion_init();
+  check_joint_clamp(J1_BASE,         0.0f, 180.0f);
+  check_joint_clamp(J2_SHOULDER,   100.0f, 180.0f);
+  check_joint_clamp(J3_ELBOW,       45.0f, 180.0f);
+  check_joint_clamp(J4_WRIST_ROLL,   0.0f, 180.0f);
+  check_joint_clamp(J5_WRIST_PITCH, 25.0f, 140.0f);
+  check_joint_clamp(J6_GRIPPER,      0.0f,  60.0f);
 
   printf("== boot: no pulse until the first tick, then home\n");
   motion_init(); pi_link_init(); lcd_init(); modes_init();
   CHECK(htim3.ccr[0] == 0, "no pulse before the first control tick");
   CHECK(safety_state() == SAFETY_OK, "no e-stop: safety ok at boot");
   run_ms(100);
-  CHECK(htim3.ccr[0] == 1460, "first pulse = home pose (90 deg)");
+  CHECK(htim3.ccr[0] == 1407, "J1 first pulse = home 85 deg (1407 us)");
+  CHECK(htim3.ccr[1] == 1823, "J2 first pulse = home 125 deg (1823 us)");
+  CHECK(htim4.ccr[0] == 2123, "J3 first pulse = home 145 deg (2123 us)");
+  CHECK(htim4.ccr[1] == 1440, "J4 first pulse = home 90 deg (1440 us)");
+  CHECK(htim4.ccr[2] == 901,  "J5 first pulse = home 25 deg (901 us)");
+  CHECK(htim4.ccr[3] == 842,  "J6 first pulse = home 35 deg (842 us)");
 
   printf("== voice mode: never moves on its own\n");
   CHECK(modes_current() == MODE_VOICE, "boots in voice mode");
   run_ms(500);
-  CHECK(cur(0) == 90.0f, "idle voice mode does not move");
+  CHECK(cur(0) == 85.0f, "idle voice mode does not move");
 
   printf("== mode switch from the lcd mode cards\n");
   app_event_post(EVT_TOUCH_MODE_TAB, MODE_CARTESIAN, 0, 0, 0); run_ms(60);
@@ -274,7 +330,7 @@ int main(void)
   printf("== manual motion: no hold-to-enable any more\n");
   motion_set_joint_target(J1_BASE, 100.0f);
   run_ms(500);
-  CHECK(cur(0) > 94.5f && cur(0) < 95.5f, "fine speed 10 deg/s: ~5 deg in 0.5 s");
+  CHECK(cur(0) > 89.5f && cur(0) < 90.5f, "fine speed 10 deg/s: ~5 deg in 0.5 s");
 
   printf("== jog timeout: a stale jog stops by itself\n");
   motion_jog(J2_SHOULDER, 10.0f);                  /* sent once, never refreshed */
@@ -344,8 +400,9 @@ int main(void)
   say("no");
   CHECK(strcmp(screen_line(0), "S10 STOPPED") == 0, "no -> back to S10, still holding");
   say("home"); say("yes");
-  run_ms(15000);   /* gripper 90->30 at 10 deg/s = 6 s, then 30 deg back home = 3 s */
-  CHECK(cur(0) == 90.0f, "home from S10 reaches home");
+  run_ms(15000);   /* Allow the configured gripper step and arm-home move to finish.
+                   * This checks completion, not physical open/close direction. */
+  CHECK(cur(0) == 85.0f, "home from S10 reaches home");
   CHECK(strcmp(screen_line(0), "S0 IDLE") == 0, "then back to S0");
   CHECK(cur(5) == APP_GRIPPER_OPEN_DEG, "home from S10 opened the gripper");
 
@@ -356,7 +413,7 @@ int main(void)
   at = cur(0);
   run_ms(40);
   CHECK(safety_state() == SAFETY_FATAL_FAULT, "fatal fault -> safety FAULT");
-  CHECK(cur(0) == at && at > 90.0f, "fault freezes mid-move");
+  CHECK(cur(0) == at && at > 85.0f && at < 120.0f, "fault freezes mid-move");
   CHECK(tgt(0) == at, "target reset to the current angle (nothing jumps later)");
   run_ms(1000);
   CHECK(cur(0) == at, "stays frozen");
