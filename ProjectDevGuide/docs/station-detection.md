@@ -21,6 +21,13 @@ colours (blue 80, red 70, black 63, green 50; red and green tops had no depth, p
 spot correctly reported FULL. With 3 blocks on it the drop "+" was drawn on the free end (conf 89). **Open:** in the
 same layout one snapshot found it and the next did not: the measured length sits at the 10 mm trust limit. Measure
 the real top and set it as `STATION_SIZE_MM` (the bridge's 1 s hold hides single-frame misses, snapshots do not).
+Later the same day (`pi_bridge.py --snapshot`, blocks + hand): station found, conf 82, **199 x 96 mm** (no longer at
+the limit), 2 blocks on it, drop spot, green on the table and the hand (c78, 26 of 26 frames) all at once.
+
+**Known limit: a hand (or arm part) within about 6 cm of the station, at about its height, hides it.** The depth
+search joins the two into one shape that is too big, so the station is NOT found; it is never reported in the wrong
+place (test `hand_beside_station`). A rebuild that tried to leave the hand out was tried and dropped: with patchy
+depth it placed the station 80-100 mm off. Ask `FIND station` with hands and the arm away from it.
 
 ## 1. The station
 
@@ -133,13 +140,17 @@ valid while it does not move): measure the height and angle that work and build 
 `tools/pi/ir_check.py` saves the infrared view with the projector off and on, to check that the projector works
 when the depth looks poor (service stopped, `python ir_check.py`).
 
-## 7. What the STM32 still needs (other owners, nothing done)
+## 7. STM32 side (done 27 Oct 2026, with Supanut)
 
-| Owner | File | Change |
-|---|---|---|
-| Core | `App/common/app_types.h` | `OBJ_STATION` after `OBJ_HAND` (not a box, outside `OBJ_BOX_COUNT`) |
-| Pi member | `App/pi_link/pi_proto.c` | name `"station"` in `OBJ_NAMES` |
-| Voice member | `App/modes/mode_voice.c` | `station` + `yes` sends `FIND station` (like `hand`) instead of the fixed `DEST_STATION` pose |
+| File | Change |
+|---|---|
+| `App/common/app_types.h` | `OBJ_STATION` after `OBJ_HAND` (not a box, outside `OBJ_BOX_COUNT`; `OBJ_COUNT` is now 6) |
+| `App/pi_link/pi_proto.c` | name `"station"` in `OBJ_NAMES` |
+| `App/modes/mode_voice.c` | `station` + `yes` sends `FIND station` (like `hand`) instead of the fixed `DEST_STATION` pose; the reply's drop spot is placed with the gripper opening `STATION_RELEASE_MM` (20 mm placeholder) above it; `NOTFOUND` shows `STATION NOT FOUND` and asks again |
+| `ProjectDevGuide/tests/host/` | `OBJ station` / `NOTFOUND station` parsing; dry run walks `station` end to end (FIND, NOTFOUND, a hand reply ignored, place above the drop spot, never down to it) |
+
+Bench check without voice: `APP_INPUT_TEST 1` + `APP_INPUT_TEST_CYCLE 1` in `app_config_local.h` now also sends
+`FIND station` (every object in turn).
 
 ## 8. Still open
 

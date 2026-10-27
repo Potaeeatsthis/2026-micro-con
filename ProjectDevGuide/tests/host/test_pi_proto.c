@@ -77,7 +77,13 @@ int main(void)
   CHECK(strcmp(pi_object_name(OBJ_HAND), "hand") == 0, "name of hand");
   CHECK(pi_object_from_name("hand") == OBJ_HAND, "hand from name");
   CHECK(pi_object_from_name("Hand") == OBJ_NONE, "names are case-sensitive");
-  CHECK(OBJ_BOX_COUNT == 4 && OBJ_HAND == OBJ_BOX_COUNT && OBJ_COUNT == 5, "4 boxes, then hand");
+  CHECK(OBJ_BOX_COUNT == 4 && OBJ_HAND == OBJ_BOX_COUNT && OBJ_STATION == OBJ_HAND + 1 && OBJ_COUNT == 6,
+        "4 boxes, then hand, then station");
+  CHECK(strcmp(pi_object_name(OBJ_STATION), "station") == 0, "name of station");
+  CHECK(pi_object_from_name("station") == OBJ_STATION, "station from name");
+  CHECK(parse("OBJ station -34 -11 360") == PI_OK && g_msg.obj == OBJ_STATION && g_msg.xyz[2] == 360, "OBJ station parses");
+  CHECK(parse("NOTFOUND station") == PI_OK && g_msg.type == PI_MSG_NOTFOUND && g_msg.obj == OBJ_STATION,
+        "NOTFOUND station parses");
   CHECK(parse("OBJ hand 101 -4 279") == PI_OK && g_msg.obj == OBJ_HAND && g_msg.xyz[2] == 279, "OBJ hand parses");
   CHECK(parse("NOTFOUND hand") == PI_OK && g_msg.type == PI_MSG_NOTFOUND && g_msg.obj == OBJ_HAND, "NOTFOUND hand parses");
 

@@ -1008,8 +1008,9 @@ def draw_station(img, det, T=None):
 def station_line(det, T):
     """One text line for the station, in the frame being sent (T = camera -> base)."""
     s = getattr(det, "station", None)
-    if s is None:
-        return "station: none" + (f" ({det.station_rejects[0][1]})" if getattr(det, "station_rejects", None) else "")
+    if s is None:  # the biggest rejected candidate is the one most likely to be the station
+        rej = sorted(getattr(det, "station_rejects", []), key=lambda r: -r[0][2] * r[0][3])
+        return "station: none" + (f" ({rej[0][1]})" if rej else "")
     to_mm = lambda p: (T[:3, :3] @ p + T[:3, 3]) * 1000.0  # noqa: E731
     cx, cy, cz = to_mm(s["centre_cam_m"])
     drop = ("full" if s["drop_cam_m"] is None else "drop %.0f %.0f %.0f mm" % tuple(to_mm(s["drop_cam_m"])))

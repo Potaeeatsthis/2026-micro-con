@@ -48,7 +48,7 @@ typedef enum {
   MODE_COUNT
 } arm_mode_t;
 
-/* objects the pi can find; names match the pi protocol (blue_box ... hand) */
+/* objects the pi can find; names match the pi protocol (blue_box ... hand, station) */
 typedef enum {
   OBJ_BLUE_BOX = 0,
   OBJ_GREEN_BOX,
@@ -56,6 +56,7 @@ typedef enum {
   OBJ_BLACK_BOX,
   OBJ_BOX_COUNT,               /* boxes only (voice words, colours) */
   OBJ_HAND = OBJ_BOX_COUNT,    /* palm centre from the pi, may move */
+  OBJ_STATION,                 /* free drop spot on the station top, from the pi (found by depth) */
   OBJ_COUNT,
   OBJ_NONE = 0xFF
 } object_id_t;

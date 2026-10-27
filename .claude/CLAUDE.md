@@ -19,6 +19,8 @@
   shallow gave ~50% missing depth). Box on the real camera (27 Oct): found, conf 83, top 45 mm, size
   191 x 95 (measure the real top), 4 blocks on it right colour, drop FULL / "+" on the free end. OPEN: found
   and not found in the same layout (length at the 10 mm trust limit) -> set the measured size as the default.
+- Hand/arm within ~6 cm of the station at its height hides it (NOTFOUND, never misplaced). Do NOT add a "grow /
+  leave the hand out" rebuild again: tried 27 Oct, it misplaced the station by 80-100 mm with patchy depth.
 - Output: `det.station` = {centre_cam_m, corners_cam_m, size_mm, top_mm, yaw, drop_cam_m, n_blocks, conf} or
   None. Pi link: `FIND station` -> `OBJ station x y z` (drop spot) / `NOTFOUND station`.
 
@@ -28,5 +30,7 @@
 - Test in simulation first (`ProjectDevGuide/tools/pi/test_station_sim.py`), then on the real camera.
 - Explain changes in simple words; give exact commands for the Pi (SSH) and Windows PowerShell.
   `scp` always needs a destination as its LAST argument (a missing one once overwrote `color_refs.json`).
-- STM32 changes (`OBJ_STATION` in `App/common/app_types.h`) belong to the core owner: write down what is
-  needed, never edit core files (AGENTS.md).
+- Core files (`App/common/`, safety, app.c ...) belong to Supanut: edit them only when he approves (27 Oct he
+  did, for `OBJ_STATION`); otherwise write down what is needed (AGENTS.md).
+- STM32 side done 27 Oct: `OBJ_STATION`, `"station"` in pi_proto.c, voice `station`+`yes` -> FIND station,
+  `STATION_RELEASE_MM` 20 mm placeholder. Board round trip not tested yet.

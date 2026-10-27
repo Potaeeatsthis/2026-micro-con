@@ -1,7 +1,7 @@
 #!/bin/sh
 # host behaviour tests for safety / motion / modes / mode_voice / pi_link / events,
 # plus test_pi_proto.c for the pi line parser (pi_link/pi_proto.c, pure code),
-# plus test_app.c again as a voice dry run (voice "hand" end to end; ik is not measured yet).
+# plus test_app.c again as a voice dry run (voice "hand" and "station" end to end; ik is not measured yet).
 # the screen logic (lcd.c) is tested; the real lcd_port.c talks to the ILI9341 driver (HAL), so a fake
 # in fake/lcd_port_fake.c stands in for it here.
 # needs gcc on a pc (linux, mac, or git-bash/msys2 on windows). run from anywhere:

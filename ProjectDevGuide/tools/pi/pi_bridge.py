@@ -403,10 +403,11 @@ def snapshot(arm_dir, python, model, blocks=False, seconds=5.0):
         say(f"hand snapshot: position on {found} of {n} frames; best: {hand_txt} -> {path}")
         return
     status = f"{len(bl)} block(s)" + ("" if plane else " | NO TABLE PLANE")
-    left = pi_hand.draw(pv.draw(color.copy(), bl, np.eye(4), status), r, text_top=True)
-    if hasattr(pv, "draw_station"):
+    left = pv.draw(color.copy(), bl, np.eye(4), status)
+    if hasattr(pv, "draw_station"):  # before pi_hand.draw: it doubles the picture size
         det.station = st_best  # the station of the saved frame
         pv.draw_station(left, det)
+    left = pi_hand.draw(left, r, text_top=True)
     dvis = cv2.applyColorMap(cv2.convertScaleAbs(depth, alpha=255.0 / 1500), cv2.COLORMAP_JET)
     dvis[depth == 0] = 0
     path = os.path.join(arm_dir, "snapshot.jpg")

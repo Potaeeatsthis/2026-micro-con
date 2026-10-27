@@ -413,7 +413,29 @@ def t_sweep(save):
         check(false == 0, f"{label}: no false station from a hand-sized box + arm bar ({false}/20)")
 
 
-TESTS = [t_station_yaw, t_patchy_depth, t_sweep, t_blocks_both_surfaces, t_drop_spot_busy, t_station_full, t_camera_close, t_no_false_station,
+def t_hand_beside_station(save):
+    """A palm-sized flat thing at station height next to the station joins it in the depth: the station may be
+    NOT found (seen on the real camera, 27 Oct), but it must never be reported in the wrong place."""
+    pose = camera_pose()
+    st = station_box(0, 250, 0)
+    on_st = [on_station(st, -40, 0, "black"), on_station(st, 10, 0, "red")]
+    L, Wd, H = STATION
+    found, worst = 0, 0.0
+    for kw in ({}, dict(blob_holes=0.4, depth_noise_mm=3.0)):
+        for gap in (5, 15, 25, 40, 60, 90):
+            for dx, dy in ((1, 0), (-1, 0), (0, 1)):
+                hand = Box(dx * (L / 2 + gap + 35), 250 + dy * (Wd / 2 + gap + 45), 70, 90, H + 5, 20, (210, 160, 140))
+                col, dep = render([st, hand] + on_st, pose, seed=5 + gap, **kw)
+                det = new_detector()
+                run(det, col, dep)
+                if det.station is not None:
+                    found += 1
+                    worst = max(worst, np.linalg.norm(det.station["centre_cam_m"] * 1000 - world_to_cam_mm(st.top_centre(), pose)))
+    print(f"  info  hand beside the station: found in {found} of 36 scenes (missed = hand within ~6 cm)")
+    check(worst <= 8, f"hand beside: when found, centre error max {worst:.1f} mm (<= 8, never misplaced)")
+
+
+TESTS = [t_station_yaw, t_hand_beside_station, t_patchy_depth, t_sweep, t_blocks_both_surfaces, t_drop_spot_busy, t_station_full, t_camera_close, t_no_false_station,
          t_table_unchanged, t_timing]
 
 

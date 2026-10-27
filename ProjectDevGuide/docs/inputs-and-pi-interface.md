@@ -151,7 +151,7 @@ The service passes `--camera-frame`. Once the team relies on calibration, remove
 | Detector, colours, calibration | `~/arm/pi_vision_uart.py`, `color_refs.json`, `calib_T.npy` (on the Pi) | camera member |
 | Event ids | `RoboticArmMain/App/common/app_events.h` | core |
 
-## 5. Station (Pi side built, STM32 side not yet)
+## 5. Station
 
 The bridge also answers `FIND station`:
 
@@ -166,7 +166,8 @@ The bridge also answers `FIND station`:
 - The STM32 adds the release height, as for `hand`. Same frame and units as the blocks.
 - `--snapshot` (pi_vision_uart and pi_bridge) draws the station and its drop "+"; `--no-station` turns it off.
 - Teach block colours **on the station** too (`--learn-color` with the block on it saves `red@station`).
+- STM32 side (27 Oct 2026): `OBJ_STATION` in `object_id_t` (after `OBJ_HAND`, outside `OBJ_BOX_COUNT`), the name
+  `"station"` in `pi_proto.c`; voice mode sends `FIND station` after `station` + `yes`.
 - Tested in simulation and on the real camera with the box (27 Oct 2026: found, 4 blocks on it with the right
-  colour, drop spot shown; `FIND station` through the bridge not yet tested on the Pi). How it works, test results,
-  camera placement and what the STM32 still
-  needs (`OBJ_STATION`, `"station"` in `pi_proto.c`, `mode_voice.c`): [`station-detection.md`](station-detection.md).
+  colour, drop spot shown). The full STM32 -> Pi `FIND station` round trip is not tested on the board yet.
+  How it works and test results: [`station-detection.md`](station-detection.md).

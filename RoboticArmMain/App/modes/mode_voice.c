@@ -20,6 +20,9 @@
  * "hand" (26 Oct 2026): no fixed pose. "yes" in S7 sends FIND hand and S7 waits (only "stop"
  * accepted); the reply's palm centre is the target, read once, and the gripper opens
  * HAND_RELEASE_MM above it, never at the palm. not found / no reply: back to the S7 / S4 choice.
+ * "station" (27 Oct 2026): found by the pi too (depth), so it can be moved. the same flow as the hand:
+ * "yes" sends FIND station; the reply is the free drop spot ON the station top, and the gripper opens
+ * STATION_RELEASE_MM above it (the held block hangs below the gripper). no free spot = NOTFOUND.
  *
  * multi-step moves (grasp, place, go home, jog queue) are "scripts": a short list of
  * steps run one after another, the next step starts on EVT_MOTION_DONE. a stop, an
@@ -33,7 +36,8 @@
  *   APP_VOICE_FAKE_PI  a box word in S1 gets an instant fake OBJ reply (FAKE_OBJ_MM), no pi.
  *
  * still TODO (marked TODO(voice) / TODO(ik)):
- *   - destination poses (station / base) from calibration
+ *   - destination pose (base) from calibration
+ *   - STATION_RELEASE_MM: block height under the gripper + clearance (measure on the real gripper)
  *   - HAND_RELEASE_MM: how high above the palm the gripper opens (team decision)
  *   - jog direction vectors in the robot-base frame, queue travel limit
  *   - grasp / place heights, approach distance
@@ -63,6 +67,11 @@
 #define HAND_RELEASE_MM    30.0f
 /* below "above", so the release pose is a real move (a no-move step never reports done) */
 _Static_assert((int)HAND_RELEASE_MM > 0 && (int)HAND_RELEASE_MM < (int)APPROACH_MM, "0 < HAND_RELEASE_MM < APPROACH_MM");
+/* TODO(voice): gripper height above the station top where it opens: the held block's height below the
+ * gripper + a few mm, so the block sits on the top instead of being pushed into it */
+#define STATION_RELEASE_MM 20.0f
+_Static_assert((int)STATION_RELEASE_MM > 0 && (int)STATION_RELEASE_MM < (int)APPROACH_MM,
+               "0 < STATION_RELEASE_MM < APPROACH_MM");
 #define JOG_MAX_ITEMS      10      /* guide: bounded queue */
 #define JOG_MAX_TRAVEL_MM  300.0f  /* TODO(voice): validate on the real arm */
 #define JOG_DEFAULT_MM     20
@@ -76,7 +85,7 @@ static const cart_pose_t DRY_START_POSE = { 0.0f, 0.0f, 200.0f, 0.0f };
 static const int32_t FAKE_OBJ_MM[3] = { 182, -45, 30 };   /* same example as the pi protocol docs */
 #endif
 
-/* hand is not a fixed pose: "yes" asks the pi (FIND hand) for the palm centre at that moment */
+/* hand and station are not fixed poses: "yes" asks the pi (FIND hand / FIND station) at that moment */
 typedef enum { DEST_HAND = 0, DEST_STATION, DEST_BASE, DEST_HERE, DEST_COUNT } dest_t;
 static const char *const DEST_NAME[DEST_COUNT] = { "HAND", "STATION", "BASE", "HERE" };
 
@@ -84,7 +93,7 @@ static const char *const DEST_NAME[DEST_COUNT] = { "HAND", "STATION", "BASE", "H
 #define DEST_CALIBRATED 0
 static const cart_pose_t DEST_POSE[3] = {
   { 0.0f, 0.0f, 0.0f, 0.0f },   /* hand: unused, the position comes from the pi */
-  { 0.0f, 0.0f, 0.0f, 0.0f },   /* station */
+  { 0.0f, 0.0f, 0.0f, 0.0f },   /* station: unused, the drop spot comes from the pi */
   { 0.0f, 0.0f, 0.0f, 0.0f },   /* base */
 };
 
@@ -351,7 +360,7 @@ static uint32_t accepted_words(void)
       if (!s_pi_wait) for (int i = 0; i < (int)OBJ_BOX_COUNT; i++) m |= bit(W.box[i]);
       break;
     case S7_CONFIRM_PLACE:
-      if (!s_pi_wait) m |= bit(W.yes) | bit(W.no);   /* finding the hand: only stop */
+      if (!s_pi_wait) m |= bit(W.yes) | bit(W.no);   /* finding the hand / station: only stop */
       break;
     case S2_CONFIRM_OBJECT: case S11_CONFIRM_HOME:
       m |= bit(W.yes) | bit(W.no);
@@ -412,12 +421,16 @@ static void place_at(const cart_pose_t *target, float release_mm)
   (void)script_start(S8B_PLACING);
 }
 
-/* the hand moves, so its position is asked for after "yes", not when "hand" was said.
- * stays in S7 until the reply; EVT_PI_OBJECT then calls place_at() */
-static void find_hand(void)
+/* destinations the pi finds (they can move); the rest are fixed poses */
+static bool dest_from_pi(dest_t d) { return d == DEST_HAND || d == DEST_STATION; }
+static object_id_t dest_obj(dest_t d) { return d == DEST_HAND ? OBJ_HAND : OBJ_STATION; }
+
+/* the hand (and the station) can move, so the position is asked for after "yes", not when the word
+ * was said. stays in S7 until the reply; EVT_PI_OBJECT then calls place_at() */
+static void find_dest(void)
 {
 #if APP_USE_PI
-  if (pi_link_find(OBJ_HAND)) s_pi_wait = true;
+  if (pi_link_find(dest_obj(s_dest))) s_pi_wait = true;
   else lcd_show_message("PI BUSY", 2000u);
 #else
   lcd_show_message("PI DISABLED", 2000u);
@@ -427,8 +440,8 @@ static void find_hand(void)
 static void start_place(void)
 {
   cart_pose_t target;
-  if (s_dest == DEST_HAND) {
-    find_hand();
+  if (dest_from_pi(s_dest)) {
+    find_dest();
     return;
   }
   if (s_dest == DEST_HERE) {
@@ -542,7 +555,7 @@ static void on_word(int w)
     }
 
     case S7_CONFIRM_PLACE:
-      if (s_pi_wait) break;                          /* finding the hand: only stop (handled above) */
+      if (s_pi_wait) break;                          /* finding the hand / station: only stop (handled above) */
       if (w == W.yes) start_place();                 /* on failure it stays here: say no */
       else if (w == W.no) set_state(s_return);
       break;
@@ -642,10 +655,10 @@ static void on_event(const app_event_t *e)
       break;
 
     case EVT_PI_OBJECT:
-      if (s_state == S7_CONFIRM_PLACE && s_pi_wait && (object_id_t)e->arg == OBJ_HAND) {
+      if (s_state == S7_CONFIRM_PLACE && s_pi_wait && dest_from_pi(s_dest) && (object_id_t)e->arg == dest_obj(s_dest)) {
         s_pi_wait = false;
-        cart_pose_t palm = { (float)e->v[0], (float)e->v[1], (float)e->v[2], 0.0f };  /* TODO(ik): place orientation */
-        place_at(&palm, HAND_RELEASE_MM);            /* on failure it stays in S7: say yes again or no */
+        cart_pose_t target = { (float)e->v[0], (float)e->v[1], (float)e->v[2], 0.0f };  /* TODO(ik): place orientation */
+        place_at(&target, s_dest == DEST_HAND ? HAND_RELEASE_MM : STATION_RELEASE_MM);  /* on failure: stays in S7 */
       }
       else if (s_state == S1_WAIT_OBJECT && s_pi_wait && (object_id_t)e->arg == s_obj) {
         s_pi_wait = false;
@@ -660,7 +673,8 @@ static void on_event(const app_event_t *e)
     case EVT_PI_NOTFOUND:
       if (s_pi_wait) {
         s_pi_wait = false;
-        lcd_show_message(s_state == S7_CONFIRM_PLACE ? "HAND NOT FOUND" : "BOX NOT FOUND", 3000u);
+        lcd_show_message(s_state != S7_CONFIRM_PLACE ? "BOX NOT FOUND"
+                         : s_dest == DEST_HAND ? "HAND NOT FOUND" : "STATION NOT FOUND", 3000u);
       }
       break;
 
@@ -668,7 +682,7 @@ static void on_event(const app_event_t *e)
       if (s_pi_wait) {
         s_pi_wait = false;
         lcd_show_message("PI NOT RESPONDING", 3000u);
-        set_state(s_state == S7_CONFIRM_PLACE ? s_return : S0_IDLE);   /* finding the hand: still holding */
+        set_state(s_state == S7_CONFIRM_PLACE ? s_return : S0_IDLE);   /* finding hand / station: still holding */
       }
       break;
 
@@ -711,7 +725,7 @@ static void describe(char (*lines)[LCD_COLS], int n)
     } else if (s_state == S6_JOG_QUEUE) {
       snprintf(lines[1], LCD_COLS, "Queue %d/%d step %d mm", s_queue_n, JOG_MAX_ITEMS, s_jog_step_mm);
     } else if (s_state == S7_CONFIRM_PLACE && s_pi_wait) {
-      snprintf(lines[1], LCD_COLS, "Finding hand");
+      snprintf(lines[1], LCD_COLS, "Finding %s", s_dest == DEST_HAND ? "hand" : "station");
     } else if (s_state == S7_CONFIRM_PLACE) {
       snprintf(lines[1], LCD_COLS, "Place at %s?", DEST_NAME[s_dest]);
     } else if (s_state == S11_CONFIRM_HOME) {

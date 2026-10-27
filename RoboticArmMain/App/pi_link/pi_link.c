@@ -14,7 +14,7 @@
  *
  * APP_INPUT_TEST (app_config_local.h only): sends FIND <APP_INPUT_TEST_OBJ> every
  * APP_INPUT_TEST_FIND_MS and prints link counters once a second when they change.
- * APP_INPUT_TEST_CYCLE 1 asks for all four objects in turn instead (camera test).
+ * APP_INPUT_TEST_CYCLE 1 asks for every object in turn instead (4 boxes, hand, station: camera test).
  * needs APP_USE_MODES 0 (the voice mode would also send FIND) and APP_USE_MOTION 0.
  */
 #include "pi_link/pi_link.h"
