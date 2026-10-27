@@ -418,7 +418,7 @@ not fitted yet; joint limits are always enforced in software as well.
 
 | # | Item | Needed for |
 |---|---|---|
-| 1 | Arm geometry for IK (joint order, link lengths, zero pose) | `kinematics/` only — not the `.ioc` |
+| 1 | Arm link lengths for IK (measured floor→J2 = 94 mm; CAD base-bottom→J2 = 90.22 mm); the floor↔base-bottom stand offset is still unmeasured; robot-base frame and straight-up zero joint axes are fixed in `App/kinematics/kinematics.h` and `arm_geometry.h`; installed calibration still open | `kinematics/` only — not the `.ioc` |
 | 2 | Pi message format details; Pi sends object XYZ in the **robot base frame**? | `pi_link/` only — not the `.ioc` |
 | 3 | Installed servo calibration: safe min/max, joint zero and home (unit-to-joint mapping confirmed J1-J6 = units 1-6) | `motion/` only — not the `.ioc` |
 | 4 | Optional PG9 pull-up (removes the boot-time `fault: code 7` without a Pi) | `.ioc`, owner's choice |

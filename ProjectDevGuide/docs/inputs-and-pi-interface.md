@@ -53,8 +53,22 @@ What the numbers mean:
 
 - **Colour** = the name: `red_box`, `green_box`, `blue_box`, `black_box` (`OBJ_RED_BOX` … in `object_id_t`,
   `OBJ_BOX_COUNT` of them). `hand` (`OBJ_HAND`) comes after the boxes, see below.
-- **x y z** = integer mm, **robot-base frame**: origin on the base axis at the mounting plane, +X forward,
-  +Y left, +Z up. The point is the **centre of the block's top face**.
+- **x y z** = integer mm, **robot-base frame**: right-handed, +X forward, +Y left, +Z up. The intended
+  origin is on the base axis at the floor, but the floor-to-base-bottom (stand) offset is not measured,
+  so the floor-origin transform is not confirmed. The CAD conversion below maps to the **base-bottom
+  (mounting/table) plane**, with `z_B = 0` there; floor height is `z_floor = z_B + s` for the unknown
+  stand offset `s`.
+  CAD **direction vectors** map as `x = -X_cad`, `y = Z_cad`, `z = Y_cad` (CAD is Y-up). For **points**,
+  use `x = -X_cad`, `y = Z_cad - 18.18`, `z_B = Y_cad + 30.5` mm, i.e. `p_B = R * (p_cad - o)` with
+  `R * (X,Y,Z) = (-X,Z,Y)` and `o = (0, -30.5, 18.18)` mm in CAD coordinates. This is the
+  **base-bottom-plane origin**, not a floor origin; do not claim a measured floor transform without
+  measuring the stand. The workbook records measured floor-to-J2 = `94 mm` and CAD base-bottom-to-J2 =
+  `90.22 mm` (`Real Arm Check` C6 is `CHECK`, 3.78 mm > 2 mm tolerance); the 3.78 mm difference is not
+  an independently measured stand thickness. The reported point is the **centre of the block's top face**.
+- At the straight-up zero pose the positive joint axes (right-hand rule) are **J1 +Z** base yaw,
+  **J2 +Y** shoulder pitch, **J3 +Y** elbow pitch, **J4 +Z** wrist roll, **J5 +Y** wrist pitch.
+  J6 is the gripper and is not part of positioning IK. These are chosen model signs, not measured servo
+  or PWM directions; the definitions live in `App/kinematics/kinematics.h` and `arm_geometry.h`.
 - The Pi does detection, depth and the camera → base transform. **The STM32 does IK and the grasp offset**
   (where to close the gripper below the top face).
 - One request at a time. A reply for a request that is no longer pending is ignored and logged.
