@@ -6,13 +6,24 @@ runs in an ISR.
 
 ## Activation state
 
-`ARM_GEOMETRY_MEASURED` is currently **0** in `arm_geometry.h`. Both `kin_fk()` and
-`kin_ik()` then return `KIN_NOT_READY` immediately, before any input check. The LCD
-shows `---`, Cartesian stays not ready, and Voice cannot start an IK move. The guard
-can be overridden only for a host test with `-DARM_GEOMETRY_MEASURED=1`; firmware
-stays fail-closed until the owner explicitly changes the default.
+FK and IK have separate guards in `arm_geometry.h` (28 Oct 2026):
 
-`ARM_GEOMETRY_MEASURED` is an activation guard, not a claim that the arm is measured.
+| Guard | Default | Effect |
+|---|---|---|
+| `ARM_FK_ENABLED` | **1** | `kin_fk()` works. The manual-mode LCD pages show X/Y/Z labelled **"XYZ ESTIMATED, mm"**: FK of the *commanded* angles (no joint sensors) with candidate zeros, so an estimate, not a measurement. FK never commands motion. |
+| `ARM_GEOMETRY_MEASURED` | **0** | The IK activation guard. `kin_ik()` returns `KIN_NOT_READY` immediately, before any input check, so Voice cannot start an IK move. Cartesian mode stays blocked (shows `IK DISABLED`; knob, joystick and gripper do nothing) because it requires `kin_ik_enabled()`, not just a working FK. |
+
+`kin_fk_enabled()` / `kin_ik_enabled()` report the two guards at run time. The IK guard can be
+overridden only for a host test with `-DARM_GEOMETRY_MEASURED=1`; firmware stays IK-fail-closed
+until the owner explicitly changes the default. `ARM_GEOMETRY_MEASURED` is an activation guard,
+not a claim that the arm is measured.
+
+Before activating IK: resolve the placeholder voice grasp/place pitch values, handle rejected or
+clamped motion results correctly in the IK callers, then validate selected, physically clear poses.
+
+**Board check (FK only):** at J1..J5 = 85, 145, 88, 88, 96 deg (the candidate zeros) the LCD should
+show about **10, 9, 438** (X/Y/Z, whole mm; FK gives 10.15, 9.52, 438.50). The values must follow slow
+manual moves, and Cartesian / voice IK moves must stay blocked.
 
 ## Geometry source and provenance
 
@@ -139,7 +150,7 @@ Limits and coupling:
 `ProjectDevGuide/tests/host/test_kinematics.c` is compiled twice by `run.sh`:
 
 ```text
-default                  guard 0: NOT_READY and unchanged outputs
+default                  IK guard 0: IK NOT_READY, unchanged outputs; FK on: reference pose -> TCP0
 -DARM_GEOMETRY_MEASURED=1 -lm: the math, limits and error paths
 ```
 

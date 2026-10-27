@@ -2,7 +2,7 @@
  *
  * owner: IK / mechanical member.
  * Two builds of the same file:
- *   default                  ARM_GEOMETRY_MEASURED = 0, proves fail-closed
+ *   default                  ARM_GEOMETRY_MEASURED = 0: IK fail-closed, FK available (ARM_FK_ENABLED 1)
  *   -DARM_GEOMETRY_MEASURED=1 the workbook CAD FK/IK math, linked with -lm
  * No HAL, no motion hardware. Run: sh ProjectDevGuide/tests/host/run.sh
  */
@@ -90,14 +90,25 @@ int main(void)
         "default IK checks the guard before null inputs");
   CHECK(joint_is_sentinel(&out), "default IK null call leaves out unchanged");
 
+  CHECK(kin_fk_enabled() && !kin_ik_enabled(), "default: FK available, IK not activated");
+
+  /* FK at the candidate reference angles (model q = 0) gives the workbook TCP0 */
+  const joint_vec_t ref = { .deg = { ARM_J1_ZERO_DEG, ARM_J2_ZERO_DEG, ARM_J3_ZERO_DEG,
+                                     ARM_J4_ZERO_DEG, ARM_J5_ZERO_DEG, 0.0f } };
   set_sentinel_pose(&p);
-  CHECK(kin_fk(&seed, &p) == KIN_NOT_READY, "default FK is fail-closed");
-  CHECK(pose_is_sentinel(&p), "default FK leaves out unchanged");
+  CHECK(kin_fk(&ref, &p) == KIN_OK, "default FK works");
+  CHECK(fabsf(p.x_mm - 10.15f) < 0.02f && fabsf(p.y_mm - 9.52f) < 0.02f && fabsf(p.z_mm - 438.50f) < 0.02f,
+        "reference 85/145/88/88/96 -> estimated 10.15, 9.52, 438.50 mm");
 
   set_sentinel_pose(&p);
-  CHECK(kin_fk(NULL, &p) == KIN_NOT_READY,
-        "default FK checks the guard before null inputs");
+  CHECK(kin_fk(NULL, &p) == KIN_OUT_OF_REACH, "default FK rejects a null input");
   CHECK(pose_is_sentinel(&p), "default FK null call leaves out unchanged");
+
+  /* the same reference pose as an IK request is still refused: FK does not unlock IK */
+  const cart_pose_t ref_pose = { 10.15f, 9.52f, 438.50f, p.pitch_deg };
+  set_sentinel_joint(&out);
+  CHECK(kin_ik(&ref_pose, &ref, &out) == KIN_NOT_READY && joint_is_sentinel(&out),
+        "IK of the FK result is still refused by default");
 
   return finish();
 }

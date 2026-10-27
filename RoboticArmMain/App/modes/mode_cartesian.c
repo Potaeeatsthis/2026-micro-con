@@ -3,6 +3,8 @@
  * owner: TODO(team) (works together with the ik member)
  * the target pose is only accepted if ik solves it; otherwise the last reachable pose
  * stays and the lcd shows the reason (OUT OF REACH / IK NOT READY).
+ * while IK is not activated (kin_ik_enabled() false) the whole mode stays blocked, gripper
+ * included, even though FK is available for the estimated X/Y/Z display.
  */
 #include "modes/mode_ops.h"
 #include "modes/gripper.h"
@@ -46,10 +48,10 @@ static void enter(void)
 {
   joint_vec_t now;
   motion_get_current(&now);
-  s_ready = (kin_fk(&now, &s_pose) == KIN_OK);
+  s_ready = kin_ik_enabled() && (kin_fk(&now, &s_pose) == KIN_OK);   /* FK alone does not unlock moves */
   s_gripper_closed = gripper_is_closed_at(now.deg[J6_GRIPPER]);   /* lower angle = closed */
   s_last_ms = HAL_GetTick();
-  if (!s_ready) lcd_show_message("IK NOT READY", 3000u);
+  if (!s_ready) lcd_show_message(kin_ik_enabled() ? "IK NOT READY" : "IK DISABLED", 3000u);
 }
 
 static void exit_(void) { motion_hold(); }
@@ -95,7 +97,7 @@ static void step(void)
 static void describe(char (*lines)[LCD_COLS], int n)
 {
   if (!s_ready) {
-    if (n > 0) snprintf(lines[0], LCD_COLS, "%s", kin_status_name(s_last_status));
+    if (n > 0) snprintf(lines[0], LCD_COLS, "%s", kin_ik_enabled() ? kin_status_name(s_last_status) : "IK DISABLED");
     return;
   }
   if (n > 0) snprintf(lines[0], LCD_COLS, "X: %d mm", (int)s_pose.x_mm);

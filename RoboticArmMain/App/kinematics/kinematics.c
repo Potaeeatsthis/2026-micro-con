@@ -26,7 +26,9 @@
 #define KIN_R_TOL_MM        1e-4f
 #define KIN_APPROACH_EPS    1e-4f
 
-#if ARM_GEOMETRY_MEASURED
+/* FK-only helpers under ARM_FK_ENABLED, shared ones under either guard, IK-only ones under
+ * ARM_GEOMETRY_MEASURED, so no build leaves an unused function */
+#if ARM_FK_ENABLED
 typedef struct { float m[3][3]; } kin_mat3_t;
 typedef struct { float x, y, z; } kin_vec3_t;
 
@@ -76,6 +78,9 @@ static kin_vec3_t kin_vec_add(kin_vec3_t a, kin_vec3_t b)
   return r;
 }
 
+#endif /* ARM_FK_ENABLED */
+
+#if ARM_FK_ENABLED || ARM_GEOMETRY_MEASURED
 static bool kin_joints_finite(const joint_vec_t *j)
 {
   for (int i = 0; i < ARM_N_JOINTS; i++) {
@@ -84,6 +89,9 @@ static bool kin_joints_finite(const joint_vec_t *j)
   return true;
 }
 
+#endif /* ARM_FK_ENABLED || ARM_GEOMETRY_MEASURED */
+
+#if ARM_GEOMETRY_MEASURED
 static bool kin_pose_finite(const cart_pose_t *p)
 {
   return isfinite((double)p->x_mm) && isfinite((double)p->y_mm) &&
@@ -255,7 +263,7 @@ kin_status_t kin_ik(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_
 
 kin_status_t kin_fk(const joint_vec_t *joints, cart_pose_t *out)
 {
-#if !ARM_GEOMETRY_MEASURED
+#if !ARM_FK_ENABLED
   (void)joints;
   (void)out;
   return KIN_NOT_READY;
@@ -304,6 +312,9 @@ kin_status_t kin_fk(const joint_vec_t *joints, cart_pose_t *out)
   return KIN_OK;
 #endif
 }
+
+bool kin_fk_enabled(void) { return ARM_FK_ENABLED != 0; }
+bool kin_ik_enabled(void) { return ARM_GEOMETRY_MEASURED != 0; }
 
 const char *kin_status_name(kin_status_t s)
 {

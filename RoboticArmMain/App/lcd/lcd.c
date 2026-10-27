@@ -182,6 +182,9 @@ static void draw_rows(int x, const int y[3])
   lcd_port_asset(LCD_A_ROW_X, x, y[0]);
   lcd_port_asset(LCD_A_ROW_Y, x, y[1]);
   lcd_port_asset(LCD_A_ROW_Z, x, y[2]);
+  /* the numbers are FK from the COMMANDED angles (no joint sensors, candidate zeros): an estimate.
+   * the gap under the Z row and above the Back button, left of the arm picture, holds this line */
+  lcd_port_text(x, y[2] + LCD_ROW_H + 3, "XYZ ESTIMATED, mm", LCD_GREY, LCD_BG, 1);
 }
 
 static void draw_buttons(void)
@@ -382,7 +385,8 @@ static void draw_changed_lines(void)
   }
 }
 
-/* X/Y/Z of the tool. no geometry yet (kin_fk returns KIN_NOT_READY) -> "---" instead of a made-up number.
+/* ESTIMATED X/Y/Z of the tool (FK of the commanded angles, labelled on the page). FK off or degenerate
+ * (kin_fk not KIN_OK) -> "---" instead of a made-up number. FK never enables IK or motion.
  * row_y = top of each number field, x_right = where the last digit ends (measured on the page designs) */
 static void page_values(const int row_y[3], int x_right)
 {

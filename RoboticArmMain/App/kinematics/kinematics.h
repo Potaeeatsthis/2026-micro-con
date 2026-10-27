@@ -19,9 +19,10 @@
  *                     out is unchanged.
  *   KIN_JOINT_LIMIT   a geometric solution exists, but a servo limit, the J2/J5
  *                     coupling, or the seed J6 range fails. out is unchanged.
- *   KIN_NOT_READY     geometry is disabled (ARM_GEOMETRY_MEASURED 0), or FK
- *                     cannot express pitch from a degenerate approach
- *                     projection. out is unchanged.
+ *   KIN_NOT_READY     IK: activation guard off (ARM_GEOMETRY_MEASURED 0).
+ *                     FK: disabled (ARM_FK_ENABLED 0), or it cannot express
+ *                     pitch from a degenerate approach projection.
+ *                     out is unchanged.
  *
  * FK returns a full 5-joint position (including roll q4). cart_pose_t has only
  * one orientation scalar, so pitch_deg is the projected approach direction in
@@ -42,6 +43,7 @@
 #define APP_KINEMATICS_H
 
 #include "common/app_types.h"
+#include <stdbool.h>
 
 typedef enum {
   KIN_OK = 0,
@@ -63,5 +65,8 @@ kin_status_t kin_ik(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_
 kin_status_t kin_fk(const joint_vec_t *joints, cart_pose_t *out);
 
 const char  *kin_status_name(kin_status_t s);
+
+bool         kin_fk_enabled(void);   /* ARM_FK_ENABLED: estimated X/Y/Z available */
+bool         kin_ik_enabled(void);   /* ARM_GEOMETRY_MEASURED: IK may produce targets */
 
 #endif /* APP_KINEMATICS_H */

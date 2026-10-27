@@ -15,7 +15,7 @@ gcc -std=gnu11 -O1 -g -Wall -Wextra -Wshadow -Wno-unused-parameter \
   -I"$HERE/fake" -I"$A" -o "$HERE/test_app" "$HERE/test_app.c" \
   "$A/common/app_events.c" "$A/common/app_fault.c" "$A/safety/safety.c" \
   "$A/motion/motion.c" "$A/motion/servo.c" "$A/motion/servo_cal.c" "$A/kinematics/kinematics.c" \
-  "$A"/modes/*.c "$A/lcd/lcd.c" "$HERE/fake/lcd_port_fake.c" "$A/pi_link/pi_proto.c"
+  "$A"/modes/*.c "$A/lcd/lcd.c" "$HERE/fake/lcd_port_fake.c" "$A/pi_link/pi_proto.c" -lm
 # the parser test binary goes to a temp dir (nothing new to gitignore)
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
@@ -27,17 +27,17 @@ gcc -std=gnu11 -O1 -g -Wall -Wextra -Wshadow -Wno-unused-parameter \
   -I"$HERE/fake" -I"$A" -o "$T/test_app_dry" "$HERE/test_app.c" \
   "$A/common/app_events.c" "$A/common/app_fault.c" "$A/safety/safety.c" \
   "$A/motion/motion.c" "$A/motion/servo.c" "$A/motion/servo_cal.c" "$A/kinematics/kinematics.c" \
-  "$A"/modes/*.c "$A/lcd/lcd.c" "$HERE/fake/lcd_port_fake.c" "$A/pi_link/pi_proto.c"
+  "$A"/modes/*.c "$A/lcd/lcd.c" "$HERE/fake/lcd_port_fake.c" "$A/pi_link/pi_proto.c" -lm
 # the bench limit screen (App/servo_cal_test/) with its own flags: motion on, modes and lcd.c off
 gcc -std=gnu11 -O1 -g -Wall -Wextra -Wshadow -Wno-unused-parameter \
   -DAPP_USE_SERVO_CAL_TEST=1 -DAPP_USE_MOTION=1 -DAPP_USE_MODES=0 -DAPP_USE_LCD=0 -DAPP_USE_INPUT=1 \
   -I"$HERE/fake" -I"$A" -o "$T/test_servo_cal" "$HERE/test_servo_cal.c" "$A/servo_cal_test/servo_cal_test.c" \
   "$A/common/app_events.c" "$A/common/app_fault.c" "$A/safety/safety.c" \
   "$A/motion/motion.c" "$A/motion/servo.c" "$A/motion/servo_cal.c" "$HERE/fake/lcd_port_fake.c"
-# kinematics: the default build must stay fail-closed; the second build enables the math for the test only.
+# kinematics: the default build has FK on and IK fail-closed; the second build enables IK for the test only.
 gcc -std=gnu11 -O1 -g -Wall -Wextra -Werror -Wshadow -Wno-unused-parameter \
   -I"$A" -o "$T/test_kinematics_failclosed" "$HERE/test_kinematics.c" \
-  "$A/kinematics/kinematics.c" "$A/motion/servo_cal.c"
+  "$A/kinematics/kinematics.c" "$A/motion/servo_cal.c" -lm
 gcc -std=gnu11 -O1 -g -Wall -Wextra -Werror -Wshadow -Wno-unused-parameter \
   -DARM_GEOMETRY_MEASURED=1 -I"$A" -o "$T/test_kinematics" "$HERE/test_kinematics.c" \
   "$A/kinematics/kinematics.c" "$A/motion/servo_cal.c" -lm

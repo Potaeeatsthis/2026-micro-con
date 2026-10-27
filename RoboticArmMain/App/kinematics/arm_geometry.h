@@ -28,16 +28,23 @@
  * proven by joint axes. J5 is explicitly provisional in the workbook. Retest
  * on the real arm before trusting them for hardware.
  *
- * ARM_GEOMETRY_MEASURED is an activation guard, not a measurement claim.
- * 0 = both public entry points return KIN_NOT_READY. Host tests may override
- * it with -DARM_GEOMETRY_MEASURED=1; firmware must stay 0 until the owner
- * explicitly activates IK/FK.
+ * Two separate guards (28 Oct 2026):
+ *   ARM_FK_ENABLED 1         FK is available: the LCD shows an ESTIMATED X/Y/Z from the commanded angles.
+ *                            FK never commands motion, so it cannot move the arm.
+ *   ARM_GEOMETRY_MEASURED 0  the IK activation guard (not a measurement claim): kin_ik() returns
+ *                            KIN_NOT_READY, so Cartesian and voice pose moves stay blocked. Host tests may
+ *                            override it with -DARM_GEOMETRY_MEASURED=1; firmware stays 0 until the owner
+ *                            explicitly activates IK (placeholder voice pitches and clamped-motion handling
+ *                            must be resolved first, see ProjectDevGuide/docs/kinematics.md).
  */
 #ifndef APP_ARM_GEOMETRY_H
 #define APP_ARM_GEOMETRY_H
 
+#ifndef ARM_FK_ENABLED
+#define ARM_FK_ENABLED 1
+#endif
 #ifndef ARM_GEOMETRY_MEASURED
-#define ARM_GEOMETRY_MEASURED 0
+#define ARM_GEOMETRY_MEASURED 0          /* IK activation: do not change without the owner */
 #endif
 
 /* Shoulder axis point S in the robot frame. */

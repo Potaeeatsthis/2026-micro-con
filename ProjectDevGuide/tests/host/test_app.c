@@ -16,6 +16,7 @@
 #include "motion/servo.h"
 #include "modes/modes.h"
 #include "modes/gripper.h"
+#include "kinematics/kinematics.h"
 #include "lcd/lcd.h"
 
 /* pi_link.c included so the test can inject bytes into its private rx ring */
@@ -506,6 +507,22 @@ int main(void)
   printf("== mode switch from the lcd mode cards\n");
   app_event_post(EVT_TOUCH_MODE_TAB, MODE_CARTESIAN, 0, 0, 0); run_ms(60);
   CHECK(modes_current() == MODE_CARTESIAN, "touch card -> cartesian");
+  {
+    /* FK is on (estimated X/Y/Z), IK is not activated: cartesian must not move anything */
+    joint_vec_t before, after;
+    cart_pose_t est;
+    motion_get_target(&before);
+    CHECK(kin_fk_enabled() && !kin_ik_enabled(), "default build: FK on, IK off");
+    CHECK(kin_fk(&before, &est) == KIN_OK, "FK estimate available for the lcd");
+    CHECK(strcmp(screen_line(0), "IK DISABLED") == 0, "cartesian says IK DISABLED");
+    app_event_post(EVT_ENC_STEP, 0, 3, 0, 0);
+    app_event_post(EVT_ENC_PRESS, 0, 0, 0, 0);          /* would toggle the gripper */
+    run_ms(500);
+    motion_get_target(&after);
+    int same = 1;
+    for (int j = 0; j < ARM_N_JOINTS; j++) if (after.deg[j] != before.deg[j]) same = 0;
+    CHECK(same, "encoder turn and press in cartesian change no target (Z and gripper blocked)");
+  }
   app_event_post(EVT_TOUCH_MODE_TAB, MODE_JOINT_GROUP, 0, 0, 0); run_ms(60);
   CHECK(modes_current() == MODE_JOINT_GROUP, "touch card -> joint group");
 
