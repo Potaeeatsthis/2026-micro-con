@@ -289,7 +289,7 @@ int main(void)
 
   printf("== installed homes and conservative limits\n");
   check_cal_limits_home(J1_BASE,         0.0f, 180.0f,  85.0f, 1407);
-  check_cal_limits_home(J2_SHOULDER,   100.0f, 180.0f, 125.0f, 1823);
+  check_cal_limits_home(J2_SHOULDER,    90.0f, 180.0f, 125.0f, 1823);
   check_cal_limits_home(J3_ELBOW,       45.0f, 180.0f, 145.0f, 2123);
   check_cal_limits_home(J4_WRIST_ROLL,   0.0f, 180.0f,  90.0f, 1440);
   check_cal_limits_home(J5_WRIST_PITCH, 25.0f, 140.0f,  25.0f, 901);
@@ -298,7 +298,7 @@ int main(void)
   printf("== motion clamps to the installed boundaries\n");
   motion_init();
   check_joint_clamp(J1_BASE,         0.0f, 180.0f);
-  check_joint_clamp(J2_SHOULDER,   100.0f, 180.0f);
+  check_joint_clamp(J2_SHOULDER,    90.0f, 180.0f);
   check_joint_clamp(J3_ELBOW,       45.0f, 180.0f);
   check_joint_clamp(J4_WRIST_ROLL,   0.0f, 180.0f);
   check_joint_clamp(J5_WRIST_PITCH, 25.0f, 140.0f);

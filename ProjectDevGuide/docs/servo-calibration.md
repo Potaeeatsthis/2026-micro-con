@@ -173,17 +173,18 @@ the anchors above at those home angles.
 | Joint | Unit label | Safe min (°) | Safe max (°) | Home (°) | Home pulse (µs) | Installed zero | Direction sign |
 |---|---|---|---|---|---|---|---|
 | J1 | `MG996R-1` | 0 | 180 | 85 | 1407 | not measured | not calibrated |
-| J2 | `MG996R-2` | 100 | 180 | 125 | 1823 | not measured | not calibrated |
+| J2 | `MG996R-2` | 90 | 180 | 125 | 1823 | not measured | not calibrated |
 | J3 | `MG996R-3` | 45 | 180 | 145 | 2123 | not measured | not calibrated |
 | J4 | `SG92R-1` | 0 | 180 | 90 | 1440 | not measured | not calibrated |
 | J5 | `SG92R-3` | 25 | 140 | 25 | 901 | not measured | not calibrated |
 | J6 | `SG90` (replacement) | 0 | 60 | 35 | 842 | not measured | not calibrated |
 
 The limits were confirmed independently, one joint at a time, with the rest of
-the arm supported. J2 min = 100° is the conservative value confirmed with
-J5 = 25°. A J2 angle near 50° was observed only with the wrist above 75°, but
-that coupled rule is incomplete; the firmware keeps J2 min = 100° and does not
-implement speculative wrist coupling.
+the arm supported. J2 min = 90° is the requested limit, not a confirmed
+clearance: floor contact was observed around 90–95° with J5 = 25°. A J2 angle
+near 50° was observed only with the wrist above 75°, but that coupled rule is
+incomplete; the firmware keeps J2 min = 90° and does not implement speculative
+wrist coupling.
 
 The 0/90/180 pulse anchors are the full-range conversion anchors, not installed
 limits. J6's safe range is 0..60° but its anchors still span 0..180°; do not
