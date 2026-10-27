@@ -5,6 +5,7 @@
  * stays and the lcd shows the reason (OUT OF REACH / IK NOT READY).
  */
 #include "modes/mode_ops.h"
+#include "modes/gripper.h"
 #include "motion/motion.h"
 #include "kinematics/kinematics.h"
 #include "common/app_config.h"
@@ -46,7 +47,7 @@ static void enter(void)
   joint_vec_t now;
   motion_get_current(&now);
   s_ready = (kin_fk(&now, &s_pose) == KIN_OK);
-  s_gripper_closed = (now.deg[J6_GRIPPER] > (APP_GRIPPER_OPEN_DEG + APP_GRIPPER_CLOSED_DEG) * 0.5f);
+  s_gripper_closed = gripper_is_closed_at(now.deg[J6_GRIPPER]);   /* lower angle = closed */
   s_last_ms = HAL_GetTick();
   if (!s_ready) lcd_show_message("IK NOT READY", 3000u);
 }
@@ -64,8 +65,8 @@ static void on_event(const app_event_t *e)
       break;
     }
     case EVT_ENC_PRESS:
-      s_gripper_closed = !s_gripper_closed;
-      (void)motion_set_joint_target(J6_GRIPPER, s_gripper_closed ? APP_GRIPPER_CLOSED_DEG : APP_GRIPPER_OPEN_DEG);
+      if (gripper_command(!s_gripper_closed)) s_gripper_closed = !s_gripper_closed;
+      else lcd_show_message("GRIPPER LIMIT", 2000u);         /* state unchanged, J6 held */
       break;
     default:
       break;

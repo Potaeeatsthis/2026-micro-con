@@ -93,7 +93,7 @@ Turning a flag off means the module is not started or called; its code still com
 
 ## 5. Safety behaviour everyone relies on
 
-- **No pulse at power-up** until safety allows; then the first pulse is the home pose from `servo_cal.c` (currently the 90° placeholder; the installed home is not yet measured).
+- **No pulse at power-up** until safety allows; then each joint gets the installed home pose from `servo_cal.c` **one at a time**, `MOTION_BOOT_STAGGER_MS` (500 ms) apart, gripper first, then J1–J5 (all six at once overloaded the 6 V servo supply). Trajectories start after the sixth.
 - **No E-stop, MODE or Hold-to-Enable button (since 27 Oct 2026).** The mode is chosen on the LCD. Nothing cuts servo power in hardware; switch the servo supply off to stop for sure ([`core-config.md`](core-config.md) §11).
 - **Manual modes move whenever safety allows** (no Hold-to-Enable since 27 Oct 2026). Single Joint and Joint Group jog: let go of the stick and the jog stops (next point). Cartesian sets a new IK target each pass while the stick is pushed and stops when it is centred; an encoder turn moves Z and a knob press opens / closes the gripper at once, so an accidental knob touch in Cartesian moves the arm.
 - **A jog that is not refreshed for 150 ms stops by itself.** Joystick modes call `manual_jog()` every pass, so a hung main loop or a released stick stops the arm.

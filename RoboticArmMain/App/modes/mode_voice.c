@@ -43,6 +43,7 @@
  *   - grasp / place heights, approach distance
  */
 #include "modes/mode_ops.h"
+#include "modes/gripper.h"
 #include "motion/motion.h"
 #include "motion/servo.h"
 #include "kinematics/kinematics.h"
@@ -134,7 +135,9 @@ static struct { jog_dir_t dir; int step_mm; } s_queue[JOG_MAX_ITEMS];
 static int         s_queue_n;
 
 /* ---------------------------------------------------------------- scripts */
-typedef enum { STEP_POSE, STEP_GRIPPER, STEP_HOME } step_kind_t;
+/* STEP_HOME_RAISE: before HOME when J2 is below MOTION_J2_COUPLED_DEG, lift J2 to it (J5 at least
+ * MOTION_J5_WRIST_UP_DEG), so the home move never asks for a coupled-blocked wrist angle */
+typedef enum { STEP_POSE, STEP_GRIPPER, STEP_HOME_RAISE, STEP_HOME } step_kind_t;
 typedef struct { step_kind_t kind; cart_pose_t pose; bool close; } script_step_t;
 
 static script_step_t s_script[SCRIPT_MAX];
@@ -161,6 +164,9 @@ static bool dry_run_step(const script_step_t *s)
     case STEP_GRIPPER:
       LOG("dry-run: step %d/%d gripper %s\r\n", s_script_pos + 1, s_script_len, s->close ? "CLOSE" : "OPEN");
       break;
+    case STEP_HOME_RAISE:
+      LOG("dry-run: step %d/%d raise shoulder before home\r\n", s_script_pos + 1, s_script_len);
+      break;
     case STEP_HOME:
       s_dry_pose = DRY_START_POSE;
       LOG("dry-run: step %d/%d go home\r\n", s_script_pos + 1, s_script_len);
@@ -182,6 +188,24 @@ static void script_add(step_kind_t k, const cart_pose_t *p, bool close)
   s->close = close;
 }
 
+/* the installed home pose, gripper unchanged (home never opens the gripper itself) */
+static void home_target(joint_vec_t *out)
+{
+  joint_vec_t now;
+  motion_get_current(&now);
+  for (int j = 0; j < ARM_N_JOINTS; j++) out->deg[j] = servo_cal(j)->home_deg;
+  out->deg[J6_GRIPPER] = now.deg[J6_GRIPPER];
+}
+
+static bool at_home(void)
+{
+  joint_vec_t now, home;
+  motion_get_current(&now);
+  home_target(&home);
+  for (int j = 0; j < ARM_N_JOINTS; j++) if (absf(now.deg[j] - home.deg[j]) > 0.01f) return false;
+  return true;
+}
+
 static bool pose_to_target(const cart_pose_t *p)
 {
   joint_vec_t now, sol;
@@ -201,14 +225,23 @@ static bool run_step(const script_step_t *s)
     case STEP_POSE:
       return pose_to_target(&s->pose);
     case STEP_GRIPPER:
-      return motion_set_joint_target(J6_GRIPPER, s->close ? APP_GRIPPER_CLOSED_DEG : APP_GRIPPER_OPEN_DEG)
-             != MOTION_REFUSED;
+      if (gripper_command(s->close)) return true;
+      lcd_show_message("GRIPPER LIMIT", 3000u);          /* clamped: not holding, script stops */
+      return false;
+    case STEP_HOME_RAISE: {
+      joint_vec_t t;
+      motion_get_current(&t);
+      if (t.deg[J2_SHOULDER] < MOTION_J2_COUPLED_DEG) t.deg[J2_SHOULDER] = MOTION_J2_COUPLED_DEG;
+      if (t.deg[J5_WRIST_PITCH] < MOTION_J5_WRIST_UP_DEG) t.deg[J5_WRIST_PITCH] = MOTION_J5_WRIST_UP_DEG;
+      return motion_set_target(&t) == MOTION_OK;
+    }
     case STEP_HOME: {
-      joint_vec_t home, now;
-      motion_get_current(&now);
-      for (int j = 0; j < ARM_N_JOINTS; j++) home.deg[j] = servo_cal(j)->home_deg;
-      home.deg[J6_GRIPPER] = now.deg[J6_GRIPPER];          /* home never opens the gripper itself */
-      return motion_set_target(&home) != MOTION_REFUSED;
+      joint_vec_t home;
+      home_target(&home);
+      if (motion_set_target(&home) == MOTION_OK) return true;
+      lcd_show_message("HOME BLOCKED", 3000u);           /* would end early at a clamped pose */
+      motion_hold();
+      return false;
     }
     default:
       return false;
@@ -324,6 +357,11 @@ static void go_home_then_idle(bool open_first)
 {
   script_clear();
   if (open_first) script_add(STEP_GRIPPER, NULL, false);
+#if !APP_VOICE_DRY_RUN
+  joint_vec_t now;
+  motion_get_current(&now);
+  if (now.deg[J2_SHOULDER] < MOTION_J2_COUPLED_DEG) script_add(STEP_HOME_RAISE, NULL, false);
+#endif
   script_add(STEP_HOME, NULL, false);
   (void)script_start(S9_RELEASE_HOME);
 }
@@ -629,7 +667,14 @@ static void on_motion_done(void)
     case S3_GRASPING:     set_state(S4_HOLDING); break;   /* s_holding set by the close step */
     case S8A_RUN_QUEUE:   s_queue_n = 0; set_state(S4_HOLDING); break;
     case S8B_PLACING:     go_home_then_idle(false); break;  /* s_holding cleared by the open step */
-    case S9_RELEASE_HOME: set_state(S0_IDLE); break;
+    case S9_RELEASE_HOME:
+      if (!APP_VOICE_DRY_RUN && !at_home()) {             /* a target clamped on the way: not home */
+        lcd_show_message("HOME NOT REACHED", 3000u);
+        controlled_stop();
+        break;
+      }
+      set_state(S0_IDLE);
+      break;
     default: break;
   }
 }

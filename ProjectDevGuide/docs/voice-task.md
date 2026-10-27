@@ -22,7 +22,7 @@ they wait for a valid word or `stop` for as long as the user needs (decided 25 O
 | S7 CONFIRM PLACE | shows the destination | `yes` → S8 PLACING (for `hand` / `station`: first `FIND hand` / `FIND station`, waits with only `stop`; reply → S8, `NOTFOUND` → asks again, Pi timeout → S4); `no` → back to S4 or S10 (where it came from) | back to S4 or S10 |
 | S8 RUN QUEUE | moving through the queue | only `stop` | → S10 |
 | S8 PLACING | moving: above, down, open, up (hand: opens `HAND_RELEASE_MM` above the palm, never at it; station: opens `STATION_RELEASE_MM` above the drop spot on its top) | only `stop` | → S10 |
-| S9 GOING HOME | moving | only `stop` | → S10 |
+| S9 GOING HOME | moving (from J2 < 90 deg: shoulder up to 90 first, then home; done only when every joint is at home) | only `stop` | → S10 |
 | S10 STOPPED | holds still; a closed gripper stays closed | `place` / `drop` → S7; `home` → S11 (opens the gripper first) | nothing |
 | S11 CONFIRM HOME | "go home?" | `yes` → S9; `no` → back to S0 or S10 | back to S0 or S10 |
 

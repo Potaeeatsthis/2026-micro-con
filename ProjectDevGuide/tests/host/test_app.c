@@ -15,6 +15,7 @@
 #include "motion/motion.h"
 #include "motion/servo.h"
 #include "modes/modes.h"
+#include "modes/gripper.h"
 #include "lcd/lcd.h"
 
 /* pi_link.c included so the test can inject bytes into its private rx ring */
@@ -57,6 +58,7 @@ static int fails, passes;
 #define CHECK(cond, msg) do { if (cond) { passes++; } else { fails++; printf("  FAIL: %s (line %d)\n", msg, __LINE__); } } while (0)
 
 static void loop_pass(void) { pi_link_step(); modes_step(); }
+#define BOOT_MS (MOTION_BOOT_STAGGER_MS * ARM_N_JOINTS + 100u)   /* staggered start-up, all six + margin */
 static int g_trace;
 static float tgt(int j);
 static float cur(int j);
@@ -186,7 +188,7 @@ static uint32_t word_bit(const char *w) { return 1u << voice_class_id(w); }
 static int voice_hand_dry_run(void)
 {
   motion_init(); pi_link_init(); lcd_init(); modes_init();
-  run_ms(100);
+  run_ms(BOOT_MS);
 
   printf("== voice hand (dry run): live palm position from the pi\n");
   say("pick"); say("red box"); pi_link_on_tx_done();
@@ -325,7 +327,7 @@ int main(void)
   motion_init();
   motion_set_speed(SPEED_FAST);
   app_events_drain();
-  run_motion_ms(100);
+  run_motion_ms(BOOT_MS);
   CHECK(cur(J2_SHOULDER) == 125.0f && cur(J5_WRIST_PITCH) == 25.0f, "coupling starts at the home pose");
 
   /* J5 current below 65: J2 floor is 90, even when the J5 target is high. */
@@ -468,11 +470,27 @@ int main(void)
   motion_set_speed(SPEED_FINE);
   app_events_drain();
 
-  printf("== boot: no pulse until the first tick, then home\n");
+  printf("== boot: no pulse until the first tick, then home one joint at a time\n");
   motion_init(); pi_link_init(); lcd_init(); modes_init();
   CHECK(htim3.ccr[0] == 0, "no pulse before the first control tick");
   CHECK(safety_state() == SAFETY_OK, "no e-stop: safety ok at boot");
-  run_ms(100);
+  run_ms(20);
+  CHECK(htim4.ccr[3] == 842 && htim3.ccr[0] == 0 && htim3.ccr[1] == 0 && htim4.ccr[0] == 0 &&
+        htim4.ccr[1] == 0 && htim4.ccr[2] == 0, "first tick: only the gripper gets its home pulse");
+  run_ms(MOTION_BOOT_STAGGER_MS);
+  CHECK(htim3.ccr[0] == 1407 && htim3.ccr[1] == 0, "one stagger later: J1 too, J2 still waits");
+  {
+    int max_new = 0;
+    for (uint32_t ms = 0; ms < BOOT_MS; ms += 20) {
+      int before = (htim3.ccr[0] != 0) + (htim3.ccr[1] != 0) + (htim4.ccr[0] != 0) + (htim4.ccr[1] != 0) +
+                   (htim4.ccr[2] != 0) + (htim4.ccr[3] != 0);
+      run_ms(20);
+      int after = (htim3.ccr[0] != 0) + (htim3.ccr[1] != 0) + (htim4.ccr[0] != 0) + (htim4.ccr[1] != 0) +
+                  (htim4.ccr[2] != 0) + (htim4.ccr[3] != 0);
+      if (after - before > max_new) max_new = after - before;
+    }
+    CHECK(max_new <= 1, "never two joints start in the same tick");
+  }
   CHECK(htim3.ccr[0] == 1407, "J1 first pulse = home 85 deg (1407 us)");
   CHECK(htim3.ccr[1] == 1823, "J2 first pulse = home 125 deg (1823 us)");
   CHECK(htim4.ccr[0] == 2123, "J3 first pulse = home 145 deg (2123 us)");
@@ -569,6 +587,53 @@ int main(void)
   CHECK(cur(0) == 85.0f, "home from S10 reaches home");
   CHECK(strcmp(screen_line(0), "S0 IDLE") == 0, "then back to S0");
   CHECK(cur(5) == APP_GRIPPER_OPEN_DEG, "home from S10 opened the gripper");
+
+  printf("== gripper: setpoints and direction (J6 replacement, lower angle = closed)\n");
+  CHECK(APP_GRIPPER_CLOSED_DEG == servo_cal(J6_GRIPPER)->min_deg, "closed setpoint = J6 safe min (0)");
+  CHECK(APP_GRIPPER_OPEN_DEG == servo_cal(J6_GRIPPER)->max_deg, "open setpoint = J6 safe max (60)");
+  CHECK(APP_GRIPPER_OPEN_DEG > APP_GRIPPER_CLOSED_DEG, "increasing J6 opens");
+  CHECK(gripper_is_closed_at(0.0f) && gripper_is_closed_at(10.0f), "low angles read as closed");
+  CHECK(!gripper_is_closed_at(35.0f) && !gripper_is_closed_at(60.0f), "home 35 and 60 read as open");
+  {
+    float j6 = cur(J6_GRIPPER);
+    CHECK(!gripper_set_deg(120.0f), "a setpoint outside the J6 limits is reported as failed");
+    CHECK(tgt(J6_GRIPPER) == j6, "the clamped command is cancelled: J6 target stays where it was");
+    run_ms(2000);
+    CHECK(cur(J6_GRIPPER) == j6, "and J6 does not move toward the clamped end");
+  }
+  CHECK(gripper_command(true), "close accepted");
+  run_ms(8000);
+  CHECK(cur(J6_GRIPPER) == APP_GRIPPER_CLOSED_DEG, "close reaches 0");
+  CHECK(gripper_command(false), "open accepted");
+  run_ms(8000);
+  CHECK(cur(J6_GRIPPER) == APP_GRIPPER_OPEN_DEG, "open reaches 60");
+
+  printf("== voice HOME from J2 below 90: shoulder up first, then home\n");
+  CHECK(strcmp(screen_line(0), "S0 IDLE") == 0, "voice mode idle");
+  CHECK(set_pair_target(125.0f, 70.0f) == MOTION_OK, "wrist up to 70");
+  run_ms(8000);
+  CHECK(set_pair_target(50.0f, 70.0f) == MOTION_OK, "shoulder down to 50 (allowed: wrist >= 65)");
+  run_ms(15000);
+  CHECK(cur(J2_SHOULDER) == 50.0f && cur(J5_WRIST_PITCH) == 70.0f, "start pose J2 50 / J5 70");
+  {
+    float j6 = cur(J6_GRIPPER);
+    say("home");
+    CHECK(strcmp(screen_line(0), "S11 CONFIRM HOME") == 0, "home asks first");
+    say("yes");
+    CHECK(strcmp(screen_line(0), "S9 GOING HOME") == 0, "yes -> going home");
+    int unsafe_home = 0, done_early = 0;
+    for (uint32_t ms = 0; ms < 30000u && strcmp(screen_line(0), "S9 GOING HOME") == 0; ms += 20) {
+      run_ms(20);
+      if (cur(J2_SHOULDER) < 90.0f - 0.01f && cur(J5_WRIST_PITCH) < 65.0f - 0.01f) unsafe_home = 1;
+    }
+    if (cur(J5_WRIST_PITCH) != 25.0f) done_early = 1;
+    CHECK(!unsafe_home, "never J2 < 90 with J5 < 65 on the way");
+    CHECK(strcmp(screen_line(0), "S0 IDLE") == 0, "HOME finishes -> S0");
+    CHECK(!done_early, "finished only after the wrist reached its home 25 (no early finish at 65)");
+    CHECK(cur(J1_BASE) == 85.0f && cur(J2_SHOULDER) == 125.0f && cur(J3_ELBOW) == 145.0f &&
+          cur(J4_WRIST_ROLL) == 90.0f && cur(J5_WRIST_PITCH) == 25.0f, "every arm joint is at its home");
+    CHECK(cur(J6_GRIPPER) == j6, "home from S0 does not move the gripper");
+  }
 
   printf("== fatal fault during motion: freezes (last test, latches until reset)\n");
   motion_set_joint_target(J1_BASE, 120.0f);

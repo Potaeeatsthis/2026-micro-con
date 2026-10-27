@@ -25,6 +25,15 @@
 #include <stdbool.h>
 #include "common/app_types.h"
 
+/* J2/J5 coupling bounds (see above): J2 below MOTION_J2_COUPLED_DEG needs J5 at or above
+ * MOTION_J5_WRIST_UP_DEG */
+#define MOTION_J2_COUPLED_DEG   90.0f
+#define MOTION_J5_WRIST_UP_DEG  65.0f
+
+/* start-up: each joint gets its first (home) pulse this long after the previous one, gripper first,
+ * then J1..J5; trajectories run only after all six have a pulse (about 6 x this after boot) */
+#define MOTION_BOOT_STAGGER_MS  500u
+
 typedef enum {
   MOTION_OK = 0,
   MOTION_CLAMPED,       /* accepted, but at least one joint was limited to its min/max */

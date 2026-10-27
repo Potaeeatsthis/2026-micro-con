@@ -1,6 +1,6 @@
 /* lcd_port.c - lcd_port.h on top of the Lab08 ILI9341 driver in App/lcd/driver/
  *
- * screen: landscape 320x240 (SCREEN_HORIZONTAL_1, MADCTL 0x28). the driver blocks (HAL_SPI_Transmit),
+ * screen: landscape 320x240, turned 180 deg (SCREEN_HORIZONTAL_2: the panel is mounted upside down on the arm). the driver blocks (HAL_SPI_Transmit),
  * so every call here is short. pictures (lcd_port_asset) and big digits (lcd_port_digits) for the
  * lcd.c pages stream straight to the panel through the driver's CS / DC / SPI5.
  *
@@ -34,10 +34,12 @@
 /* raw 12-bit value at screen x = 0 / x = 319 and y = 0 / y = 239. screen x comes from the
  * controller's Y channel and screen y from its X channel in this rotation.
  * measured 2026-10-26 on the bench screen: corner presses ~28 px in from each edge, extrapolated. */
-#define TOUCH_RAW_X0      3823
-#define TOUCH_RAW_X319     279
-#define TOUCH_RAW_Y0      3774
-#define TOUCH_RAW_Y239     513
+/* 27 Oct 2026: the screen was turned 180 deg, so the 26 Oct anchors are swapped end for end
+ * (was X0 3823 / X319 279 / Y0 3774 / Y239 513 in SCREEN_HORIZONTAL_1). not re-measured yet */
+#define TOUCH_RAW_X0       279
+#define TOUCH_RAW_X319    3823
+#define TOUCH_RAW_Y0       513
+#define TOUCH_RAW_Y239    3774
 
 static volatile uint16_t s_raw_x;  /* last good raw average (controller X channel), for calibration */
 static volatile uint16_t s_raw_y;  /* last good raw average (controller Y channel) */
@@ -47,7 +49,7 @@ static int s_x, s_y;               /* last good position, screen pixels */
 void lcd_port_init(void)
 {
   ILI9341_Init();
-  ILI9341_Set_Rotation(SCREEN_HORIZONTAL_1);
+  ILI9341_Set_Rotation(SCREEN_HORIZONTAL_2);       /* panel mounted upside down */
   ILI9341_Fill_Screen(BLACK);
 }
 

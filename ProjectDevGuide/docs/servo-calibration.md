@@ -16,39 +16,31 @@ The bench tools are separate from the HAL firmware:
 
 ## Safety warning
 
-**Integration blocked: do not run automatic gripper operations yet.** The calibration
-table is updated, but `App/common/app_config.h` still sets gripper closed to 120 deg
-and open to 30 deg. With the replacement servo, increasing J6 opens the jaws; the
-120 deg close request clamps to the 60 deg open endpoint. Required owner changes:
+**Gripper and HOME integration: fixed in code (27 Oct 2026), hardware checks still open.**
 
-- Core owner: set `APP_GRIPPER_CLOSED_DEG` to 0 and `APP_GRIPPER_OPEN_DEG` to 60,
-  retaining the 35 deg startup home. These are travel endpoints, not an
-  object-specific grip-force calibration.
-- Modes owner: correct Cartesian entry's closed-state comparison for lower-angle
-  closing, and validate voice gripper targets before commanding motion so a
-  clamped close is not reported as successful holding.
-- Add integration checks for open/close direction, valid unclamped targets,
-  recovery opening, and Cartesian entry/toggle at both endpoints. Existing host
-  tests verify calibration and clamping, not these physical gripper semantics.
+- `App/common/app_config.h`: `APP_GRIPPER_CLOSED_DEG` = 0, `APP_GRIPPER_OPEN_DEG` = 60 (the J6 safe
+  endpoints; the 35 deg startup home is unchanged). Travel endpoints, not a grip-force calibration.
+- `App/modes/gripper.c` (new, used by Cartesian and voice): a gripper command counts only if motion
+  accepts it unchanged. A `MOTION_CLAMPED` result is cancelled (`motion_hold_joint(J6)`) and reported as
+  failed, so a clamped close is never taken as holding an object (voice: the script stops with
+  `GRIPPER LIMIT`; Cartesian: the state stays, `GRIPPER LIMIT` on the LCD). Cartesian reads its open/closed
+  state as "nearer the closed setpoint", so a lower angle is closed.
+- Voice HOME (`mode_voice.c`): from J2 < 90 deg it first raises J2 to 90 deg (J5 kept at least 65 deg),
+  then commands the home pose. A home target that comes back `MOTION_CLAMPED` is refused (`HOME BLOCKED`),
+  and S9 reports done only when every joint is at its home angle (`HOME NOT REACHED` otherwise). Ordinary
+  wrist commands still never lift the shoulder.
+- Host tests: gripper setpoints/direction, clamped command cancelled, HOME from J2 = 50 / J5 = 70 never
+  passes J2 < 90 with J5 < 65 and ends exactly at home. With the staging removed the HOME test fails.
 
-These changes are outside the authorized motion calibration files; do not widen
-the J6 limits or invert its pulse anchors to accommodate the old commands.
-
-**Also blocked: a clamped home request is reported as complete.** The voice home
-step in `App/modes/mode_voice.c` accepts every result except `MOTION_REFUSED`
-(`motion_set_target(&home) != MOTION_REFUSED`) and then reports the script done
-when motion goes idle. With the J2/J5 coupling below, a home target can be
-clamped: from J2 = 50°, J5 = 140°, home requests J2 = 125°, J5 = 25°; because J2
-is below 90° at request time, J5 is clamped to 65° and the stored target stays
-there. The voice task would report home complete with J5 still at 65°. Modes owner must treat a clamped home target as incomplete
-and reissue/sequence it (or report failure and retry); this motion-only change
-does not edit the modes code. Add the same integration check for the Cartesian
-path and any other caller that treats `MOTION_CLAMPED` as success.
+Still open before powered automatic operation: build with the ARM toolchain, check the PWM with the servo
+signal wires disconnected, then supported, controlled hardware tests. Not covered yet (IK not ready, so not
+reachable today): Cartesian moves and voice pose steps still accept `MOTION_CLAMPED` IK targets.
 
 The firmware table in `App/motion/servo_cal.c` now holds the confirmed installed
 home poses and conservative per-joint safe limits (27 Oct 2026). The home pose is
 a servo-angle pose, **not the kinematic joint zero**; startup sends it after
-safety allows. Joint zeros and direction signs are still uncalibrated.
+safety allows, one joint every 500 ms (gripper first, then J1-J5) so the servos do not all draw
+start-up current at once. Joint zeros and direction signs are still uncalibrated.
 
 The independent per-joint limits give endpoint clearance only. They do **not**
 guarantee that every whole-arm pose or path is collision-free; there is no
@@ -228,7 +220,7 @@ clamped**. It is not kept and replayed later when the other joint moves: after
 J5 is raised, the caller must reissue J2 = 50°. This prevents stale latent motion.
 Status reports `MOTION_CLAMPED` whenever a requested value was limited, and
 `MOTION_OK` otherwise. `MOTION_CLAMPED` is not a success indication for a
-multi-step script; see the home-task blocker above.
+multi-step script; voice HOME is staged and checked for that reason (see the safety warning above).
 
 The firmware has **no joint-angle sensors**. "Current" in this rule means the
 commanded angle in `s_cur`, not the measured physical pose. A loaded or fast servo

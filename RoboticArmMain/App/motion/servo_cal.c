@@ -27,8 +27,8 @@
  * the servo unit, channel, pulse calibration and home angle of each row stay
  * unchanged.
  *
- * STARTUP STILL SENDS HOME: motion_init() loads home_deg and the first allowed
- * PWM tick writes that pose. Keep every servo signal wire disconnected while
+ * STARTUP STILL SENDS HOME: motion_init() loads home_deg and motion_tick() writes
+ * that pose one joint at a time (MOTION_BOOT_STAGGER_MS apart, gripper first). Keep every servo signal wire disconnected while
  * bringing up new motion or calibration code.
  */
 #include "motion/servo.h"

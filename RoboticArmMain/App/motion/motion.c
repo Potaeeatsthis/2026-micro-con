@@ -26,15 +26,22 @@
  * changes later. A clamped value must be reissued after the pose allows.
  * "current" is the commanded angle s_cur, not a measured joint angle: there are no
  * joint sensors, so a loaded or fast servo can lag this pose. */
-#define J2_MIN_DEG        90.0f
-#define J5_WRIST_UP_DEG   65.0f
+#define J2_MIN_DEG        MOTION_J2_COUPLED_DEG     /* values in motion.h: voice HOME stages around them */
+#define J5_WRIST_UP_DEG   MOTION_J5_WRIST_UP_DEG
 
 static joint_vec_t       s_cur;                 /* commanded angle now */
 static joint_vec_t       s_tgt;                 /* where the trajectory is heading */
 static volatile float    s_jog_v[ARM_N_JOINTS]; /* deg/s, 0 = no jog */
 static volatile uint32_t s_jog_ms[ARM_N_JOINTS];
 static volatile speed_level_t s_speed = SPEED_FINE;
-static volatile bool     s_started;             /* first pulse sent */
+static volatile bool     s_started;             /* every joint has had its first pulse */
+/* no joint has had a pulse before start-up, so each one jumps to home at full speed. all six in one
+ * tick drew more current than the 6 V servo supply gives (27 Oct 2026): one joint at a time instead.
+ * gripper first: during flashing its floating signal can drive it to an end */
+static const int         BOOT_ORDER[ARM_N_JOINTS] = { J6_GRIPPER, J1_BASE, J2_SHOULDER, J3_ELBOW,
+                                                      J4_WRIST_ROLL, J5_WRIST_PITCH };
+static int               s_boot_n;              /* joints that have had their first pulse */
+static uint32_t          s_boot_ms;
 static volatile bool     s_idle = true;
 
 static inline uint32_t irq_save(void)       { uint32_t p = __get_PRIMASK(); __disable_irq(); return p; }
@@ -88,7 +95,9 @@ void motion_init(void)
     s_jog_v[j] = 0.0f;
   }
   s_started = false;
-  LOG("motion: init, home pose loaded, pulses start when safety allows\r\n");
+  s_boot_n = 0;
+  LOG("motion: init, home pose loaded, pulses start one joint every %lu ms when safety allows\r\n",
+      (unsigned long)MOTION_BOOT_STAGGER_MS);
 }
 
 /* ---------------------------------------------------------------- isr side */
@@ -96,8 +105,12 @@ void motion_tick(void)
 {
   if (!s_started) {
     if (!safety_motion_allowed()) return;
-    for (int j = 0; j < ARM_N_JOINTS; j++) servo_write_deg(j, s_cur.deg[j]);
-    s_started = true;                               /* servos go to home here */
+    uint32_t t = HAL_GetTick();
+    if (s_boot_n > 0 && ms_since(t, s_boot_ms) < MOTION_BOOT_STAGGER_MS) return;
+    int j = BOOT_ORDER[s_boot_n++];
+    servo_write_deg(j, s_cur.deg[j]);               /* this joint goes to home now */
+    s_boot_ms = t;
+    if (s_boot_n == ARM_N_JOINTS) s_started = true; /* targets set meanwhile start moving next tick */
     return;
   }
 

@@ -68,11 +68,13 @@
 #ifndef APP_JOG_TIMEOUT_MS
 #define APP_JOG_TIMEOUT_MS      150u  /* a jog velocity not refreshed within this time drops to 0 */
 #endif
+/* J6 replacement servo (servo_cal.c, 27 Oct 2026): a LOWER angle closes. these are the travel
+ * endpoints of its 0..60 deg safe range (home 35 = partly open), not a grip-force calibration */
 #ifndef APP_GRIPPER_OPEN_DEG
-#define APP_GRIPPER_OPEN_DEG    30.0f /* TODO(servo): measure on the real gripper */
+#define APP_GRIPPER_OPEN_DEG    60.0f
 #endif
 #ifndef APP_GRIPPER_CLOSED_DEG
-#define APP_GRIPPER_CLOSED_DEG  120.0f
+#define APP_GRIPPER_CLOSED_DEG  0.0f
 #endif
 
 /* ---------------------------------------------------------------- pi link */
