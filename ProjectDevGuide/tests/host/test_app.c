@@ -312,7 +312,7 @@ int main(void)
   check_cal_limits_home(J3_ELBOW,       45.0f, 180.0f, 145.0f, 2123);
   check_cal_limits_home(J4_WRIST_ROLL,   0.0f, 180.0f,  90.0f, 1440);
   check_cal_limits_home(J5_WRIST_PITCH, 25.0f, 140.0f,  25.0f, 901);
-  check_cal_limits_home(J6_GRIPPER,      0.0f,  60.0f,  35.0f, 842);
+  check_cal_limits_home(J6_GRIPPER,      0.0f,  60.0f,  40.0f, 891);
 
   printf("== motion clamps to the installed boundaries\n");
   motion_init();
@@ -475,7 +475,7 @@ int main(void)
   CHECK(htim3.ccr[0] == 0, "no pulse before the first control tick");
   CHECK(safety_state() == SAFETY_OK, "no e-stop: safety ok at boot");
   run_ms(20);
-  CHECK(htim4.ccr[3] == 842 && htim3.ccr[0] == 0 && htim3.ccr[1] == 0 && htim4.ccr[0] == 0 &&
+  CHECK(htim4.ccr[3] == 891 && htim3.ccr[0] == 0 && htim3.ccr[1] == 0 && htim4.ccr[0] == 0 &&
         htim4.ccr[1] == 0 && htim4.ccr[2] == 0, "first tick: only the gripper gets its home pulse");
   run_ms(MOTION_BOOT_STAGGER_MS);
   CHECK(htim3.ccr[0] == 1407 && htim3.ccr[1] == 0, "one stagger later: J1 too, J2 still waits");
@@ -496,7 +496,7 @@ int main(void)
   CHECK(htim4.ccr[0] == 2123, "J3 first pulse = home 145 deg (2123 us)");
   CHECK(htim4.ccr[1] == 1440, "J4 first pulse = home 90 deg (1440 us)");
   CHECK(htim4.ccr[2] == 901,  "J5 first pulse = home 25 deg (901 us)");
-  CHECK(htim4.ccr[3] == 842,  "J6 first pulse = home 35 deg (842 us)");
+  CHECK(htim4.ccr[3] == 891,  "J6 first pulse = home 40 deg (891 us)");
 
   printf("== voice mode: never moves on its own\n");
   CHECK(modes_current() == MODE_VOICE, "boots in voice mode");
@@ -593,7 +593,7 @@ int main(void)
   CHECK(APP_GRIPPER_OPEN_DEG == servo_cal(J6_GRIPPER)->max_deg, "open setpoint = J6 safe max (60)");
   CHECK(APP_GRIPPER_OPEN_DEG > APP_GRIPPER_CLOSED_DEG, "increasing J6 opens");
   CHECK(gripper_is_closed_at(0.0f) && gripper_is_closed_at(10.0f), "low angles read as closed");
-  CHECK(!gripper_is_closed_at(35.0f) && !gripper_is_closed_at(60.0f), "home 35 and 60 read as open");
+  CHECK(!gripper_is_closed_at(40.0f) && !gripper_is_closed_at(60.0f), "home 40 and 60 read as open");
   {
     float j6 = cur(J6_GRIPPER);
     CHECK(!gripper_set_deg(120.0f), "a setpoint outside the J6 limits is reported as failed");

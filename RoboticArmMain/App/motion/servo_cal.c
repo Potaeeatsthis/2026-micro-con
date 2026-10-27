@@ -9,7 +9,8 @@
  * anchors are NOT installed safe limits and NOT a command range.
  *
  * min_deg / max_deg / home_deg are the confirmed installed values (27 Oct
- * 2026). motion.c enforces the limits and loads home before the first pulse.
+ * 2026; J6 home raised from 35 to 40 deg on 28 Oct 2026). motion.c enforces
+ * the limits and loads home before the first pulse.
  * The home pose is NOT the kinematic zero; joint zeros and signs are still
  * uncalibrated. The independent per-joint limits give endpoint clearance only;
  * they do NOT prove that every whole-arm pose or path is collision-free. J2's
@@ -22,7 +23,9 @@
  * still need testing.
  *
  * Physical labels are preserved: MG996R-1/-2/-3, SG92R-1, SG92R-3 and SG90.
- * SG92R-2 is retired; SG92R-3 keeps its name at joint 5 and J6 uses an SG90.
+ * SG92R-2 is retired; SG92R-3 keeps its name at joint 5. J6's model is
+ * unresolved: it was recorded as SG90, but the user later reported SG92R. The
+ * J6 anchors (500 / 1380 / 2300 us) are unchanged either way.
  * J4 is wrist roll and J5 is wrist pitch; this swap is by joint role only, so
  * the servo unit, channel, pulse calibration and home angle of each row stay
  * unchanged.
@@ -40,5 +43,5 @@ const servo_cal_t SERVO_CAL[ARM_N_JOINTS] = {
   { "J3 ELBOW",        540,  1530, 2500,  45.0f, 180.0f, 145.0f }, /* MG996R #3 */
   { "J4 WRIST ROLL",   500,  1440, 2370,   0.0f, 180.0f, 90.0f },  /* SG92R #1 */
   { "J5 WRIST PITCH",  640,  1580, 2470,  25.0f, 140.0f, 25.0f },  /* SG92R #3 (stable label) */
-  { "J6 GRIPPER",      500,  1380, 2300,   0.0f, 60.0f, 35.0f },   /* SG90 replacement */
+  { "J6 GRIPPER",      500,  1380, 2300,   0.0f, 60.0f, 40.0f },   /* SG90; user later reported SG92R */
 };

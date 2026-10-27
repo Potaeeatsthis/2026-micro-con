@@ -74,7 +74,7 @@ int main(void)
   CHECK(motion_started(), "all six joints started");
   CHECK(strcmp(servo_cal_test_status(), "Home. Turn to test limits") == 0, "screen says home");
   CHECK(cur(J1_BASE) == 85.0f && cur(J2_SHOULDER) == 125.0f && cur(J3_ELBOW) == 145.0f &&
-        cur(J4_WRIST_ROLL) == 90.0f && cur(J5_WRIST_PITCH) == 25.0f && cur(J6_GRIPPER) == 35.0f, "every joint at home");
+        cur(J4_WRIST_ROLL) == 90.0f && cur(J5_WRIST_PITCH) == 25.0f && cur(J6_GRIPPER) == 40.0f, "every joint at home");
 
   printf("== one click = 1 deg, through motion's speed limit\n");
   CHECK(servo_cal_test_step_deg() == 1 && servo_cal_test_selected() == J1_BASE, "starts at 1 deg/click on J1");
@@ -97,8 +97,8 @@ int main(void)
   printf("== table limit: J6 stops at its 60 deg max\n");
   select_joint(J6_GRIPPER);
   post(EVT_JOY_PRESS, 0);                              /* 5 deg */
-  click(5);
-  CHECK(tgt(J6_GRIPPER) == 60.0f, "35 + 25 = 60 accepted");
+  click(4);
+  CHECK(tgt(J6_GRIPPER) == 60.0f, "40 + 20 = 60 accepted");
   click(1);
   CHECK(tgt(J6_GRIPPER) == 60.0f, "65 clamped to 60");
   CHECK(strstr(servo_cal_test_status(), "MAX 60") != NULL, "screen says MAX 60");
