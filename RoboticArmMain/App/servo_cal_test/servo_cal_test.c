@@ -1,6 +1,7 @@
 /* servo_cal_test.c - see servo_cal_test.h */
 #include "servo_cal_test/servo_cal_test.h"
 #include "common/app_events.h"
+#include "common/app_fault.h"
 #include "common/app_log.h"
 #include "common/app_types.h"
 #include "common/app_util.h"
@@ -8,6 +9,7 @@
 #include "lcd/lcd_port.h"
 #include "motion/motion.h"
 #include "motion/servo.h"
+#include "safety/safety.h"
 #include "main.h"
 #include <stdbool.h>
 #include <stdio.h>
@@ -25,6 +27,7 @@ static int      s_step = STEP_FINE_DEG;
 static bool     s_save_armed = true;       /* the stick must come back to centre between prints */
 static int      s_prints;
 static bool     s_started_shown;
+static bool     s_fault_shown;
 static char     s_status[40] = "Going home...";
 static uint16_t s_status_fg = LCD_YELLOW;
 static bool     s_dirty = true;
@@ -125,7 +128,16 @@ static void print_pose(void)
 void servo_cal_test_step(void)
 {
   app_event_t e;
-  if (!motion_started()) {
+  if (!safety_motion_allowed()) {          /* fatal fault latched: motion is frozen until reset */
+    while (app_event_pop(&e)) { }          /* knob and stick ignored: never touch a target now */
+    if (!s_fault_shown) {
+      s_fault_shown = true;
+      char s[40];
+      snprintf(s, sizeof s, "FAULT %d - RESET BOARD", (int)app_fault_last());
+      set_status(s, LCD_RED);
+      LOG("servo-cal: fatal fault %d, motion frozen, knob ignored; reset the board\r\n", (int)app_fault_last());
+    }
+  } else if (!motion_started()) {
     while (app_event_pop(&e)) { }          /* no knob or stick until every joint has its home pulse */
   } else {
     if (!s_started_shown) {

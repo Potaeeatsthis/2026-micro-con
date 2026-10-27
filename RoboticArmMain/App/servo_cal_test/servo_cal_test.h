@@ -9,6 +9,8 @@
  * KY-040 press = next joint (J1..J6, wraps). KY-040 turn = the selected joint's target moves by the
  * step per click (clockwise = more). KY-023 press (stick centred) = step 1 <-> 5 deg (starts at 1).
  * a click that motion clamps shows the reason (table MIN/MAX, or the J2/J5 coupling).
+ * a latched fatal fault (start-up or later) shows "FAULT <code> - RESET BOARD" and every knob / stick
+ * input is ignored, so no target or status changes until the board is reset.
  * KY-023 pushed down, then back to centre = print the current pose on USART3 as servo_cal.c rows:
  * home_deg = the pose, min_deg / max_deg = the servo_cal.c table values (never the coupled bound).
  *

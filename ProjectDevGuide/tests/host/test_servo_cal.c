@@ -9,6 +9,7 @@
 #include "main.h"
 #include "tim.h"
 #include "common/app_events.h"
+#include "common/app_fault.h"
 #include "motion/motion.h"
 #include "motion/servo.h"
 #include "servo_cal_test/servo_cal_test.h"
@@ -128,6 +129,33 @@ int main(void)
   g_joy_y = -1.0f; g_joy_centred = 0;
   capture_step();
   CHECK(strstr(g_out, "POSE #2") != NULL, "back to centre, down again: POSE #2");
+
+  /* last: a fatal fault latches until reset */
+  printf("== fatal fault after start-up: FAULT shown, knob ignored\n");
+  g_joy_y = 0.0f; g_joy_centred = 1;
+  select_joint(J1_BASE);
+  run_ms(3000);
+  float t1 = tgt(J1_BASE);
+  app_fault_raise(FAULT_INIT, true);
+  servo_cal_test_step();
+  CHECK(strncmp(servo_cal_test_status(), "FAULT 2 - RESET BOARD", 21) == 0, "status names the fault");
+  click(3);
+  CHECK(tgt(J1_BASE) == t1, "a click after the fault does not change the target");
+  CHECK(strncmp(servo_cal_test_status(), "FAULT", 5) == 0, "and does not overwrite the FAULT status");
+  press();
+  CHECK(servo_cal_test_selected() == J1_BASE, "a press after the fault does not change the joint");
+  g_joy_y = -1.0f; g_joy_centred = 0;
+  capture_step();
+  CHECK(strstr(g_out, "POSE #") == NULL, "joystick down does not print");
+  g_joy_y = 0.0f; g_joy_centred = 1;
+  run_ms(1000);
+  CHECK(strncmp(servo_cal_test_status(), "FAULT", 5) == 0, "FAULT stays on screen");
+
+  printf("== fatal fault before start-up ends: FAULT, not \"Going home...\"\n");
+  motion_init();                                       /* a new start-up while the fault is still latched */
+  run_ms(BOOT_MS);
+  CHECK(!motion_started(), "motion does not start under a fatal fault");
+  CHECK(strncmp(servo_cal_test_status(), "FAULT", 5) == 0, "screen shows FAULT, not Going home");
 
   printf("\n%d passed, %d failed\n", passes, fails);
   return fails ? 1 : 0;
