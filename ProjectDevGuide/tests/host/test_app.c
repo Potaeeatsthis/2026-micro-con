@@ -70,6 +70,23 @@ static void run_ms(uint32_t ms)
 }
 static float cur(int j) { joint_vec_t v; motion_get_current(&v); return v.deg[j]; }
 static float tgt(int j) { joint_vec_t v; motion_get_target(&v); return v.deg[j]; }
+static void run_motion_ms(uint32_t ms)
+{
+  for (uint32_t t = 0; t < ms; t += 20) { g_tick += 20; motion_tick(); }
+}
+static motion_result_t set_pair_target(float j2_deg, float j5_deg)
+{
+  joint_vec_t t;
+  motion_get_current(&t);
+  t.deg[J2_SHOULDER] = j2_deg;
+  t.deg[J5_WRIST_PITCH] = j5_deg;
+  return motion_set_target(&t);
+}
+static void run_jog(int joint, float deg_per_s, uint32_t ms)
+{
+  for (uint32_t t = 0; t < ms; t += 20) { motion_jog(joint, deg_per_s); g_tick += 20; motion_tick(); }
+  for (uint32_t t = 0; t < 200; t += 20) { g_tick += 20; motion_tick(); }  /* timeout + final step */
+}
 static void say(const char *w) { app_event_post(EVT_VOICE_WORD, (uint16_t)voice_class_id(w), 900, 0, 0); loop_pass(); }
 static void pi_rx(const char *s)
 {
@@ -289,7 +306,7 @@ int main(void)
 
   printf("== installed homes and conservative limits\n");
   check_cal_limits_home(J1_BASE,         0.0f, 180.0f,  85.0f, 1407);
-  check_cal_limits_home(J2_SHOULDER,    90.0f, 180.0f, 125.0f, 1823);
+  check_cal_limits_home(J2_SHOULDER,    50.0f, 180.0f, 125.0f, 1823);
   check_cal_limits_home(J3_ELBOW,       45.0f, 180.0f, 145.0f, 2123);
   check_cal_limits_home(J4_WRIST_ROLL,   0.0f, 180.0f,  90.0f, 1440);
   check_cal_limits_home(J5_WRIST_PITCH, 25.0f, 140.0f,  25.0f, 901);
@@ -303,6 +320,153 @@ int main(void)
   check_joint_clamp(J4_WRIST_ROLL,   0.0f, 180.0f);
   check_joint_clamp(J5_WRIST_PITCH, 25.0f, 140.0f);
   check_joint_clamp(J6_GRIPPER,      0.0f,  60.0f);
+
+  printf("== J2/J5 coupling uses the actual commanded pose, not the target\n");
+  motion_init();
+  motion_set_speed(SPEED_FAST);
+  app_events_drain();
+  run_motion_ms(100);
+  CHECK(cur(J2_SHOULDER) == 125.0f && cur(J5_WRIST_PITCH) == 25.0f, "coupling starts at the home pose");
+
+  /* J5 current below 65: J2 floor is 90, even when the J5 target is high. */
+  CHECK(set_pair_target(50.0f, 25.0f) == MOTION_CLAMPED && tgt(J2_SHOULDER) == 90.0f,
+        "J5 current 25: full J2 target 50 clamps to 90");
+  {
+    joint_vec_t t;
+    motion_get_current(&t);
+    t.deg[J2_SHOULDER] = 50.0f;
+    t.deg[J5_WRIST_PITCH] = 100.0f;
+    CHECK(motion_set_target(&t) == MOTION_CLAMPED && tgt(J2_SHOULDER) == 90.0f,
+          "J5 target 100 does not unlock J2 while J5 current is 25");
+  }
+  motion_hold();
+  CHECK(cur(J2_SHOULDER) == 125.0f && cur(J5_WRIST_PITCH) == 25.0f,
+        "command clamping does not move the arm");
+
+  /* J5 current exactly 65: J2 50 becomes legal. */
+  CHECK(set_pair_target(125.0f, 65.0f) == MOTION_OK, "J5 target 65 accepted");
+  run_motion_ms(3000);
+  CHECK(cur(J5_WRIST_PITCH) == 65.0f, "J5 reaches 65");
+  CHECK(set_pair_target(50.0f, 65.0f) == MOTION_OK && tgt(J2_SHOULDER) == 50.0f,
+        "J5 current 65 allows J2 50");
+  run_motion_ms(5000);
+  CHECK(cur(J2_SHOULDER) == 50.0f && cur(J5_WRIST_PITCH) == 65.0f, "J2 reaches 50 with J5 at 65");
+  CHECK(motion_set_joint_target(J2_SHOULDER, 40.0f) == MOTION_CLAMPED &&
+        tgt(J2_SHOULDER) == 50.0f, "J2 50 is the absolute floor while J5 is high");
+
+  /* J2 current below 90: J5 is blocked at 65; the shoulder is not lifted. */
+  CHECK(motion_set_joint_target(J5_WRIST_PITCH, 25.0f) == MOTION_CLAMPED &&
+        tgt(J5_WRIST_PITCH) == 65.0f, "J2 current 50: J5 target 25 clamps to 65");
+  run_motion_ms(3000);
+  CHECK(cur(J2_SHOULDER) == 50.0f && cur(J5_WRIST_PITCH) == 65.0f,
+        "blocked J5 leaves J2 at 50 (no automatic shoulder lift)");
+  CHECK(tgt(J2_SHOULDER) == 50.0f && tgt(J5_WRIST_PITCH) == 65.0f,
+        "blocked target is clamped, not left latent");
+
+  /* J2 current just below 90 still blocks J5 25. */
+  CHECK(set_pair_target(89.9f, 65.0f) == MOTION_OK, "J2 target 89.9 accepted with J5 at 65");
+  run_motion_ms(3000);
+  CHECK(cur(J2_SHOULDER) == 89.9f, "J2 reaches 89.9");
+  CHECK(motion_set_joint_target(J5_WRIST_PITCH, 25.0f) == MOTION_CLAMPED &&
+        tgt(J5_WRIST_PITCH) == 65.0f, "J2 current 89.9: J5 target 25 clamps to 65");
+  motion_hold();
+
+  /* J5 current just below 65 still blocks J2 50. Raise J2 to 90 first, because
+   * at J2 = 89.9 the J5 floor is already 65. */
+  CHECK(set_pair_target(90.0f, 65.0f) == MOTION_OK, "raise J2 to 90 with J5 at 65");
+  run_motion_ms(3000);
+  CHECK(cur(J2_SHOULDER) == 90.0f, "J2 reaches 90");
+  CHECK(set_pair_target(90.0f, 64.9f) == MOTION_OK, "J5 target 64.9 accepted with J2 at 90");
+  run_motion_ms(3000);
+  CHECK(cur(J2_SHOULDER) == 90.0f && cur(J5_WRIST_PITCH) == 64.9f, "pose is J2 90 / J5 64.9");
+  CHECK(motion_set_joint_target(J2_SHOULDER, 50.0f) == MOTION_CLAMPED &&
+        tgt(J2_SHOULDER) == 90.0f, "J5 current 64.9: J2 target 50 clamps to 90");
+  motion_hold();
+
+  CHECK(set_pair_target(125.0f, 65.0f) == MOTION_OK, "set concurrent start pose J2 125 / J5 65");
+  run_motion_ms(3000);
+  CHECK(cur(J2_SHOULDER) == 125.0f && cur(J5_WRIST_PITCH) == 65.0f, "concurrent start pose reached");
+
+  /* Single-joint requests clamp only the requested joint and look at both the
+   * current pose and the pending target of the other joint. Test both orders. */
+  CHECK(motion_set_joint_target(J5_WRIST_PITCH, 25.0f) == MOTION_OK &&
+        tgt(J5_WRIST_PITCH) == 25.0f, "J5 single 25 accepted while J2 pending is 125");
+  CHECK(motion_set_joint_target(J2_SHOULDER, 50.0f) == MOTION_CLAMPED &&
+        tgt(J2_SHOULDER) == 90.0f && tgt(J5_WRIST_PITCH) == 25.0f,
+        "J5 pending 25 blocks J2 50; unrequested J5 target unchanged");
+  motion_hold();
+  CHECK(motion_set_joint_target(J2_SHOULDER, 50.0f) == MOTION_OK &&
+        tgt(J2_SHOULDER) == 50.0f, "J2 single 50 accepted while J5 pending is 65");
+  CHECK(motion_set_joint_target(J5_WRIST_PITCH, 25.0f) == MOTION_CLAMPED &&
+        tgt(J5_WRIST_PITCH) == 65.0f && tgt(J2_SHOULDER) == 50.0f,
+        "J2 pending 50 blocks J5 25; unrequested J2 target unchanged");
+  motion_hold();
+
+  /* Both requested values are legal at the current pose, but the endpoint is not.
+   * The setter must clamp and report it; the tick must not change it later. */
+  CHECK(set_pair_target(50.0f, 25.0f) == MOTION_CLAMPED &&
+        tgt(J2_SHOULDER) == 90.0f && tgt(J5_WRIST_PITCH) == 25.0f,
+        "full target 50/25 clamps shoulder to 90 and returns CLAMPED");
+  int unsafe = 0;
+  for (uint32_t t = 0; t < 6000; t += 20) {
+    g_tick += 20; motion_tick();
+    if (cur(J2_SHOULDER) < 90.0f - 0.01f && cur(J5_WRIST_PITCH) < 65.0f - 0.01f) unsafe = 1;
+  }
+  CHECK(!unsafe, "simultaneous path never has J2<90 with J5<65");
+  CHECK(cur(J2_SHOULDER) == 90.0f && cur(J5_WRIST_PITCH) == 25.0f,
+        "blocked shoulder stops at 90 while the wrist reaches 25");
+  CHECK(tgt(J2_SHOULDER) == 90.0f && tgt(J5_WRIST_PITCH) == 25.0f,
+        "no stale J2 50 target survives the clamp");
+
+  /* Reverse transition: J5 25 is clamped now and must be reissued after J2 reaches 90. */
+  CHECK(set_pair_target(90.0f, 140.0f) == MOTION_OK, "raise J5 to 140");
+  run_motion_ms(4000);
+  CHECK(cur(J5_WRIST_PITCH) == 140.0f, "J5 reaches 140");
+  CHECK(set_pair_target(50.0f, 140.0f) == MOTION_OK, "lower J2 to 50 with J5 high");
+  run_motion_ms(4000);
+  CHECK(cur(J2_SHOULDER) == 50.0f && cur(J5_WRIST_PITCH) == 140.0f, "pose is J2 50 / J5 140");
+  CHECK(set_pair_target(90.0f, 25.0f) == MOTION_CLAMPED &&
+        tgt(J2_SHOULDER) == 90.0f && tgt(J5_WRIST_PITCH) == 65.0f,
+        "while J2 current 50, J5 target 25 clamps to 65");
+  run_motion_ms(5000);
+  CHECK(cur(J2_SHOULDER) == 90.0f && cur(J5_WRIST_PITCH) == 65.0f,
+        "J2 reaches 90; J5 stops at the clamped 65");
+  CHECK(tgt(J5_WRIST_PITCH) == 65.0f, "J5 25 is not resumed automatically after J2 reaches 90");
+  CHECK(motion_set_joint_target(J5_WRIST_PITCH, 25.0f) == MOTION_OK &&
+        tgt(J5_WRIST_PITCH) == 25.0f, "reissue after the pose allows is accepted");
+  run_motion_ms(3000);
+  CHECK(cur(J5_WRIST_PITCH) == 25.0f, "reissued J5 reaches 25");
+
+  /* Jog crossing: J2 down stops at 90 while J5 is low. */
+  CHECK(set_pair_target(125.0f, 25.0f) == MOTION_OK, "raise J2 to 125 for the jog test");
+  run_motion_ms(3000);
+  CHECK(cur(J2_SHOULDER) == 125.0f && cur(J5_WRIST_PITCH) == 25.0f, "jog start pose reached");
+  run_jog(J2_SHOULDER, -45.0f, 3000);
+  CHECK(cur(J2_SHOULDER) == 90.0f, "J2 jog stops at 90 while J5 current is 25");
+  CHECK(cur(J5_WRIST_PITCH) == 25.0f, "J5 stays at 25 during the shoulder jog");
+  CHECK(tgt(J2_SHOULDER) == 90.0f, "jog target is clamped at 90, not left below it");
+
+  /* Jog crossing: J5 down stops at 65 while J2 is low, without lifting J2. */
+  CHECK(set_pair_target(90.0f, 140.0f) == MOTION_OK, "raise J5 to 140");
+  run_motion_ms(4000);
+  CHECK(set_pair_target(50.0f, 140.0f) == MOTION_OK, "lower J2 to 50");
+  run_motion_ms(4000);
+  CHECK(cur(J2_SHOULDER) == 50.0f && cur(J5_WRIST_PITCH) == 140.0f, "jog start pose reached");
+  run_jog(J5_WRIST_PITCH, -45.0f, 3000);
+  CHECK(cur(J5_WRIST_PITCH) == 65.0f, "J5 jog stops at 65 while J2 current is 50");
+  CHECK(cur(J2_SHOULDER) == 50.0f && tgt(J2_SHOULDER) == 50.0f, "J5 jog does not lift J2");
+  CHECK(tgt(J5_WRIST_PITCH) == 65.0f, "jog target is clamped at 65, not left below it");
+
+  /* J2 jog may cross below 90 while J5 is high. */
+  CHECK(set_pair_target(125.0f, 70.0f) == MOTION_OK, "raise J2 to 125 and J5 to 70");
+  run_motion_ms(4000);
+  CHECK(cur(J2_SHOULDER) == 125.0f && cur(J5_WRIST_PITCH) == 70.0f, "jog start pose reached");
+  run_jog(J2_SHOULDER, -45.0f, 2500);
+  CHECK(cur(J2_SHOULDER) == 50.0f, "J2 jog reaches its 50 floor while J5 is high");
+  CHECK(cur(J5_WRIST_PITCH) == 70.0f, "J5 stays high during the shoulder jog");
+
+  motion_set_speed(SPEED_FINE);
+  app_events_drain();
 
   printf("== boot: no pulse until the first tick, then home\n");
   motion_init(); pi_link_init(); lcd_init(); modes_init();

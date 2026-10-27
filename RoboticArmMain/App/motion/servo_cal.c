@@ -13,10 +13,13 @@
  * The home pose is NOT the kinematic zero; joint zeros and signs are still
  * uncalibrated. The independent per-joint limits give endpoint clearance only;
  * they do NOT prove that every whole-arm pose or path is collision-free. J2's
- * lower limit is 90 deg at the user's request: floor contact was observed around
- * 90-95 deg with J5 = 25 deg, so 90 deg is NOT confirmed clearance. The observed
- * 50 deg case needs a wrist-coupling rule that is not complete, so 50 deg is not
- * enabled here.
+ * absolute table floor is 50 deg at the user's request: floor contact was
+ * observed around 90-95 deg with J5 = 25 deg, so 50 deg alone is NOT confirmed
+ * clearance. motion.c adds the confirmed wrist coupling on top of this table:
+ * J5 current or pending at or above 65 deg allows J2 down to 50 deg, otherwise
+ * J2 is raised to 90 deg or above, and J2 below 90 deg (current or pending)
+ * blocks J5 below 65 deg. That rule is only endpoint coupling; whole-arm paths
+ * still need testing.
  *
  * Physical labels are preserved: MG996R-1/-2/-3, SG92R-1, SG92R-3 and SG90.
  * SG92R-2 is retired; SG92R-3 keeps its name at joint 5 and J6 uses an SG90.
@@ -33,7 +36,7 @@
 const servo_cal_t SERVO_CAL[ARM_N_JOINTS] = {
   /* name              0deg  90deg 180deg  min    max    home */
   { "J1 BASE",         500,  1460, 2430,   0.0f, 180.0f, 85.0f },  /* MG996R #1 */
-  { "J2 SHOULDER",     500,  1430, 2440,  90.0f, 180.0f, 125.0f }, /* MG996R #2 */
+  { "J2 SHOULDER",     500,  1430, 2440,  50.0f, 180.0f, 125.0f }, /* MG996R #2, dynamic 90 while J5 low */
   { "J3 ELBOW",        540,  1530, 2500,  45.0f, 180.0f, 145.0f }, /* MG996R #3 */
   { "J4 WRIST ROLL",   500,  1440, 2370,   0.0f, 180.0f, 90.0f },  /* SG92R #1 */
   { "J5 WRIST PITCH",  640,  1580, 2470,  25.0f, 140.0f, 25.0f },  /* SG92R #3 (stable label) */

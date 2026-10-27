@@ -9,6 +9,14 @@
  *   2. jog velocity:     motion_jog(joint, deg_per_s)                       (joystick modes)
  *      a jog must be refreshed every main-loop pass; if it is not refreshed within
  *      APP_JOG_TIMEOUT_MS it drops to 0, so a hung main loop cannot keep the arm moving.
+ *
+ * J2/J5 coupling is a pose rule. It uses the actual commanded pose (s_cur) plus, for
+ * a single-joint request, the pending target of the other joint. J5 >= 65 deg allows
+ * J2 down to its absolute 50 deg table floor; otherwise J2 stays >= 90 deg. J2 < 90 deg
+ * blocks J5 below 65 deg. A full target that would end below both bounds is clamped
+ * deterministically with J2 = 90 deg. Setters report MOTION_CLAMPED immediately and
+ * store the clamped endpoint, so reissue after the pose allows instead of expecting a
+ * late move. "current" is the commanded angle, not a measured joint sensor.
  */
 #ifndef APP_MOTION_H
 #define APP_MOTION_H

@@ -18,6 +18,17 @@
 
 #define DT_S        (1.0f / (float)APP_CONTROL_HZ)
 
+/* J2/J5 coupling. The servo_cal table gives J2 its absolute 50 deg floor; this
+ * rule can only raise a floor. J5 at or above 65 deg (current or pending) lets
+ * the shoulder use 50 deg, otherwise J2 must stay at 90 deg or above. While J2 is
+ * below 90 deg (current or pending), J5 must stay at 65 deg or above.
+ * Setters clamp the stored endpoint before returning, so an accepted target never
+ * changes later. A clamped value must be reissued after the pose allows.
+ * "current" is the commanded angle s_cur, not a measured joint angle: there are no
+ * joint sensors, so a loaded or fast servo can lag this pose. */
+#define J2_MIN_DEG        90.0f
+#define J5_WRIST_UP_DEG   65.0f
+
 static joint_vec_t       s_cur;                 /* commanded angle now */
 static joint_vec_t       s_tgt;                 /* where the trajectory is heading */
 static volatile float    s_jog_v[ARM_N_JOINTS]; /* deg/s, 0 = no jog */
@@ -34,12 +45,38 @@ static float speed_deg_s(void)
   return (s_speed == SPEED_FAST) ? APP_SPEED_FAST_DEG_S : APP_SPEED_FINE_DEG_S;
 }
 
-static float clamp_joint(int j, float deg, bool *clamped)
+static float joint_min_deg(int j, const joint_vec_t *cur, const joint_vec_t *pending)
 {
   const servo_cal_t *c = servo_cal(j);
-  float v = clampf(deg, c->min_deg, c->max_deg);
+  float lo = c->min_deg;                            /* static calibration is always a floor */
+
+  if (j == J2_SHOULDER) {
+    if (cur->deg[J5_WRIST_PITCH] < J5_WRIST_UP_DEG && lo < J2_MIN_DEG) lo = J2_MIN_DEG;
+    if (pending != NULL && pending->deg[J5_WRIST_PITCH] < J5_WRIST_UP_DEG &&
+        lo < J2_MIN_DEG) {
+      lo = J2_MIN_DEG;
+    }
+  } else if (j == J5_WRIST_PITCH) {
+    if (cur->deg[J2_SHOULDER] < J2_MIN_DEG && lo < J5_WRIST_UP_DEG) lo = J5_WRIST_UP_DEG;
+    if (pending != NULL && pending->deg[J2_SHOULDER] < J2_MIN_DEG &&
+        lo < J5_WRIST_UP_DEG) {
+      lo = J5_WRIST_UP_DEG;
+    }
+  }
+  return lo;
+}
+
+static float clamp_joint_to(int j, float deg, float min_deg, bool *clamped)
+{
+  const servo_cal_t *c = servo_cal(j);
+  float v = clampf(deg, min_deg, c->max_deg);
   if (clamped && v != deg) *clamped = true;
   return v;
+}
+
+static float clamp_joint(int j, float deg, const joint_vec_t *cur, bool *clamped)
+{
+  return clamp_joint_to(j, deg, joint_min_deg(j, cur, NULL), clamped);
 }
 
 void motion_init(void)
@@ -79,13 +116,17 @@ void motion_tick(void)
   bool idle = true;
 
   for (int j = 0; j < ARM_N_JOINTS; j++) {
+    /* Re-clamp the stored target every tick. J2 is processed before J5, so the
+     * J5 bound sees J2's new angle and the tick can never end in an unsafe pose. */
+    s_tgt.deg[j] = clamp_joint(j, s_tgt.deg[j], &s_cur, NULL);
+
     float v = s_jog_v[j];
     if (v != 0.0f) {
       if (ms_since(now, s_jog_ms[j]) > APP_JOG_TIMEOUT_MS) {
         s_jog_v[j] = 0.0f;                          /* jog not refreshed: stop */
         s_tgt.deg[j] = s_cur.deg[j];
       } else {
-        s_tgt.deg[j] = clamp_joint(j, s_tgt.deg[j] + v * DT_S, NULL);
+        s_tgt.deg[j] = clamp_joint(j, s_tgt.deg[j] + v * DT_S, &s_cur, NULL);
         idle = false;
       }
     }
@@ -110,11 +151,21 @@ void motion_tick(void)
 motion_result_t motion_set_target(const joint_vec_t *target)
 {
   if (target == NULL) return MOTION_REFUSED;
-  bool clamped = false;
-  joint_vec_t t;
-  for (int j = 0; j < ARM_N_JOINTS; j++) t.deg[j] = clamp_joint(j, target->deg[j], &clamped);
 
   uint32_t p = irq_save();
+  joint_vec_t cur = s_cur;                          /* coupling uses the pose we are in */
+  joint_vec_t t;
+  bool clamped = false;
+  for (int j = 0; j < ARM_N_JOINTS; j++) t.deg[j] = clamp_joint(j, target->deg[j], &cur, &clamped);
+
+  /* A full target may pass the per-joint current checks and still be an unsafe
+   * endpoint, e.g. current 125/65 -> requested 50/25. Keep the wrist request and
+   * deterministically hold the shoulder at 90; report the clamp now, not later. */
+  if (t.deg[J2_SHOULDER] < J2_MIN_DEG && t.deg[J5_WRIST_PITCH] < J5_WRIST_UP_DEG) {
+    t.deg[J2_SHOULDER] = J2_MIN_DEG;
+    clamped = true;
+  }
+
   s_tgt = t;
   for (int j = 0; j < ARM_N_JOINTS; j++) s_jog_v[j] = 0.0f;
   s_idle = false;
@@ -125,10 +176,12 @@ motion_result_t motion_set_target(const joint_vec_t *target)
 motion_result_t motion_set_joint_target(int joint, float deg)
 {
   if (joint < 0 || joint >= ARM_N_JOINTS) return MOTION_REFUSED;
-  bool clamped = false;
-  float v = clamp_joint(joint, deg, &clamped);
+
   uint32_t p = irq_save();
-  s_tgt.deg[joint] = v;
+  bool clamped = false;
+  float lo = joint_min_deg(joint, &s_cur, &s_tgt);   /* current pose AND the pending endpoint */
+  float v = clamp_joint_to(joint, deg, lo, &clamped);
+  s_tgt.deg[joint] = v;                             /* never rewrites the other joint */
   s_jog_v[joint] = 0.0f;
   s_idle = false;
   irq_restore(p);
