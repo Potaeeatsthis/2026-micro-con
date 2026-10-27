@@ -287,7 +287,8 @@ Three checks keep this honest: `dma_buf_check()` at boot (motion blocked and `ER
 section or the MPU region is wrong), the CI build (fails if `.dma_buffer` is not at 0x2007C000 or exceeds
 16 KB), and a look at the `.ld` after every regenerate.
 
-Size today (CubeIDE 2.2.0, Debug): text 324,300 B, data 7,980 B, bss 127,712 B — far below 2 MB / 512 KB.
+Size (CubeIDE 2.2.0, v1.4 on `dev`, 27 Oct 2026): text 808,044 B, data 8,000 B, bss 130,560 B — far below 2 MB / 512 KB.
+(v1.2 on 23 Oct was text 324,300 B; the LCD pictures added most of the difference.)
 DMA buffers use 0xF00 B of the 16 KB (measured before v1.4; the ADC buffer shrank by one channel since).
 
 ---
@@ -508,7 +509,7 @@ Checks:
 
 | Check | What it proves |
 |---|---|
-| `build (Debug)`, `build (Release)` | `ProjectDevGuide/ci/build_firmware.py` compiles and links RoboticArmMain with the source folders, defines, include paths, libraries and linker script **read from `.cproject`** (Ubuntu `arm-none-eabi-gcc`). Fails on any error, flash/RAM overflow, `.dma_buffer` not at 0x2007C000 or over 16 KB, and any warning in `App/` (third-party code exempt: KISS FFT, `App/lcd/driver/`) |
+| `build (Debug)`, `build (Release)` | `ProjectDevGuide/ci/build_firmware.py` compiles and links RoboticArmMain with the source folders, defines, include paths, libraries and linker script **read from `.cproject`** (ARM GNU toolchain 13.3.Rel1 on Ubuntu). Fails on any error, flash/RAM overflow, `.dma_buffer` not at 0x2007C000 or over 16 KB, and any warning in `App/` (third-party code exempt: KISS FFT, `App/lcd/driver/`) |
 | `host-tests` | `ProjectDevGuide/tests/host/run.sh`: safety / motion / modes / voice-mode / pi_link / screen-logic behaviour on a PC (74 checks + the voice-mode and voice-hand dry runs). The real `lcd_port.c` (ILI9341 driver, HAL) is replaced by `ProjectDevGuide/tests/host/fake/lcd_port_fake.c` |
 | `repo-rules` | `ProjectDevGuide/ci/check_rules.py`: `RoboticArmMain/` holds only the project (no build output, IDE state, `app_config_local.h`, `.md` notes, `docs/` or `tests/`); no file over 3 MB; `.cproject` source folders, `../App`, AI library and linker script in both configurations; `main.c` and `app_x-cube-ai.c` USER CODE as in §10; USER CODE markers paired; callbacks and `__io_putchar` in one place; the `.ioc` model file committed |
 
@@ -523,9 +524,9 @@ python ProjectDevGuide/ci/check_rules.py
 CI's compiler is not CubeIDE's, so its size numbers differ a little (Debug text 328,444 B in CI vs 324,300 B in
 CubeIDE); only pass/fail matters.
 
-**Hang protection (PR #3):** every job has a time limit (builds 15 min, the others 10 min). The compiler install
-uses 30 s network timeouts and up to 3 attempts, because Ubuntu package mirrors sometimes stall (this hung two
-runs on 23 Oct). If the install still fails, the log says `could not install arm-none-eabi-gcc`: re-run the job.
+**Hang protection:** every job has a time limit (builds 15 min, the others 10 min). The compiler is ARM's official
+toolchain 13.3.Rel1 from `carlosperate/arm-none-eabi-gcc-action` (cached between runs), not Ubuntu's apt package:
+the apt mirror stalled on 23 Oct and failed every retry on 27 Oct.
 
 A ruleset on `master` that requires these 4 checks (set by the repo owner) turns CI from a warning into a gate.
 Delete merged PR branches on GitHub ("Delete branch" on the merged PR) and locally (`git branch -d`).

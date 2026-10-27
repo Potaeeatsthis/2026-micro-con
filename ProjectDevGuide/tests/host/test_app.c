@@ -109,7 +109,7 @@ static void check_servo_cal(int joint, uint16_t us0, uint16_t us90, uint16_t us1
 
 #if APP_VOICE_DRY_RUN
 /* second build (run.sh, -DAPP_VOICE_DRY_RUN=1): ik is not measured yet, so only a dry run can
- * reach S4 HOLDING and walk "hand" end to end. moves are read back from the dry-run log. */
+ * reach S4 HOLDING and walk "hand" and "station" end to end. moves are read back from the dry-run log. */
 static FILE *g_log;
 static int   g_saved_stdout = -1;
 static void log_capture(void)
@@ -189,6 +189,39 @@ static int voice_hand_dry_run(void)
   CHECK(above, "first above the palm (+APPROACH_MM)");
   CHECK(release && open_, "opens at palm + HAND_RELEASE_MM");
   CHECK(!palm, "never goes down to the palm itself");
+  CHECK(strcmp(screen_line(0), "S0 IDLE") == 0, "then home -> S0");
+
+  printf("== voice station (dry run): drop spot from the pi\n");
+  say("pick"); say("red box"); pi_link_on_tx_done();
+  pi_rx("OBJ red_box 182 -45 30\n");
+  say("yes");
+  run_ms(8000);
+  CHECK(strcmp(screen_line(0), "S4 HOLDING") == 0, "grasp again -> S4 holding");
+  say("station");
+  CHECK(strcmp(screen_line(0), "S7 CONFIRM PLACE") == 0 && strcmp(screen_line(1), "Place at STATION?") == 0,
+        "station -> S7 asks");
+  g_tx[0] = 0;
+  say("yes");
+  CHECK(strcmp(g_tx, "FIND station\n") == 0, "yes sends FIND station (not the fixed pose)");
+  CHECK(strcmp(screen_line(1), "Finding station") == 0, "waits in S7: Finding station");
+  CHECK(!(g_voice_mask & (word_bit("yes") | word_bit("no"))) && (g_voice_mask & word_bit("stop")), "while finding: only stop");
+  pi_link_on_tx_done();
+  pi_rx("NOTFOUND station\n");
+  CHECK(strcmp(screen_line(1), "Place at STATION?") == 0, "NOTFOUND (no station / full) -> asks again");
+  say("yes"); pi_link_on_tx_done();
+  pi_rx("OBJ hand 1 2 3\n");
+  CHECK(strcmp(screen_line(1), "Finding station") == 0, "a hand reply does not count as the station");
+  log_capture();
+  pi_rx("OBJ station 50 60 120\n");
+  placing = strcmp(screen_line(0), "S8 PLACING") == 0;
+  run_ms(8000);
+  above = log_has("move to 50 60 170 mm"); release = log_has("move to 50 60 140 mm");
+  open_ = log_has("gripper OPEN"); palm = log_has("move to 50 60 120 mm");
+  log_release();
+  CHECK(placing, "OBJ station -> S8 placing");
+  CHECK(above, "first above the drop spot (+APPROACH_MM)");
+  CHECK(release && open_, "opens at drop spot + STATION_RELEASE_MM");
+  CHECK(!palm, "never pushes the block down to the station top itself");
   CHECK(strcmp(screen_line(0), "S0 IDLE") == 0, "then home -> S0");
 
   printf("\n%d passed, %d failed\n", passes, fails);

@@ -19,9 +19,9 @@ they wait for a valid word or `stop` for as long as the user needs (decided 25 O
 | S3 GRASPING | moving: open, above, down, close, up | only `stop` | → S10 |
 | S4 HOLDING | object in the gripper | `hand` / `station` / `base` / `place` / `drop` → S7; `forward` / `backward` / `left` / `right` → S6 (first item queued); `home` → `RELEASE FIRST` | nothing |
 | S6 JOG QUEUE | building the queue (max 10 items, each keeps the slider step) | jog words → add; `undo` → remove the last; `yes` → S8 RUN QUEUE; `no` → clear, S4 | clear, S4 |
-| S7 CONFIRM PLACE | shows the destination | `yes` → S8 PLACING (for `hand`: first `FIND hand`, waits with only `stop`; reply → S8, `NOTFOUND` → asks again, Pi timeout → S4); `no` → back to S4 or S10 (where it came from) | back to S4 or S10 |
+| S7 CONFIRM PLACE | shows the destination | `yes` → S8 PLACING (for `hand` / `station`: first `FIND hand` / `FIND station`, waits with only `stop`; reply → S8, `NOTFOUND` → asks again, Pi timeout → S4); `no` → back to S4 or S10 (where it came from) | back to S4 or S10 |
 | S8 RUN QUEUE | moving through the queue | only `stop` | → S10 |
-| S8 PLACING | moving: above, down, open, up (hand: opens `HAND_RELEASE_MM` above the palm, never at it) | only `stop` | → S10 |
+| S8 PLACING | moving: above, down, open, up (hand: opens `HAND_RELEASE_MM` above the palm, never at it; station: opens `STATION_RELEASE_MM` above the drop spot on its top) | only `stop` | → S10 |
 | S9 GOING HOME | moving | only `stop` | → S10 |
 | S10 STOPPED | holds still; a closed gripper stays closed | `place` / `drop` → S7; `home` → S11 (opens the gripper first) | nothing |
 | S11 CONFIRM HOME | "go home?" | `yes` → S9; `no` → back to S0 or S10 | back to S0 or S10 |
@@ -98,8 +98,10 @@ made after the run (gripper state per step, log order) were build-checked only.
 ## 5. Still open
 
 - IK/FK (`TODO(ik)`): until it exists, a real (non-dry) `yes` in S2 shows `IK NOT READY` and stays in S2.
-- `station` / `base` poses (`DEST_CALIBRATED 0`), and "place here" lowers a fixed 50 mm instead
-  of to the table.
+- `base` pose (`DEST_CALIBRATED 0`), and "place here" lowers a fixed 50 mm instead of to the table.
+  `station` is no longer a fixed pose (27 Oct 2026): `yes` sends `FIND station` and places at the Pi's drop spot
+  ([`station-detection.md`](station-detection.md)). `STATION_RELEASE_MM` (20 mm placeholder: the held block's
+  height under the gripper + clearance) is to be measured on the real gripper.
 - Jog directions in the robot-base frame and the queue travel limit (300 mm placeholder).
 - Camera → robot-base calibration (`calib_T.npy`) before any real move.
 - `HAND_RELEASE_MM` (how far above the palm the gripper opens) and a safety-owner OK before the arm ever moves

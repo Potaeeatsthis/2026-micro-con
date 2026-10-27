@@ -120,6 +120,7 @@ sudo systemctl enable --now pi_bridge
 | check the hand detection | service stopped, `... pi_bridge.py --hand-snapshot`: writes `~/arm/hand.jpg` (landmarks, palm points, XYZ) |
 | see everything the bridge detects | service stopped, `... pi_bridge.py --snapshot`: writes `~/arm/snapshot.jpg` (blocks + hand on the colour image, depth beside it) and prints each position |
 | run without hand detection | add `--no-hand` (FIND hand gets NOTFOUND, blocks unchanged) |
+| run without station detection | add `--no-station` (FIND station gets NOTFOUND, blocks unchanged) |
 | set up hand detection (once) | `~/.local/bin/uv venv ~/hand-env --python 3.12` then `~/.local/bin/uv pip install --python ~/hand-env/bin/python "mediapipe==0.10.18"`; `~/arm-env` is not touched |
 
 What the log shows (`journalctl -u pi_bridge -f`):
@@ -163,3 +164,24 @@ The service passes `--camera-frame`. Once the team relies on calibration, remove
 | Hand detection (MediaPipe worker, palm XYZ) | `ProjectDevGuide/tools/pi/pi_hand.py` → `~/arm/tools/`; MediaPipe 0.10.18 in `~/hand-env` (not in `~/arm-env`) | Pi member |
 | Detector, colours, calibration | `~/arm/pi_vision_uart.py`, `color_refs.json`, `calib_T.npy` (on the Pi) | camera member |
 | Event ids | `RoboticArmMain/App/common/app_events.h` | core |
+
+## 5. Station
+
+The bridge also answers `FIND station`:
+
+| STM32 sends | Pi answers | Meaning |
+|---|---|---|
+| `FIND station` | `OBJ station -10 -50 298` | the free **drop spot** on the station top (top centre if free) |
+| | `NOTFOUND station` | no station in view, partly out of view, or no free spot |
+
+- Found by **depth only**: a flat top of the right size at the station's height above the table (default: the
+  200 x 100 x 45 mm kraft box; `--station-size L W H` for another). Blocks lying on it are answered by the normal
+  `FIND <colour>_box`.
+- The STM32 adds the release height, as for `hand`. Same frame and units as the blocks.
+- `--snapshot` (pi_vision_uart and pi_bridge) draws the station and its drop "+"; `--no-station` turns it off.
+- Teach block colours **on the station** too (`--learn-color` with the block on it saves `red@station`).
+- STM32 side (27 Oct 2026): `OBJ_STATION` in `object_id_t` (after `OBJ_HAND`, outside `OBJ_BOX_COUNT`), the name
+  `"station"` in `pi_proto.c`; voice mode sends `FIND station` after `station` + `yes`.
+- Tested in simulation and on the real camera with the box (27 Oct 2026: found, 4 blocks on it with the right
+  colour, drop spot shown). The full STM32 -> Pi `FIND station` round trip is not tested on the board yet.
+  How it works and test results: [`station-detection.md`](station-detection.md).

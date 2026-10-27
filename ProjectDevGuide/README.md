@@ -8,6 +8,7 @@ This folder holds the material around it:
 | `docs/TEAM_GUIDE.md` | who owns which folder, the 10 rules, how modules talk, feature flags, PR checklist | every team member — read once |
 | `docs/core-config.md` | pins, clocks, timers, DMA, interrupts, memory, CubeMX checklist, CubeIDE setup, CI | anyone touching hardware or the `.ioc` |
 | `docs/servo-calibration.md` | canonical unloaded servo measurements, confirmed unit-to-joint/pin map, STM32 bench test, signal check, installed-calibration checklist | anyone calibrating or touching motion |
+| `docs/station-detection.md` | how the Pi finds the station and its drop spot (depth only), tests, rules for changing the detector | whoever works on the Pi vision or the station target |
 | `docs/voice-task.md` | voice task states S0–S11, which words each state accepts, dry-run bench test with the Pi | whoever works on voice mode, IK or the Pi link |
 | `docs/integration/` | how to open, build and run the project in CubeIDE; templates of our USER CODE in generated files | everyone (section 1), the `.ioc` owner (the rest) |
 | `docs/module_template/` | starting files for a new feature module | whoever adds a module |
