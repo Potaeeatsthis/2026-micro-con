@@ -23,7 +23,6 @@ static joint_vec_t       s_tgt;                 /* where the trajectory is headi
 static volatile float    s_jog_v[ARM_N_JOINTS]; /* deg/s, 0 = no jog */
 static volatile uint32_t s_jog_ms[ARM_N_JOINTS];
 static volatile speed_level_t s_speed = SPEED_FINE;
-static volatile bool     s_require_enable = true;
 static volatile bool     s_started;             /* first pulse sent */
 static volatile bool     s_idle = true;
 
@@ -65,7 +64,7 @@ void motion_tick(void)
     return;
   }
 
-  bool allowed = safety_motion_allowed() && (!s_require_enable || safety_enable_held());
+  bool allowed = safety_motion_allowed();
   if (!allowed) {
     for (int j = 0; j < ARM_N_JOINTS; j++) {        /* freeze: nothing jumps when allowed again */
       s_tgt.deg[j] = s_cur.deg[j];
@@ -189,4 +188,3 @@ bool          motion_is_idle(void)                { return s_idle; }
 void          motion_set_speed(speed_level_t s)   { s_speed = s; }
 speed_level_t motion_get_speed(void)              { return s_speed; }
 void          motion_toggle_speed(void)           { s_speed = (s_speed == SPEED_FINE) ? SPEED_FAST : SPEED_FINE; }
-void          motion_require_enable(bool required){ s_require_enable = required; }

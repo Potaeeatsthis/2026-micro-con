@@ -7,7 +7,6 @@
  */
 #include "modes/mode_ops.h"
 #include "motion/motion.h"
-#include "safety/safety.h"
 #include <stdio.h>
 
 #define N_GROUPS 3
@@ -40,12 +39,11 @@ static void describe(char (*lines)[LCD_COLS], int n)
   if (n > 0) snprintf(lines[0], LCD_COLS, "Group %d", s_group + 1);
   if (n > 1) snprintf(lines[1], LCD_COLS, "X %s %d", manual_joint_name(jx), (int)t.deg[jx]);
   if (n > 2) snprintf(lines[2], LCD_COLS, "Y %s %d", manual_joint_name(jy), (int)t.deg[jy]);
-  if (n > 3) snprintf(lines[3], LCD_COLS, "Enable: %s", safety_enable_held() ? "HELD" : "RELEASED");
 }
 
 const mode_ops_t MODE_JOINT_GROUP_OPS = {
   .name = "JOINT GROUP",
-  .requires_enable = true,
+  .manual = true,
   .enter = enter,
   .exit = exit_,
   .on_event = on_event,

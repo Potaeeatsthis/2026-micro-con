@@ -56,7 +56,6 @@ void voice_set_accept_mask(uint32_t m) { g_voice_mask = m; }
 static int fails, passes;
 #define CHECK(cond, msg) do { if (cond) { passes++; } else { fails++; printf("  FAIL: %s (line %d)\n", msg, __LINE__); } } while (0)
 
-static void set_pin(GPIO_TypeDef *p, uint16_t pin, int low) { g_pin_low[port_i(p)][pin_i(pin)] = low; }
 static void loop_pass(void) { safety_step(); pi_link_step(); modes_step(); }
 static int g_trace;
 static float tgt(int j);
@@ -221,60 +220,30 @@ int main(void)
   CHECK(strcmp(servo_cal(J5_WRIST_PITCH)->name, "J5 WRIST PITCH") == 0, "J5 is wrist pitch");
   CHECK(servo_deg_to_us(0, 250.0f) == 2430, "out of range clamps");
 
-  printf("== boot: no pulse until safety allows, then home\n");
-  set_pin(ESTOP_NO_GPIO_Port, ESTOP_NO_Pin, 1);          /* boot with e-stop latched */
+  printf("== boot: no pulse until the first tick, then home\n");
   safety_init(); motion_init(); pi_link_init(); lcd_init(); modes_init();
+  CHECK(htim3.ccr[0] == 0, "no pulse before the first control tick");
+  CHECK(safety_state() == SAFETY_OK, "no e-stop: safety ok at boot");
   run_ms(100);
-  CHECK(htim3.ccr[0] == 0, "e-stop latched at boot: still no pulse");
-  set_pin(ESTOP_NO_GPIO_Port, ESTOP_NO_Pin, 0);
-  run_ms(100);
-  CHECK(safety_state() == SAFETY_RESTART_REQUIRED, "after e-stop release: restart must be confirmed");
-  CHECK(htim3.ccr[0] == 0, "still no pulse before confirm");
-  app_event_post0(EVT_TOUCH_CONFIRM); run_ms(40);
-  CHECK(safety_state() == SAFETY_OK, "confirm touch button clears the latch");
   CHECK(htim3.ccr[0] == 1460, "first pulse = home pose (90 deg)");
 
-  printf("== voice mode: no hold-to-enable needed, never moves on its own\n");
+  printf("== voice mode: never moves on its own\n");
   CHECK(modes_current() == MODE_VOICE, "boots in voice mode");
   run_ms(500);
   CHECK(cur(0) == 90.0f, "idle voice mode does not move");
 
-  printf("== switch to joint group: blocked while enable held\n");
-  set_pin(BTN_ENABLE_GPIO_Port, BTN_ENABLE_Pin, 1);
-  run_ms(60);
-  app_event_post0(EVT_BTN_MODE); run_ms(40);   /* voice -> cartesian */
-  CHECK(modes_switch_pending(), "switch waits while enable is held");
-  CHECK(strcmp(screen_line(1), "RELEASE ENABLE") == 0, "lcd shows why it waits");
-  set_pin(BTN_ENABLE_GPIO_Port, BTN_ENABLE_Pin, 0);
-  run_ms(40);
-  CHECK(modes_current() == MODE_CARTESIAN, "switched after release");
-  app_event_post0(EVT_BTN_MODE); run_ms(60);
-  CHECK(modes_current() == MODE_JOINT_GROUP, "next press -> joint group");
+  printf("== mode switch from the lcd mode cards\n");
+  app_event_post(EVT_TOUCH_MODE_TAB, MODE_CARTESIAN, 0, 0, 0); run_ms(60);
+  CHECK(modes_current() == MODE_CARTESIAN, "touch card -> cartesian");
+  app_event_post(EVT_TOUCH_MODE_TAB, MODE_JOINT_GROUP, 0, 0, 0); run_ms(60);
+  CHECK(modes_current() == MODE_JOINT_GROUP, "touch card -> joint group");
 
-  printf("== manual motion needs hold-to-enable\n");
-  motion_set_joint_target(J1_BASE, 100.0f);
-  run_ms(1000);
-  CHECK(cur(0) == 90.0f, "no enable: target frozen, no motion");
-  CHECK(tgt(0) == 90.0f, "no enable: target reset to current (nothing jumps later)");
-
-  set_pin(BTN_ENABLE_GPIO_Port, BTN_ENABLE_Pin, 1);
-  run_ms(40);
-  CHECK(safety_enable_held(), "enable held after 2 stable ticks");
+  printf("== manual motion: no hold-to-enable any more\n");
   motion_set_joint_target(J1_BASE, 100.0f);
   run_ms(500);
   CHECK(cur(0) > 94.5f && cur(0) < 95.5f, "fine speed 10 deg/s: ~5 deg in 0.5 s");
 
-  printf("== enable released mid-move: freezes in the same tick\n");
-  set_pin(BTN_ENABLE_GPIO_Port, BTN_ENABLE_Pin, 0);
-  safety_on_exti(BTN_ENABLE_Pin);                 /* exti fires */
-  float at = cur(0);
-  run_ms(20);
-  CHECK(cur(0) == at, "no further step after release");
-  CHECK(tgt(0) == at, "target frozen at the current angle");
-
   printf("== jog timeout: a stale jog stops by itself\n");
-  set_pin(BTN_ENABLE_GPIO_Port, BTN_ENABLE_Pin, 1);
-  run_ms(40);
   motion_jog(J2_SHOULDER, 10.0f);                  /* sent once, never refreshed */
   float j2 = cur(1);
   run_ms(1000);
@@ -288,23 +257,6 @@ int main(void)
   CHECK(cur(2) == 120.0f, "fast 45 deg/s reaches 120 within 1.2 s");
   CHECK(count_events_type(EVT_MOTION_DONE) == 1, "exactly one EVT_MOTION_DONE");
   motion_toggle_speed();
-
-  printf("== e-stop during motion\n");
-  motion_set_joint_target(J3_ELBOW, 60.0f);
-  run_ms(200);
-  set_pin(ESTOP_NO_GPIO_Port, ESTOP_NO_Pin, 1);
-  safety_on_exti(ESTOP_NO_Pin);
-  at = cur(2);
-  run_ms(500);
-  CHECK(cur(2) == at, "e-stop freezes");
-  set_pin(ESTOP_NO_GPIO_Port, ESTOP_NO_Pin, 0);
-  run_ms(200);
-  CHECK(cur(2) == at && safety_state() == SAFETY_RESTART_REQUIRED, "release alone does not resume");
-  safety_confirm_restart();
-  run_ms(40);
-  CHECK(safety_motion_allowed(), "confirm -> allowed again");
-  set_pin(BTN_ENABLE_GPIO_Port, BTN_ENABLE_Pin, 0);
-  run_ms(40);
 
   printf("== voice task state machine + pi link\n");
   modes_request(MODE_VOICE); run_ms(60);
@@ -337,9 +289,9 @@ int main(void)
   CHECK(1, "malformed lines do not crash");
 
   printf("== scripts: home, stop while moving, recovery from S10\n");
-  motion_set_joint_target(J1_BASE, 60.0f); run_ms(20);   /* move away from home first (voice mode: no enable) */
+  motion_set_joint_target(J1_BASE, 60.0f); run_ms(20);   /* move away from home first */
   run_ms(4000);
-  CHECK(cur(0) == 60.0f, "voice mode moves without hold-to-enable");
+  CHECK(cur(0) == 60.0f, "voice mode moves to a set target");
   say("home");
   CHECK(strcmp(screen_line(0), "S11 CONFIRM HOME") == 0, "home from S0 asks first");
   CHECK(cur(0) == 60.0f, "S11: nothing moves before yes");
@@ -348,7 +300,7 @@ int main(void)
   run_ms(500);
   say("stop");
   CHECK(strcmp(screen_line(0), "S10 STOPPED") == 0, "stop while moving -> S10");
-  at = cur(0);
+  float at = cur(0);
   run_ms(1000);
   CHECK(cur(0) == at, "S10: arm holds");
   say("pick");
@@ -363,6 +315,18 @@ int main(void)
   CHECK(cur(0) == 90.0f, "home from S10 reaches home");
   CHECK(strcmp(screen_line(0), "S0 IDLE") == 0, "then back to S0");
   CHECK(cur(5) == APP_GRIPPER_OPEN_DEG, "home from S10 opened the gripper");
+
+  printf("== fatal fault during motion: freezes (last test, latches until reset)\n");
+  motion_set_joint_target(J1_BASE, 120.0f);
+  run_ms(500);
+  app_fault_raise(FAULT_INIT, true);
+  at = cur(0);
+  run_ms(40);
+  CHECK(safety_state() == SAFETY_FATAL_FAULT, "fatal fault -> safety FAULT");
+  CHECK(cur(0) == at && at > 90.0f, "fault freezes mid-move");
+  CHECK(tgt(0) == at, "target reset to the current angle (nothing jumps later)");
+  run_ms(1000);
+  CHECK(cur(0) == at, "stays frozen");
 
   printf("\n%d passed, %d failed\n", passes, fails);
   return fails ? 1 : 0;

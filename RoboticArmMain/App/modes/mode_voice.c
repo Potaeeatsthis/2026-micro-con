@@ -22,8 +22,8 @@
  * HAND_RELEASE_MM above it, never at the palm. not found / no reply: back to the S7 / S4 choice.
  *
  * multi-step moves (grasp, place, go home, jog queue) are "scripts": a short list of
- * steps run one after another, the next step starts on EVT_MOTION_DONE. a stop, an
- * e-stop or a rail loss aborts the script and goes to S10.
+ * steps run one after another, the next step starts on EVT_MOTION_DONE. a stop or a
+ * rail loss aborts the script and goes to S10.
  *
  * bench flags (app_config_local.h only), to walk every state before the arm exists:
  *   APP_VOICE_DRY_RUN  each script step is logged ("dry-run: ...") and counts as done after
@@ -41,7 +41,6 @@
 #include "modes/mode_ops.h"
 #include "motion/motion.h"
 #include "motion/servo.h"
-#include "safety/safety.h"
 #include "kinematics/kinematics.h"
 #include "common/app_config.h"
 #include "common/app_log.h"
@@ -679,7 +678,6 @@ static void on_event(const app_event_t *e)
     case EVT_FAULT:
       if (e->v[0] == 0) break;                        /* only fatal faults stop the task */
       /* fall through */
-    case EVT_ESTOP_PRESSED:
     case EVT_RAIL_LOST:
       if (is_moving_state(s_state) || s_script_running) controlled_stop();
       cancel_pi();
@@ -731,7 +729,7 @@ static void describe(char (*lines)[LCD_COLS], int n)
 
 const mode_ops_t MODE_VOICE_OPS = {
   .name = "VOICE",
-  .requires_enable = false,
+  .manual = false,
   .enter = enter,
   .exit = exit_,
   .on_event = on_event,

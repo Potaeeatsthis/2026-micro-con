@@ -6,7 +6,6 @@
  */
 #include "modes/mode_ops.h"
 #include "motion/motion.h"
-#include "safety/safety.h"
 #include "kinematics/kinematics.h"
 #include "common/app_config.h"
 #include "common/app_util.h"
@@ -59,14 +58,12 @@ static void on_event(const app_event_t *e)
   if (!s_ready) return;
   switch ((evt_type_t)e->type) {
     case EVT_ENC_STEP: {
-      if (!safety_enable_held()) break;
       cart_pose_t p = s_pose;
       p.z_mm += (float)e->v[0] * Z_STEP_MM;
       if (try_pose(&p)) s_pose = p;
       break;
     }
     case EVT_ENC_PRESS:
-      if (!safety_enable_held()) break;
       s_gripper_closed = !s_gripper_closed;
       (void)motion_set_joint_target(J6_GRIPPER, s_gripper_closed ? APP_GRIPPER_CLOSED_DEG : APP_GRIPPER_OPEN_DEG);
       break;
@@ -80,7 +77,7 @@ static void step(void)
   uint32_t now = HAL_GetTick();
   float dt = (float)ms_since(now, s_last_ms) * 0.001f;
   s_last_ms = now;
-  if (!s_ready || !safety_enable_held()) return;
+  if (!s_ready) return;
   dt = clampf(dt, 0.0f, 0.1f);
 
 #if APP_USE_INPUT
@@ -108,7 +105,7 @@ static void describe(char (*lines)[LCD_COLS], int n)
 
 const mode_ops_t MODE_CARTESIAN_OPS = {
   .name = "CARTESIAN",
-  .requires_enable = true,
+  .manual = true,
   .enter = enter,
   .exit = exit_,
   .on_event = on_event,

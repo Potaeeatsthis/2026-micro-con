@@ -2,14 +2,13 @@
  *
  * owner: TODO(team)
  *   encoder turn  -> select J1..J6
- *   joystick X    -> move the selected joint (hold-to-enable required)
+ *   joystick X    -> move the selected joint
  *   encoder press -> reset the selected target to the current commanded position
  * this is also the calibration mode: the lcd shows the target angle.
  */
 #include "modes/mode_ops.h"
 #include "motion/motion.h"
 #include "motion/servo.h"
-#include "safety/safety.h"
 #include "common/app_types.h"
 #include <stdio.h>
 
@@ -48,12 +47,11 @@ static void describe(char (*lines)[LCD_COLS], int n)
   if (n > 0) snprintf(lines[0], LCD_COLS, "Joint: %s", manual_joint_name(s_joint));
   if (n > 1) snprintf(lines[1], LCD_COLS, "Target: %d deg", (int)t.deg[s_joint]);
   if (n > 2) snprintf(lines[2], LCD_COLS, "Pulse: %u us", servo_deg_to_us(s_joint, t.deg[s_joint]));
-  if (n > 3) snprintf(lines[3], LCD_COLS, "Enable: %s", safety_enable_held() ? "HELD" : "RELEASED");
 }
 
 const mode_ops_t MODE_SINGLE_JOINT_OPS = {
   .name = "SINGLE JOINT",
-  .requires_enable = true,
+  .manual = true,
   .enter = enter,
   .exit = exit_,
   .on_event = on_event,

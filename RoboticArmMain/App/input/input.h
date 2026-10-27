@@ -1,11 +1,11 @@
-/* input.h - KY-023 joystick + servo-rail adc, KY-040 encoder, MODE / encoder / joystick buttons
+/* input.h - KY-023 joystick + servo-rail adc, KY-040 encoder, encoder / joystick buttons
  *
  * owner: input member.
  * outputs:
- *   - events (EVT_BTN_MODE, EVT_ENC_STEP, EVT_ENC_PRESS, EVT_JOY_PRESS) for one-shot actions
+ *   - events (EVT_ENC_STEP, EVT_ENC_PRESS, EVT_JOY_PRESS) for one-shot actions
  *   - getters (input_joy_x/y) for continuous values, read by the active mode every loop
- * hold-to-enable and e-stop are NOT here, they belong to safety/. this module never moves
- * anything: modes read the getters / events and set motion targets.
+ * the arm has no MODE, hold-to-enable or e-stop button (core-config.md v1.3); the mode is
+ * chosen on the lcd. this module never moves anything: modes read the getters / events and set motion targets.
  * buttons: debounced press and release are tracked; only presses become events.
  * APP_INPUT_TEST (local config only): 10 Hz bench log of raw / averaged / dead-zone joystick
  * values, encoder counts and button press/release, see input.c.

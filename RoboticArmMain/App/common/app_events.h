@@ -20,16 +20,16 @@ typedef enum {
   EVT_NONE = 0,
 
   /* input (owner: input) */
-  EVT_BTN_MODE = 10,        /* MODE button pressed */
+  EVT_BTN_MODE = 10,        /* unused since 27 Oct 2026 (no MODE button); kept so numbers stay */
   EVT_ENC_STEP,             /* encoder turned: v[0] = detents (+cw / -ccw) */
   EVT_ENC_PRESS,            /* encoder knob pressed */
   EVT_JOY_PRESS,            /* joystick pressed while centred (= fine/fast toggle) */
-  EVT_ENABLE_PRESSED,       /* hold-to-enable pressed */
-  EVT_ENABLE_RELEASED,      /* hold-to-enable released (motion already frozen by then) */
+  EVT_ENABLE_PRESSED,       /* unused since 27 Oct 2026 (no hold-to-enable) */
+  EVT_ENABLE_RELEASED,      /* unused since 27 Oct 2026 (no hold-to-enable) */
 
   /* safety (owner: core/safety) */
-  EVT_ESTOP_PRESSED = 30,
-  EVT_ESTOP_RELEASED,
+  EVT_ESTOP_PRESSED = 30,   /* unused since 27 Oct 2026 (no e-stop) */
+  EVT_ESTOP_RELEASED,       /* unused since 27 Oct 2026 (no e-stop) */
   EVT_RAIL_LOST,            /* servo power gone: targets frozen */
   EVT_RAIL_BACK,            /* servo power back: still needs safety_confirm_restart() */
   EVT_LIMIT_HIT,            /* arg = switch index 0..3 */
