@@ -118,6 +118,42 @@ record; do not use it for the arm or for a new calibration.
 |---|---|---|---|---|---|---|---|---|
 | — | `SG92R-2` (retired) | — | 680 | 1550 | 2390 | 1550 | 500..2500 | Historical run 2; replaced as unreliable |
 
+## Limit test screen (`App/servo_cal_test/`, 27 Oct 2026)
+
+A bench screen for checking the installed home pose and joint limits. **Off by default**
+(`APP_USE_SERVO_CAL_TEST 0`); never enable it on `master`. Enable it only in the gitignored
+`App/common/app_config_local.h`:
+
+```c
+#define APP_USE_SERVO_CAL_TEST 1
+#define APP_USE_MOTION         1   /* the screen moves joints only through motion/ */
+#define APP_USE_MODES          0
+#define APP_USE_LCD            0   /* the screen draws itself through lcd_port */
+#define APP_USE_INPUT          1
+/* optional on the bench: APP_USE_VOICE 0, APP_USE_PI 0 */
+```
+
+**It is not a passive measurement mode.** At boot motion's normal start-up sends every joint to its
+`home_deg`, one joint every `MOTION_BOOT_STAGGER_MS` (500 ms), gripper first. Support the arm near
+home and keep the servo power switch in reach.
+
+| Control | Action |
+|---|---|
+| KY-040 press | next joint (J1..J6, wraps) |
+| KY-040 turn | selected joint's target ± step per click (clockwise = more); starts at **1 deg** |
+| KY-023 press (stick centred) | step 1 ↔ 5 deg |
+| KY-023 pushed down, then back to centre | print the current pose on USART3 as `servo_cal.c` rows |
+
+Every move is a `motion_set_joint_target()` call, so motion's speed limit (10 deg/s), the table
+min/max and the J2/J5 coupling apply exactly as in the real firmware; the screen never writes PWM
+itself. A clamped click shows the reason in red: `J6 GRIPPER at MAX 60`, or for the coupling
+`J2 MIN 90: raise J5 to 65` / `J5 MIN 65: J2 below 90`. A `*` after an angle means the joint is still
+moving toward its target.
+
+Printed rows use the current pose as `home_deg` and **always the table `min_deg` / `max_deg`** from
+`servo_cal.c`, never a temporary coupled bound: copying them changes only the home column. Host test:
+`ProjectDevGuide/tests/host/test_servo_cal.c` (run by `run.sh`).
+
 ## STM32 bench test (24 Oct 2026)
 
 All six servos moved from `RoboticArmMain` with the signals wired **direct** (STM32 pin → 330 Ω →
@@ -125,7 +161,7 @@ servo signal, common GND); the SN74HC244N + diode stage did not work (see
 [`core-config.md`](core-config.md) §11). The test code (all joints to 90°, then the voice word
 "pick" swings J1..J6 one at a time) is on branch `test/servo-power-test`. It is a bench tool only and
 is never merged: it writes PWM outside `motion/`. Turn it on there in `app_config_local.h` with
-`APP_USE_SERVO_TEST 1`, `APP_USE_MOTION 0`, `APP_USE_MODES 0`.
+`APP_USE_SERVO_TEST 1`, `APP_USE_MOTION 0`, `APP_USE_MODES 0`. It is **not** the limit test screen above.
 
 ## Signal check (when a servo does not move)
 

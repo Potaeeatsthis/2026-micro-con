@@ -1,20 +1,29 @@
-/* servo_cal_test.h - bench test of the installed home pose and joint limits (off by default: APP_USE_SERVO_CAL_TEST)
+/* servo_cal_test.h - bench screen for checking the installed home pose and joint limits
+ * (off by default: APP_USE_SERVO_CAL_TEST). bench use only, never enabled on master.
  *
- * home and limits come from servo_cal.c (installed values, 27 Oct 2026).
- * at boot each joint goes to its home_deg, one joint every MOTION_BOOT_STAGGER_MS (J6 gripper first, then J1..J5).
- * KY-040 press = next joint (J1..J6, wraps); KY-040 turn = move the selected joint 5 deg per click
- * (clockwise = more), clamped to that joint's min_deg..max_deg plus the J2/J5 coupling from motion.c
- * (J2 below 90 only while J5 >= 65; J5 below 65 only while J2 >= 90); a clamped click shows on the lcd.
- * KY-023 pushed down (then back to centre) = print the current pose on USART3 as servo_cal.c rows.
- * the screen uses lcd_port (turned 180 deg like the main screen). bench test only: never enable it on master.
+ * NOT a passive measurement mode: it runs on motion/, so at boot motion's normal start-up sends every
+ * joint to its home_deg (one joint every MOTION_BOOT_STAGGER_MS, gripper first).
+ * every move goes through motion_set_joint_target(): motion's speed limit, servo_cal min/max and the
+ * J2/J5 coupling apply exactly as in the real firmware; this screen never writes PWM itself.
  *
- * enable in app_config_local.h: APP_USE_SERVO_CAL_TEST 1 with APP_USE_MOTION 0, APP_USE_MODES 0,
- * APP_USE_LCD 0 (this test draws the screen itself) and APP_USE_INPUT 1.
+ * KY-040 press = next joint (J1..J6, wraps). KY-040 turn = the selected joint's target moves by the
+ * step per click (clockwise = more). KY-023 press (stick centred) = step 1 <-> 5 deg (starts at 1).
+ * a click that motion clamps shows the reason (table MIN/MAX, or the J2/J5 coupling).
+ * KY-023 pushed down, then back to centre = print the current pose on USART3 as servo_cal.c rows:
+ * home_deg = the pose, min_deg / max_deg = the servo_cal.c table values (never the coupled bound).
+ *
+ * app_config_local.h: APP_USE_SERVO_CAL_TEST 1, APP_USE_MOTION 1, APP_USE_MODES 0, APP_USE_LCD 0,
+ * APP_USE_INPUT 1 (APP_USE_VOICE / APP_USE_PI may be 0 on the bench).
  */
 #ifndef APP_SERVO_CAL_TEST_H
 #define APP_SERVO_CAL_TEST_H
 
-void servo_cal_test_init(void);   /* after input_init(): servos off, lcd on, first screen */
-void servo_cal_test_step(void);   /* main loop: home sequence, encoder events, joystick, redraw on change */
+void servo_cal_test_init(void);   /* after motion_init() and input_init(): lcd on, first screen */
+void servo_cal_test_step(void);   /* main loop, before the event drain: knob / stick, redraw */
+
+/* read-only state for the host tests */
+int         servo_cal_test_selected(void);
+int         servo_cal_test_step_deg(void);
+const char *servo_cal_test_status(void);
 
 #endif /* APP_SERVO_CAL_TEST_H */

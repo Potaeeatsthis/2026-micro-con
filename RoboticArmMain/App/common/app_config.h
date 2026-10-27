@@ -52,7 +52,7 @@
 
 /* bench tests: keep 0 here, turn on in app_config_local.h */
 #ifndef APP_USE_SERVO_CAL_TEST
-#define APP_USE_SERVO_CAL_TEST  0   /* servo limit / home test screen (App/servo_cal_test/) */
+#define APP_USE_SERVO_CAL_TEST  0   /* servo limit / home test screen (App/servo_cal_test/), MOVES the arm */
 #endif
 
 /* ---------------------------------------------------------------- timing */
@@ -100,8 +100,8 @@
 #endif
 
 /* ---------------------------------------------------------------- sanity checks */
-#if APP_USE_SERVO_CAL_TEST && (APP_USE_MOTION || APP_USE_MODES || APP_USE_LCD || !APP_USE_INPUT)
-#error "APP_USE_SERVO_CAL_TEST needs APP_USE_MOTION 0, APP_USE_MODES 0, APP_USE_LCD 0 and APP_USE_INPUT 1"
+#if APP_USE_SERVO_CAL_TEST && (!APP_USE_MOTION || APP_USE_MODES || APP_USE_LCD || !APP_USE_INPUT)
+#error "APP_USE_SERVO_CAL_TEST needs APP_USE_MOTION 1, APP_USE_MODES 0, APP_USE_LCD 0 and APP_USE_INPUT 1"
 #endif
 #if APP_USE_MODES && !APP_USE_MOTION
 #error "APP_USE_MODES needs APP_USE_MOTION (modes only set motion targets)"

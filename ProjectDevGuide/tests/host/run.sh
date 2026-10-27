@@ -2,6 +2,7 @@
 # host behaviour tests for safety / motion / modes / mode_voice / pi_link / events,
 # plus test_pi_proto.c for the pi line parser (pi_link/pi_proto.c, pure code),
 # plus test_app.c again as a voice dry run (voice "hand" and "station" end to end; ik is not measured yet).
+# plus test_servo_cal.c for the bench limit screen (App/servo_cal_test/).
 # the screen logic (lcd.c) is tested; the real lcd_port.c talks to the ILI9341 driver (HAL), so a fake
 # in fake/lcd_port_fake.c stands in for it here.
 # needs gcc on a pc (linux, mac, or git-bash/msys2 on windows). run from anywhere:
@@ -27,6 +28,12 @@ gcc -std=gnu11 -O1 -g -Wall -Wextra -Wshadow -Wno-unused-parameter \
   "$A/common/app_events.c" "$A/common/app_fault.c" "$A/safety/safety.c" \
   "$A/motion/motion.c" "$A/motion/servo.c" "$A/motion/servo_cal.c" "$A/kinematics/kinematics.c" \
   "$A"/modes/*.c "$A/lcd/lcd.c" "$HERE/fake/lcd_port_fake.c" "$A/pi_link/pi_proto.c"
+# the bench limit screen (App/servo_cal_test/) with its own flags: motion on, modes and lcd.c off
+gcc -std=gnu11 -O1 -g -Wall -Wextra -Wshadow -Wno-unused-parameter \
+  -DAPP_USE_SERVO_CAL_TEST=1 -DAPP_USE_MOTION=1 -DAPP_USE_MODES=0 -DAPP_USE_LCD=0 -DAPP_USE_INPUT=1 \
+  -I"$HERE/fake" -I"$A" -o "$T/test_servo_cal" "$HERE/test_servo_cal.c" "$A/servo_cal_test/servo_cal_test.c" \
+  "$A/common/app_events.c" "$A/common/app_fault.c" "$A/safety/safety.c" \
+  "$A/motion/motion.c" "$A/motion/servo.c" "$A/motion/servo_cal.c" "$HERE/fake/lcd_port_fake.c"
 # keep the test's own exit code (a pipe into grep would hide a failure)
 rc=0
 "$HERE/test_app" > "$HERE/test_app.log" || rc=$?
@@ -37,6 +44,10 @@ grep -E "^==|FAIL|passed" "$T/test_pi_proto.log"
 rc3=0
 "$T/test_app_dry" > "$T/test_app_dry.log" || rc3=$?
 grep -E "^==|FAIL|passed" "$T/test_app_dry.log"
+rc4=0
+"$T/test_servo_cal" > "$T/test_servo_cal.log" || rc4=$?
+grep -E "^==|FAIL|passed" "$T/test_servo_cal.log"
 [ $rc -ne 0 ] && exit $rc
 [ $rc2 -ne 0 ] && exit $rc2
-exit $rc3
+[ $rc3 -ne 0 ] && exit $rc3
+exit $rc4

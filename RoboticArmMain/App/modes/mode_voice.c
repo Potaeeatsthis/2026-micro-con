@@ -382,6 +382,7 @@ static void ask_home(bool open_first, vstate_t from)
 }
 
 /* ---------------------------------------------------------------- word filter */
+#if APP_USE_VOICE
 static uint32_t bit(int w) { return (w >= 0 && w < 32) ? (1u << w) : 0u; }
 
 /* the words the current state reacts to; "stop" always */
@@ -416,6 +417,7 @@ static uint32_t accepted_words(void)
   }
   return m;
 }
+#endif
 
 static void update_filter(void)
 {

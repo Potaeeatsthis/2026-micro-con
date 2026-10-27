@@ -52,6 +52,7 @@ void            motion_hold_joint(int joint);
 void            motion_get_current(joint_vec_t *out);   /* commanded now (no joint encoders) */
 void            motion_get_target(joint_vec_t *out);
 bool            motion_is_idle(void);
+bool            motion_started(void);              /* every joint has had its first (home) pulse */
 
 void            motion_set_speed(speed_level_t s);
 speed_level_t   motion_get_speed(void);

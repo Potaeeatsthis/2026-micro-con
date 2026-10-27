@@ -246,6 +246,7 @@ void motion_get_target(joint_vec_t *out)
 }
 
 bool          motion_is_idle(void)                { return s_idle; }
+bool          motion_started(void)                { return s_started; }
 void          motion_set_speed(speed_level_t s)   { s_speed = s; }
 speed_level_t motion_get_speed(void)              { return s_speed; }
 void          motion_toggle_speed(void)           { s_speed = (s_speed == SPEED_FINE) ? SPEED_FAST : SPEED_FINE; }
