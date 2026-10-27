@@ -34,6 +34,17 @@ and open to 30 deg. With the replacement servo, increasing J6 opens the jaws; th
 These changes are outside the authorized motion calibration files; do not widen
 the J6 limits or invert its pulse anchors to accommodate the old commands.
 
+**Also blocked: a clamped home request is reported as complete.** The voice home
+step in `App/modes/mode_voice.c` accepts every result except `MOTION_REFUSED`
+(`motion_set_target(&home) != MOTION_REFUSED`) and then reports the script done
+when motion goes idle. With the J2/J5 coupling below, a home target can be
+clamped: from J2 = 50°, J5 = 140°, home requests J2 = 125°, J5 = 25°; because J2
+is below 90° at request time, J5 is clamped to 65° and the stored target stays
+there. The voice task would report home complete with J5 still at 65°. Modes owner must treat a clamped home target as incomplete
+and reissue/sequence it (or report failure and retry); this motion-only change
+does not edit the modes code. Add the same integration check for the Cartesian
+path and any other caller that treats `MOTION_CLAMPED` as success.
+
 The firmware table in `App/motion/servo_cal.c` now holds the confirmed installed
 home poses and conservative per-joint safe limits (27 Oct 2026). The home pose is
 a servo-angle pose, **not the kinematic joint zero**; startup sends it after
@@ -173,18 +184,57 @@ the anchors above at those home angles.
 | Joint | Unit label | Safe min (°) | Safe max (°) | Home (°) | Home pulse (µs) | Installed zero | Direction sign |
 |---|---|---|---|---|---|---|---|
 | J1 | `MG996R-1` | 0 | 180 | 85 | 1407 | not measured | not calibrated |
-| J2 | `MG996R-2` | 90 | 180 | 125 | 1823 | not measured | not calibrated |
+| J2 | `MG996R-2` | 50 | 180 | 125 | 1823 | not measured | not calibrated |
 | J3 | `MG996R-3` | 45 | 180 | 145 | 2123 | not measured | not calibrated |
 | J4 | `SG92R-1` | 0 | 180 | 90 | 1440 | not measured | not calibrated |
 | J5 | `SG92R-3` | 25 | 140 | 25 | 901 | not measured | not calibrated |
 | J6 | `SG90` (replacement) | 0 | 60 | 35 | 842 | not measured | not calibrated |
 
 The limits were confirmed independently, one joint at a time, with the rest of
-the arm supported. J2 min = 90° is the requested limit, not a confirmed
-clearance: floor contact was observed around 90–95° with J5 = 25°. A J2 angle
-near 50° was observed only with the wrist above 75°, but that coupled rule is
-incomplete; the firmware keeps J2 min = 90° and does not implement speculative
-wrist coupling.
+the arm supported. J2's table floor is the absolute **50°**, but that value is
+not a confirmed clearance on its own: floor contact was observed around 90–95°
+with J5 = 25°. A J2 angle near 50° was observed only with the wrist raised, so
+the motion layer raises J2 to **90°** whenever J5 is below 65° (current or
+pending). This coupling is still endpoint clearance, not a whole-arm collision
+check.
+
+### J2/J5 wrist coupling (motion layer)
+
+`App/motion/motion.c` applies this rule from the **actual commanded pose**
+(`motion_get_current()`) plus, for a single-joint request, the pending target of
+the other joint:
+
+- J5 at or above **65°** (current or pending) allows J2 down to its absolute
+  **50°** table floor.
+- Otherwise J2 must stay at **90°** or above.
+- While J2 is below **90°** (current or pending), J5 must stay at **65°** or
+  above.
+- No automatic shoulder lift: a low J5 command is blocked at 65°; J2 is not
+  raised merely to make room for it.
+
+The setter applies the current-pose gate **and** validates the combined pending
+endpoint under the IRQ lock, so an `MOTION_OK` return means the stored endpoint
+is already safe. A full target whose two requested values are individually legal
+but whose endpoint is unsafe (for example current 125°/65°, requested 50°/25°) is
+deterministically clamped to J2 = 90°, J5 = 25° and returns `MOTION_CLAMPED`; the
+tick does not silently change the endpoint later. A single-joint request clamps
+only the requested joint and leaves the other pending target untouched. The jog
+and TIM6 tick paths still re-clamp from the current pose as the trajectory moves,
+and J2 is updated before J5 in the tick so a simultaneous move cannot end with J2
+below 90° while J5 is below 65°.
+
+A target that hits a coupled bound is **clamped to that bound and stored
+clamped**. It is not kept and replayed later when the other joint moves: after
+J5 is raised, the caller must reissue J2 = 50°. This prevents stale latent motion.
+Status reports `MOTION_CLAMPED` whenever a requested value was limited, and
+`MOTION_OK` otherwise. `MOTION_CLAMPED` is not a success indication for a
+multi-step script; see the home-task blocker above.
+
+The firmware has **no joint-angle sensors**. "Current" in this rule means the
+commanded angle in `s_cur`, not the measured physical pose. A loaded or fast servo
+can lag that command; the guard assumes the commanded pose is the safe one to use.
+Keep the arm supported and the servo signal wires disconnected when first testing
+the assembled arm.
 
 The 0/90/180 pulse anchors are the full-range conversion anchors, not installed
 limits. J6's safe range is 0..60° but its anchors still span 0..180°; do not
