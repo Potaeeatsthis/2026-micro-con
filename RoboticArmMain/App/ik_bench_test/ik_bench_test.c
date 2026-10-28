@@ -1,5 +1,4 @@
-/* ik_bench_test.c - see ik_bench_test.h. compiled to nothing unless APP_USE_IK_BENCH_TEST is 1 (local
- * config), because it uses kin_ik_bench(), which only exists in that build */
+/* ik_bench_test.c - see ik_bench_test.h. only built with APP_USE_IK_BENCH_TEST 1 */
 #include "common/app_config.h"
 #if APP_USE_IK_BENCH_TEST
 #include "ik_bench_test/ik_bench_test.h"
@@ -17,8 +16,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 
-/* the one target (robot base frame, mm / deg, see kinematics.h). default: 27 mm below home, the
- * biggest joint change from home is about 12.5 deg (J3) */
+/* the target (robot frame). default: 27 mm below home, about 12.5 deg on J3 */
 #ifndef IK_BENCH_X_MM
 #define IK_BENCH_X_MM          250.0f
 #endif
@@ -36,7 +34,7 @@
 #endif
 
 #ifndef IK_BENCH_ARM_MS
-#define IK_BENCH_ARM_MS        500u     /* GO needs a press EDGE at least this long after READY appeared */
+#define IK_BENCH_ARM_MS        500u     /* GO needs a press at least this long after READY */
 #endif
 
 #define REDRAW_MS  100u                 /* while the arm is moving */
@@ -49,7 +47,7 @@ static const cart_pose_t TARGET = { IK_BENCH_X_MM, IK_BENCH_Y_MM, IK_BENCH_Z_MM,
 static ik_bench_state_t s_state = IKB_BOOT;
 static joint_vec_t      s_sol;
 static bool             s_have_sol;
-static uint32_t         s_ready_ms;     /* when READY was entered: GO needs a press edge after +IK_BENCH_ARM_MS */
+static uint32_t         s_ready_ms;
 static int              s_max_j;        /* joint with the biggest change, and how much */
 static float            s_max_d;
 static bool             s_have_err;     /* after arriving: FK of the reached pose minus the target */
@@ -75,7 +73,7 @@ static void set_status(ik_bench_state_t st, const char *s, uint16_t fg)
 
 static void draw_line(int row, const char *s, uint16_t fg)
 {
-  char buf[27];                         /* 26 chars fit at size 2: pad so old text is overwritten */
+  char buf[27];                         /* pad so old text is overwritten */
   snprintf(buf, sizeof buf, "%-26.26s", s);
   lcd_port_text(TEXT_X, row * LINE_H + 4, buf, fg, LCD_BLACK, TEXT_SIZE);
 }
@@ -125,7 +123,7 @@ static const char *joint_line(const joint_vec_t *v, char *buf, int n)
   return buf;
 }
 
-/* solve from where the arm is now; READY only if the solution is close enough */
+/* solve from where the arm is */
 static void plan(void)
 {
   joint_vec_t now;
@@ -155,10 +153,8 @@ static void plan(void)
     set_status(IKB_NO_SOLUTION, b, LCD_RED);
     return;
   }
-  /* arming: GO must be a NEW press. the press events carry the tick of their debounced edge (input.c),
-   * so the check below is on when the knob went down, not on when this loop got to the event: a press
-   * made before or just after READY stays invalid however late it is processed, and a knob held across
-   * start-up gives no edge at all until it is released and pressed again. queued events are dropped too */
+  /* GO must be a new press: compare the press edge time, not when the event is handled.
+   * a knob held through start-up needs a release and a new press */
   app_event_t e;
   while (app_event_pop(&e)) { }
   s_ready_ms = HAL_GetTick();
@@ -207,7 +203,7 @@ static void arrived(void)
 
 void ik_bench_test_init(void)
 {
-  lcd_port_init();                      /* landscape, turned 180 deg like the main screen, black */
+  lcd_port_init();                      /* landscape, rotated 180 like the main screen */
   LOG("ik-bench: kin_ik stays off (ARM_GEOMETRY_MEASURED %d); this screen solves ONE target with "
       "kin_ik_bench. home first, then knob press = go, any press = stop, press = home\r\n", ARM_GEOMETRY_MEASURED);
 }
@@ -215,7 +211,7 @@ void ik_bench_test_init(void)
 void ik_bench_test_step(void)
 {
   app_event_t e;
-  if (!safety_motion_allowed()) {       /* fatal fault latched: motion is frozen until reset */
+  if (!safety_motion_allowed()) {
     while (app_event_pop(&e)) { }
     if (s_state != IKB_FAULT) {
       char s[40];
@@ -224,7 +220,7 @@ void ik_bench_test_step(void)
       LOG("ik-bench: fatal fault %d, motion frozen; reset the board\r\n", (int)app_fault_last());
     }
   } else if (!motion_started()) {
-    while (app_event_pop(&e)) { }       /* nothing until every joint has its home pulse */
+    while (app_event_pop(&e)) { }
   } else {
     if (s_state == IKB_BOOT) {
       motion_set_speed(SPEED_FINE);

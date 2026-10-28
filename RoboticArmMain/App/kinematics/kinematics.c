@@ -1,19 +1,8 @@
-/* kinematics.c - workbook CAD forward/inverse kinematics
+/* kinematics.c - FK / IK from the workbook CAD model
  *
- * owner: IK member.
- * Pure float math, no HAL and no PWM. It reads the motion calibration table
- * (servo_cal) and the shared J2/J5 coupling constants; it never calls motion.
- * Runs in the main loop only.
- *
- * FK uses the full 5-joint workbook model, including wrist roll q4:
- *   p = Rz(q1) * [ S + Ry(q2)*v_SE
- *                      + Ry(q2+q3)*( v_EW + Rz(q4)*Ry(q5)*t ) ]
- * IK uses the workbook planar closed form with q4 = 0, because cart_pose_t has
- * only one orientation scalar. See kinematics.h for the pitch projection and
- * branch/status rules. kin_ik_cartesian() is the Cartesian-only entry point; it
- * shares the solver but has its own guard, so voice kin_ik() stays fail-closed.
- * kin_ik_cartesian_diag() runs the same solve and records the closest failed
- * branch and its joint/coupling/geometry reason; it does not change the result.
+ * FK uses all 5 joints:
+ *   p = Rz(q1) * [ S + Ry(q2)*v_SE + Ry(q2+q3)*( v_EW + Rz(q4)*Ry(q5)*t ) ]
+ * IK is the planar closed form with q4 = 0 (cart_pose_t has one orientation value).
  */
 #include "kinematics/kinematics.h"
 #include "kinematics/arm_geometry.h"
@@ -30,8 +19,7 @@
 #define KIN_R_TOL_MM        1e-4f
 #define KIN_APPROACH_EPS    1e-4f
 
-/* The solver is compiled when global IK, Cartesian IK, voice IK or the bench needs it. The bench build
- * deliberately does NOT enable kin_ik(), kin_ik_cartesian() or kin_ik_voice(): only kin_ik_bench() may. */
+/* the solver is built when any IK user needs it. a bench build only enables kin_ik_bench() */
 #define KIN_VOICE_ON (ARM_VOICE_IK_ENABLED && !APP_USE_IK_BENCH_TEST)
 #if ARM_GEOMETRY_MEASURED || (ARM_CARTESIAN_IK_ENABLED && !APP_USE_IK_BENCH_TEST) || KIN_VOICE_ON || \
     APP_USE_IK_BENCH_TEST
@@ -40,8 +28,6 @@
 #define KIN_IK_SOLVER 0
 #endif
 
-/* FK-only helpers under ARM_FK_ENABLED, shared ones under either guard, IK-only ones under
- * KIN_IK_SOLVER, so no build leaves an unused function */
 #if ARM_FK_ENABLED
 typedef struct { float m[3][3]; } kin_mat3_t;
 typedef struct { float x, y, z; } kin_vec3_t;
@@ -135,10 +121,7 @@ static bool kin_pose_finite(const cart_pose_t *p)
          isfinite((double)p->z_mm) && isfinite((double)p->pitch_deg);
 }
 
-/* A joint angle is periodic. Normalize to [0,360), then accept the equivalent
- * representative inside the installed servo range that is closest to seed.
- * The installed ranges are at most 180 deg wide, so this yields at most one
- * candidate; the loop keeps the rule explicit. */
+/* angles are periodic: take the one inside the servo range closest to seed */
 static bool kin_servo_candidate(int joint, float raw_deg, float seed_deg, float *out)
 {
   const servo_cal_t *cal = servo_cal(joint);
@@ -163,9 +146,7 @@ static bool kin_servo_candidate(int joint, float raw_deg, float seed_deg, float 
   return found;
 }
 
-/* Same endpoint rule as motion.c's joint_min_deg(), evaluated for the full
- * target and the current seed so IK does not hand motion a target it will
- * clamp. */
+/* same J2/J5 rule as motion.c, so IK never hands motion a target it would clamp */
 static bool kin_coupling_ok(const joint_vec_t *seed, const float cand[5])
 {
   const float s2 = seed->deg[J2_SHOULDER];
@@ -190,8 +171,7 @@ static float kin_candidate_distance(const float cand[5], const joint_vec_t *seed
   return d;
 }
 
-/* Diagnostic only: the periodic representative closest to seed, even when it is outside the installed
- * range, so two failed branches can be compared on the same footing. Never used by the solver. */
+/* diagnostic only: closest periodic value even outside the servo range */
 static float kin_servo_nearest(int joint, float raw_deg, float seed_deg)
 {
   (void)joint;
@@ -208,8 +188,7 @@ static float kin_servo_nearest(int joint, float raw_deg, float seed_deg)
   return best;
 }
 
-/* Diagnostic only: which joint the coupling rule rejects first. The message points at the joint
- * whose floor must be restored (J2 >= 90 or J5 >= 65). */
+/* diagnostic only: which joint the coupling rejects */
 static int kin_coupling_joint(const float cand[5])
 {
   if (cand[J2_SHOULDER] < MOTION_J2_COUPLED_DEG) return J2_SHOULDER;
@@ -221,7 +200,6 @@ static int kin_coupling_joint(const float cand[5])
 
 void kin_init(void)
 {
-  /* All geometry is compile-time; nothing to precompute. */
 }
 
 #if KIN_IK_SOLVER
@@ -277,7 +255,7 @@ static kin_status_t ik_solve_diag(const cart_pose_t *pose, const joint_vec_t *se
   if (radial_sq < 0.0f) radial_sq = 0.0f;
   const float xp = sqrtf(radial_sq);
 
-  /* Canonicalize any finite pitch before sin/cos; large finite values are valid. */
+  /* wrap the pitch before sin/cos */
   const float phi_deg = fmodf(pose->pitch_deg, 360.0f);
   const float phi = phi_deg * KIN_DEG2RAD;
 
@@ -363,8 +341,7 @@ static kin_status_t ik_solve_diag(const cart_pose_t *pose, const joint_vec_t *se
         for (int i = 0; i < 5; i++) best[i] = cand[i];
       }
     } else if (diag != NULL) {
-      /* the closest failed branch is the useful one to explain; measure every joint with the
-       * nearest periodic value so a branch that gave up early still has a comparable distance */
+      /* remember the closest failed branch for the diagnostic */
       float dist = 0.0f;
       bool dist_ok = true;
       for (int i = 0; i < 5; i++) {
@@ -509,8 +486,7 @@ kin_status_t kin_fk(const joint_vec_t *joints, cart_pose_t *out)
   const kin_mat3_t rot = kin_mat3_mul(rz1, kin_mat3_mul(ry23, wrist));
   const kin_vec3_t approach = { rot.m[0][2], rot.m[1][2], rot.m[2][2] };
 
-  /* cart_pose_t carries one orientation scalar. Report the approach projected
-   * into the yaw-removed X-Z plane; with roll this is not a full orientation. */
+  /* pitch = tool direction in the vertical plane (not a full orientation with roll) */
   const float px = cosf(q1) * approach.x + sinf(q1) * approach.y;
   const float pz = approach.z;
   if (sqrtf(px * px + pz * pz) < KIN_APPROACH_EPS) return KIN_NOT_READY;

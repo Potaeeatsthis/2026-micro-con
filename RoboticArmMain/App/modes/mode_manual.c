@@ -1,7 +1,4 @@
-/* mode_manual.c - helpers shared by the three joystick modes
- *
- * owner: motion member (changes here affect cartesian, joint group and single joint).
- */
+/* mode_manual.c - helpers shared by the three joystick modes */
 #include "modes/mode_ops.h"
 #include "motion/motion.h"
 #include "motion/servo.h"
@@ -14,7 +11,7 @@ void manual_jog_dir(int joint_x, float sign_x, int joint_y, float sign_y)
 {
 #if APP_USE_INPUT
   float v = (motion_get_speed() == SPEED_FAST) ? APP_SPEED_FAST_DEG_S : APP_SPEED_FINE_DEG_S;
-  /* sent every pass, also when 0: the jog timeout in motion.c then never fires mid-move */
+  /* send every pass, also 0, so the jog timeout never fires mid-move */
   if (joint_x >= 0) motion_jog(joint_x, sign_x * input_joy_x() * v);
   if (joint_y >= 0) motion_jog(joint_y, sign_y * input_joy_y() * v);
 #else

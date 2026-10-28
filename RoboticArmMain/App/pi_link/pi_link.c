@@ -1,21 +1,11 @@
-/* pi_link.c
+/* pi_link.c - USART6 link to the raspberry pi
  *
- * rx: USART6 -> DMA circular ring (rx_ring). HAL_UARTEx_ReceiveToIdle_DMA reports the
- * write position on idle line, half and full; the main loop reads from s_tail up to it.
- * the ring holds ~89 ms of continuous traffic at 115200 baud; pi messages are short and
- * rare, so a main-loop pause (CNN 33 ms) cannot overflow it in practice.
- * line assembly and parsing are in pi_proto.c (pure, host-tested); this file owns the
- * uart, the pending request, the timeout, events and logging.
+ * rx: DMA circular ring, read in the main loop. Parsing is in pi_proto.c (host-tested).
+ * A reply is only taken for the request that is pending, so a late reply can't start a move.
+ * Bad lines are logged with the reason, rate-limited.
  *
- * a reply is accepted only for the request that is pending; a late reply after a cancel
- * or timeout is logged and ignored, so an old position can never start a motion.
- * every bad line is logged once with its reason (over-long lines too); line logs are
- * rate-limited so a noisy rx pin cannot flood the debug uart.
- *
- * APP_INPUT_TEST (app_config_local.h only): sends FIND <APP_INPUT_TEST_OBJ> every
- * APP_INPUT_TEST_FIND_MS and prints link counters once a second when they change.
- * APP_INPUT_TEST_CYCLE 1 asks for every object in turn instead (4 boxes, hand, station: camera test).
- * needs APP_USE_MODES 0 (the voice mode would also send FIND) and APP_USE_MOTION 0.
+ * APP_INPUT_TEST (local config, modes and motion off): sends FIND every APP_INPUT_TEST_FIND_MS
+ * and prints the link counters.
  */
 #include "pi_link/pi_link.h"
 #include "pi_link/pi_proto.h"
@@ -104,7 +94,7 @@ static bool line_log_allowed(void)
   return false;
 }
 
-/* printable copy of the start of a line for the log: control bytes become '.' */
+/* printable copy for the log */
 static void log_safe_copy(char *dst, const char *src)
 {
   uint32_t i = 0u;
@@ -123,8 +113,7 @@ static void bad_line(pi_err_t err, const char *shown, uint32_t len)
       (len > LOG_SHOW_CHARS) ? "..." : "");
 }
 
-/* ---------------------------------------------------------------- message handlers
- * one function per message type. the line is already parsed and valid */
+/* ---------------------------------------------------------------- message handlers */
 static void rx_obj(const pi_msg_t *m)
 {
   const char *name = pi_object_name(m->obj);
@@ -157,7 +146,7 @@ typedef struct {
   void (*handler)(const pi_msg_t *m);
 } rx_handler_t;
 
-/* EXTENSION POINT: new pi -> stm32 messages, one row each (plus PI_KEYWORDS in pi_proto.c) */
+/* new pi -> stm32 message: one row here + PI_KEYWORDS in pi_proto.c */
 static const rx_handler_t RX_HANDLERS[] = {
   { PI_MSG_OBJ,      rx_obj },
   { PI_MSG_NOTFOUND, rx_notfound },
@@ -166,11 +155,11 @@ static const rx_handler_t RX_HANDLERS[] = {
 static void handle_line(char *line, uint32_t len)
 {
   char shown[LOG_SHOW_CHARS + 1u];
-  log_safe_copy(shown, line);                    /* before the parser splits the line */
+  log_safe_copy(shown, line);
 
   pi_msg_t m;
   pi_err_t err = pi_parse_line(line, &m);
-  if (err == PI_ERR_EMPTY) return;               /* blank lines are not errors */
+  if (err == PI_ERR_EMPTY) return;
   if (err != PI_OK) {
     bad_line(err, shown, len);
     return;
@@ -190,7 +179,7 @@ static uint32_t s_test_stat_ms;
 static uint32_t s_test_stat_sum;
 static uint8_t  s_test_obj = (uint8_t)APP_INPUT_TEST_OBJ;
 
-/* periodic FIND + 1 Hz counters (only printed when something changed) */
+/* periodic FIND + counters */
 static void test_step(void)
 {
   uint32_t now = HAL_GetTick();
@@ -227,7 +216,7 @@ void pi_link_init(void)
   LOG("pi: TEST mode, FIND %s every %lu ms\r\n",
       APP_INPUT_TEST_CYCLE ? "all objects in turn" : pi_object_name(APP_INPUT_TEST_OBJ),
       (unsigned long)APP_INPUT_TEST_FIND_MS);
-  s_test_find_ms = HAL_GetTick() - APP_INPUT_TEST_FIND_MS + 1000u;   /* first FIND 1 s after boot */
+  s_test_find_ms = HAL_GetTick() - APP_INPUT_TEST_FIND_MS + 1000u;
 #endif
 }
 

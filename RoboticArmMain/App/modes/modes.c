@@ -1,12 +1,6 @@
-/* modes.c - owns the active mode, the event loop and the safe switching procedure
+/* modes.c - active mode, event loop and safe switching
  *
- * safe switch (guide section 9):
- *   1-2  old mode exit(): stop taking input, cancel voice task / pi request
- *   3-4  motion_hold() and wait until the trajectory is idle
- *   5    wait until the joystick is centred
- *   6-7  targets already equal the current pose (motion_hold), old jogs cleared
- *   8    new mode enter()
- *   9    the lcd picks the new mode up by itself (pull model)
+ * switching: old mode exit(), motion_hold(), wait until idle and the stick is centred, new mode enter()
  */
 #include "modes/modes.h"
 #include "modes/mode_ops.h"
@@ -83,7 +77,7 @@ static bool handle_global(const app_event_t *e)
       modes_request((arm_mode_t)e->arg);
       return true;
     case EVT_JOY_PRESS:
-      /* fine/fast in manual modes and in voice (the speed every voice move uses; the LCD shows it) */
+      /* fine/fast in the manual modes and voice */
       if (ops(s_cur)->manual || s_cur == MODE_VOICE) motion_toggle_speed();
       return true;
     case EVT_FAULT:
@@ -99,7 +93,7 @@ void modes_step(void)
   app_event_t e;
   while (app_event_pop(&e)) {
     if (handle_global(&e)) continue;
-    if (s_switching) continue;                                  /* step 1: no mode input while switching */
+    if (s_switching) continue;
     ops(s_cur)->on_event(&e);
   }
 

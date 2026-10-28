@@ -1,18 +1,9 @@
-/* app_callbacks.c - THE ONLY FILE THAT DEFINES HAL_*Callback FUNCTIONS
+/* app_callbacks.c - the only file that defines HAL_*Callback functions (CI checks this)
  *
- * owner: core.
- * HAL declares each callback as __weak; a second definition anywhere (main.c, a feature
- * file, app_x-cube-ai.c) is a link error or, worse, silently replaces this one.
- * CI fails any PR that defines HAL_*Callback outside this file.
- *
- * rules:
- *   - route by instance and call ONE function of the owning module; no logic here
- *   - every routed function must be isr-safe: short, no HAL_Delay, no printf, no LCD
- *   - a new callback: add it in the EXTENSION POINT section at the bottom, in a PR
- *
- * note: SysTick is the HAL timebase (set in the .ioc), so CubeMX does NOT generate a
- * HAL_TIM_PeriodElapsedCallback in main.c. if someone switches the timebase to a TIM,
- * that generated copy collides with the one below - keep SysTick.
+ * Route by instance to one function of the owning module, no logic here. Everything called
+ * from here runs in an isr: keep it short (no HAL_Delay, printf or LCD).
+ * Keep SysTick as the HAL timebase, otherwise CubeMX generates a second
+ * HAL_TIM_PeriodElapsedCallback in main.c.
  */
 #include "main.h"
 #include "app.h"
@@ -40,8 +31,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   }
 }
 
-/* ---------------------------------------------------------------- gpio exti
- * every module checks whether the pin is one of its own, so the order does not matter */
+/* ---------------------------------------------------------------- gpio exti */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
 #if APP_USE_INPUT
@@ -128,8 +118,4 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 }
 
 /* ---------------------------------------------------------------- EXTENSION POINT
- * reserved, add when the feature needs it (each in a PR, routed like above):
- *   HAL_SPI_TxCpltCallback      SPI5 -> lcd_on_spi_done()      if the LCD driver moves to DMA
- *   HAL_TIM_IC_CaptureCallback  a timer input capture
- *   HAL_UART_RxCpltCallback     only if a uart uses plain (non-idle) dma rx
- */
+ * add new callbacks here (e.g. SPI5 tx done if the LCD moves to DMA) */

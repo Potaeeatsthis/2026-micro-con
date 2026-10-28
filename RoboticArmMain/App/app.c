@@ -1,7 +1,6 @@
-/* app.c - start-up order, main-loop order, control-tick order
+/* app.c - start-up order, main loop order, control tick order
  *
- * owner: core. a feature never edits this file except at the three EXTENSION POINT
- * lines, and only for a NEW module (see ProjectDevGuide/docs/TEAM_GUIDE.md "adding a module").
+ * A new module only goes in at the EXTENSION POINT lines (see TEAM_GUIDE.md).
  */
 #include "app.h"
 #include "common/app_config.h"
@@ -47,7 +46,7 @@
 
 static uint32_t s_loop_max_us;
 #if APP_TIMING_LOG
-/* APP_TIMING_LOG: the slowest pass of each step since the last report (us), printed every 2 s */
+/* APP_TIMING_LOG: slowest pass of each step, printed every 2 s */
 static uint32_t s_t_voice_us, s_t_modes_us, s_t_lcd_us, s_t_loop_us, s_t_report_ms;
 #define TIMED(var, call) do { uint32_t t_ = timing_cycles(); call; uint32_t us_ = timing_us_since(t_); \
                               if (us_ > (var)) (var) = us_; } while (0)
@@ -93,7 +92,7 @@ void app_init(void)
   servo_cal_test_init();
 #endif
 #if APP_USE_IK_BENCH_TEST
-  ik_bench_test_init();                           /* after kin_init(): one supervised IK move */
+  ik_bench_test_init();
 #endif
 #if APP_USE_MODES
   modes_init();                                   /* last: it starts using every module above */
@@ -132,18 +131,18 @@ void app_loop(void)
 #endif
   /* EXTENSION POINT 3: main-loop step of a new module goes here (producers before modes) */
 #if APP_USE_SERVO_CAL_TEST
-  servo_cal_test_step();                          /* consumes the encoder events before the drain below */
+  servo_cal_test_step();
 #endif
 #if APP_USE_IK_BENCH_TEST
-  ik_bench_test_step();                           /* same: knob / stick events before the drain */
+  ik_bench_test_step();
 #endif
 #if APP_USE_MODES
-  TIMED(s_t_modes_us, modes_step());              /* the only event consumer (cartesian / voice IK runs here) */
+  TIMED(s_t_modes_us, modes_step());              /* the only event consumer */
 #else
   app_events_drain();
 #endif
 #if APP_USE_LCD
-  TIMED(s_t_lcd_us, lcd_step());                  /* last: draws the state everyone just updated */
+  TIMED(s_t_lcd_us, lcd_step());                  /* last: draw what everyone just updated */
 #endif
 
   app_fault_report();

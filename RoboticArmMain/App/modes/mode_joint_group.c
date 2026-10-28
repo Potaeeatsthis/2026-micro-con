@@ -1,12 +1,9 @@
-/* mode_joint_group.c - joystick moves two joints, encoder picks the group (guide 7.2)
+/* mode_joint_group.c - joystick moves two joints, knob picks the group
  *
- * owner: TODO(team) - write the owner's name here and in ProjectDevGuide/docs/TEAM_GUIDE.md section 1
- *   stick left-right (X) / up-down (Y), in the operator's view (input.c turns the module's axes):
  *   group 1: X = J1 base,       Y = J2 shoulder
  *   group 2: X = J4 wrist roll, Y = J3 elbow
  *   group 3: X = J6 gripper,    Y = J5 wrist pitch
- *   directions per axis in GROUP_SIGN, set on the real arm with the operator 28 Oct 2026
- *   encoder turn (or the lcd < / > arrows, EVT_TOUCH_SELECT) -> next / previous group
+ * X / Y are the operator's left-right / up-down. Directions are in GROUP_SIGN.
  */
 #include "modes/mode_ops.h"
 #include "modes/modes.h"
@@ -15,14 +12,14 @@
 
 #define N_GROUPS 3
 
-/* {joint on the stick's X (left-right), joint on its Y (up-down)} for each group */
+/* {joint on X, joint on Y} */
 static const int GROUP_AXES[N_GROUPS][2] = {
   { J1_BASE,       J2_SHOULDER },
   { J4_WRIST_ROLL, J3_ELBOW },
   { J6_GRIPPER,    J5_WRIST_PITCH },
 };
 
-/* {X direction, Y direction}: +1 = stick right / up raises the joint angle, -1 = lowers it */
+/* +1 = stick right / up raises the angle, -1 = lowers it */
 static const float GROUP_SIGN[N_GROUPS][2] = {
   { -1.0f,  1.0f },   /* right: J1 down,  up: J2 up */
   { -1.0f, -1.0f },   /* right: J4 down,  up: J3 down */

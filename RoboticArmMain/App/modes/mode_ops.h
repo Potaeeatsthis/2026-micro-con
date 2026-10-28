@@ -1,8 +1,4 @@
-/* mode_ops.h - the contract every mode file implements (internal to modes/)
- *
- * a mode never touches PWM. it reads inputs / events and sets motion targets.
- * all functions run in the main loop.
- */
+/* mode_ops.h - what every mode implements. Modes never touch PWM; everything runs in the main loop */
 #ifndef APP_MODE_OPS_H
 #define APP_MODE_OPS_H
 
@@ -27,7 +23,7 @@ extern const mode_ops_t MODE_SINGLE_JOINT_OPS;
 
 /* shared helpers for the joystick modes (mode_manual.c) */
 void        manual_jog(int joint_x, int joint_y);   /* joystick x/y -> jog; -1 = axis unused */
-/* same, with a direction per axis: sign +1 = stick right / up raises the joint angle, -1 = lowers it */
+/* same, with a sign per axis */
 void        manual_jog_dir(int joint_x, float sign_x, int joint_y, float sign_y);
 const char *manual_joint_name(int joint);
 

@@ -1,38 +1,13 @@
-/* servo_cal.c - calibration table, one row per joint
+/* servo_cal.c - calibration table, one row per joint (edit this file when calibrating)
  *
- * owner: servo / motion member. this is the file you edit while calibrating.
+ * us_0 / us_90 / us_180 are the pulse anchors servo.c interpolates between; they are not limits.
+ * min / max / home are the installed values. Home is not the kinematic zero.
+ * J2's floor is 50 deg, but motion.c only lets it below 90 while J5 >= 65 (floor contact seen
+ * around 90-95 with J5 = 25). These are endpoint limits only, not a collision check for paths.
+ * J4 = wrist roll, J5 = wrist pitch.
  *
- * us_0 / us_90 / us_180 are the pulse anchors for the two straight-line
- * conversions used by servo.c. J1-J5 keep their measured unloaded bench
- * endpoints. J6 uses the replacement servo's anchors (500 / 1380 / 2300 us);
- * the earlier SG90 anchors and the reported 2490 us maximum are retired. The
- * anchors are NOT installed safe limits and NOT a command range.
- *
- * min_deg / max_deg / home_deg are the confirmed installed values (27 Oct
- * 2026; J6 home raised from 35 to 40 deg on 28 Oct 2026). motion.c enforces
- * the limits and loads home before the first pulse.
- * The home pose is NOT the kinematic zero; joint zeros and signs are still
- * uncalibrated. The independent per-joint limits give endpoint clearance only;
- * they do NOT prove that every whole-arm pose or path is collision-free. J2's
- * absolute table floor is 50 deg at the user's request: floor contact was
- * observed around 90-95 deg with J5 = 25 deg, so 50 deg alone is NOT confirmed
- * clearance. motion.c adds the confirmed wrist coupling on top of this table:
- * J5 current or pending at or above 65 deg allows J2 down to 50 deg, otherwise
- * J2 is raised to 90 deg or above, and J2 below 90 deg (current or pending)
- * blocks J5 below 65 deg. That rule is only endpoint coupling; whole-arm paths
- * still need testing.
- *
- * Physical labels are preserved: MG996R-1/-2/-3, SG92R-1, SG92R-3 and SG90.
- * SG92R-2 is retired; SG92R-3 keeps its name at joint 5. J6's model is
- * unresolved: it was recorded as SG90, but the user later reported SG92R. The
- * J6 anchors (500 / 1380 / 2300 us) are unchanged either way.
- * J4 is wrist roll and J5 is wrist pitch; this swap is by joint role only, so
- * the servo unit, channel, pulse calibration and home angle of each row stay
- * unchanged.
- *
- * STARTUP STILL SENDS HOME: motion_init() loads home_deg and motion_tick() writes
- * that pose one joint at a time (MOTION_BOOT_STAGGER_MS apart, gripper first). Keep every servo signal wire disconnected while
- * bringing up new motion or calibration code.
+ * Boot sends every joint home (one at a time, gripper first): keep the servo signal wires
+ * unplugged when bringing up new motion code.
  */
 #include "motion/servo.h"
 
@@ -43,5 +18,5 @@ const servo_cal_t SERVO_CAL[ARM_N_JOINTS] = {
   { "J3 ELBOW",        540,  1530, 2500,  45.0f, 180.0f, 145.0f }, /* MG996R #3 */
   { "J4 WRIST ROLL",   500,  1440, 2370,   0.0f, 180.0f, 90.0f },  /* SG92R #1 */
   { "J5 WRIST PITCH",  640,  1580, 2470,  25.0f, 140.0f, 25.0f },  /* SG92R #3 (stable label) */
-  { "J6 GRIPPER",      500,  1380, 2300,   0.0f, 60.0f, 40.0f },   /* SG90; user later reported SG92R */
+  { "J6 GRIPPER",      500,  1380, 2300,   0.0f, 60.0f, 40.0f },   /* SG90 (maybe SG92R) */
 };

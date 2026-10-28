@@ -1,12 +1,7 @@
-/* voice.h - two INMP441 mics on SAI1 -> log-mel features -> TC-ResNet -> EVT_VOICE_WORD
+/* voice.h - two INMP441 mics on SAI1 -> log-mel -> CNN -> EVT_VOICE_WORD
  *
- * owner: voice (Supanut).
- * this module only RECOGNISES words. what a word means (the S0..S10 task state machine)
- * lives in modes/mode_voice.c.
- *
- * word filter: mode_voice tells this module which words the current task state accepts.
- * a detected word outside that set is logged as ignored, posts no event and does not
- * start the refractory time. bit i = class id i (the model has at most 32 classes).
+ * This only recognises words; what they mean is in modes/mode_voice.c.
+ * mode_voice sets which words are accepted (bit i = class id i). Other words are logged and dropped.
  */
 #ifndef APP_VOICE_H
 #define APP_VOICE_H

@@ -1,47 +1,17 @@
 /* kinematics.h - cartesian <-> joint angles
  *
- * owner: IK member.
- * pure math: no HAL, no PWM, no globals besides constants. Uses the motion
- * calibration getters only for installed servo limits and coupling constants.
- * Runs in the main loop only, never in an ISR. It never commands motion.
+ * Pure math, main loop only, never commands motion.
+ * Poses are in the robot-base frame (mm, deg): origin at the J1 axis on the floor, +X forward,
+ * +Y left, +Z up. Joint angles are servo degrees 0..180; q = sign * (servo - zero) (arm_geometry.h).
  *
- * Coordinates: every cart_pose_t is in the robot-base frame, mm and degrees:
- *   right-handed; origin at the J1 axis on the floor; +X forward, +Y left,
- *   +Z up. The frame and floor transform are in arm_geometry.h.
+ * KIN_OK            out is written
+ * KIN_OUT_OF_REACH  bad input or no geometric solution, out unchanged
+ * KIN_JOINT_LIMIT   a solution breaks a servo limit or the J2/J5 coupling, out unchanged
+ * KIN_NOT_READY     the caller's IK guard is off, or FK can't give a pitch
  *
- * joint_vec_t is the servo frame, 0..180 deg. Model angle conversion uses the
- * candidate zero/sign table in arm_geometry.h:
- *   q = sign * (servo - zero)
- *
- * Status and output rules:
- *   KIN_OK            out is written.
- *   KIN_OUT_OF_REACH  null/non-finite/invalid input, or no geometric solution.
- *                     out is unchanged.
- *   KIN_JOINT_LIMIT   a geometric solution exists, but a servo limit, the J2/J5
- *                     coupling, or the seed J6 range fails. out is unchanged.
- *   KIN_NOT_READY     IK: the caller's activation guard is off (kin_ik:
- *                     ARM_GEOMETRY_MEASURED 0; kin_ik_cartesian:
- *                     ARM_CARTESIAN_IK_ENABLED 0; kin_ik_voice:
- *                     ARM_VOICE_IK_ENABLED 0; or any APP_USE_IK_BENCH_TEST
- *                     build, which keeps normal IK callers off).
- *                     FK: disabled (ARM_FK_ENABLED 0), or it cannot express
- *                     pitch from a degenerate approach projection.
- *                     out is unchanged.
- *
- * FK returns a full 5-joint position (including roll q4). cart_pose_t has only
- * one orientation scalar, so pitch_deg is the projected approach direction in
- * the yaw-removed X-Z plane:
- *   atan2(approach_x, approach_z)
- * It is exact only when q4 = 0. With roll it is a projection, not a full tool
- * orientation. If that projection is below ~1e-4, FK returns KIN_NOT_READY
- * rather than inventing a pitch.
- *
- * IK is the workbook planar closed form with q4 fixed at 0 (servo reference).
- * It uses only the positive in-plane radial branch; other radial/roll solutions
- * are not enumerated. Both elbow branches are checked and the valid one closest
- * to seed is returned. Periodic solutions are normalized to the installed servo
- * range (0..180 deg) and accepted only if they map to the closest seed. The J6
- * gripper angle is copied from seed and must be inside its calibration range.
+ * pitch_deg is the tool direction in the vertical plane, exact only when J4 is at its reference.
+ * IK keeps J4 at its reference, checks both elbow branches and returns the one closest to seed.
+ * J6 is copied from seed.
  */
 #ifndef APP_KINEMATICS_H
 #define APP_KINEMATICS_H
@@ -52,76 +22,60 @@
 
 typedef enum {
   KIN_OK = 0,
-  KIN_OUT_OF_REACH,         /* no geometric solution; keep the last reachable target */
-  KIN_JOINT_LIMIT,          /* a solution exists but breaks a servo limit / coupling */
-  KIN_NOT_READY             /* geometry disabled, or FK pitch projection degenerate */
+  KIN_OUT_OF_REACH,         /* keep the last reachable target */
+  KIN_JOINT_LIMIT,
+  KIN_NOT_READY
 } kin_status_t;
 
-/* Optional detail for a failed kin_ik_cartesian_diag() call. The solver still returns the same
- * kin_status_t; this only says which candidate was closest to the seed and why that candidate
- * failed, without any global state. joint/branch are -1 when they do not apply. limit_deg is the
- * violated bound (0 when none); value_deg is the nearest attempted angle for that joint. */
+/* why kin_ik_cartesian_diag() refused: the closest failed branch and the joint / bound it broke.
+ * joint / branch = -1 when not used */
 typedef enum {
   KIN_DIAG_NONE = 0,
-  KIN_DIAG_INVALID,         /* null / non-finite pose or seed */
-  KIN_DIAG_GEOMETRY,        /* no geometric solution (out of reach) */
-  KIN_DIAG_JOINT_MIN,       /* closest failed solution wants a joint below its installed minimum */
-  KIN_DIAG_JOINT_MAX,       /* closest failed solution wants a joint above its installed maximum */
-  KIN_DIAG_COUPLING,        /* closest failed solution breaks the J2/J5 coupling rule */
-  KIN_DIAG_NOT_READY        /* the Cartesian guard is off */
+  KIN_DIAG_INVALID,
+  KIN_DIAG_GEOMETRY,
+  KIN_DIAG_JOINT_MIN,
+  KIN_DIAG_JOINT_MAX,
+  KIN_DIAG_COUPLING,
+  KIN_DIAG_NOT_READY
 } kin_reason_t;
 
 typedef struct {
   kin_status_t status;
   kin_reason_t reason;
-  int          joint;       /* 0..5 = J1..J6, -1 = none */
-  int          branch;      /* closest failed elbow branch 0/1, -1 = none */
-  float        limit_deg;   /* violated bound, 0 = none */
-  float        value_deg;   /* nearest attempted angle, 0 = none */
+  int          joint;       /* 0..5 = J1..J6 */
+  int          branch;
+  float        limit_deg;
+  float        value_deg;
 } kin_diag_t;
 
 void         kin_init(void);
 
-/* pose -> joints. seed = current joints, used to pick the closest elbow branch.
- * out is written only when KIN_OK. out->deg[J6_GRIPPER] is copied from seed.
- * Global entry point, gated by ARM_GEOMETRY_MEASURED (0): no mode calls it; the modes use
- * kin_ik_cartesian() / kin_ik_voice(), which have their own guards. */
+/* pose -> joints, seed = current joints. guarded by ARM_GEOMETRY_MEASURED; the modes use the two below */
 kin_status_t kin_ik(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out);
 
-/* Cartesian mode only: the same solver and status rules as kin_ik(), gated by
- * ARM_CARTESIAN_IK_ENABLED. It never unlocks kin_ik()/voice, and a bench build
- * (APP_USE_IK_BENCH_TEST) always returns KIN_NOT_READY. The solver fixes J4 at
- * ARM_J4_ZERO_DEG; caller decides whether the seed roll is close enough. */
+/* cartesian mode IK (ARM_CARTESIAN_IK_ENABLED) */
 kin_status_t kin_ik_cartesian(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out);
 
-/* Same solve and guard as kin_ik_cartesian(); diag (optional) explains a refusal. On KIN_OK it is
- * cleared (reason NONE, joint/branch -1). On failure out is unchanged. The diagnostics only describe the closest branch that failed;
- * they do not change the branch choice, limits or the successful path. */
+/* same, plus why it refused */
 kin_status_t kin_ik_cartesian_diag(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out,
                                    kin_diag_t *diag);
 
-/* Voice mode only: the same solver and status rules, gated by ARM_VOICE_IK_ENABLED. A bench build
- * (APP_USE_IK_BENCH_TEST) always returns KIN_NOT_READY. */
+/* voice mode IK (ARM_VOICE_IK_ENABLED) */
 kin_status_t kin_ik_voice(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out);
 
-/* joints -> pose (used to start cartesian mode from where the arm is now).
- * all six input angles must be finite; FK does not enforce servo software
- * limits, so the CAD/math test vectors can be checked outside the installed
- * ranges. This is a mathematical estimate, not a command validation. */
+/* joints -> pose, an estimate from the commanded angles */
 kin_status_t kin_fk(const joint_vec_t *joints, cart_pose_t *out);
 
 const char  *kin_status_name(kin_status_t s);
 
 #if APP_USE_IK_BENCH_TEST
-/* bench test only (App/ik_bench_test/, local config): the same solver as kin_ik() but without the
- * ARM_GEOMETRY_MEASURED guard. kin_ik() itself stays KIN_NOT_READY in that build. never call it from
- * a mode: it does not exist in a normal build */
+/* IK bench build only, no guard */
 kin_status_t kin_ik_bench(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out);
 #endif
 
-bool         kin_fk_enabled(void);             /* ARM_FK_ENABLED: estimated X/Y/Z available */
-bool         kin_ik_enabled(void);             /* ARM_GEOMETRY_MEASURED: global kin_ik() may produce targets */
-bool         kin_ik_voice_enabled(void);       /* voice may produce targets; false in a bench build */
-bool         kin_ik_cartesian_enabled(void);   /* Cartesian may produce targets; false in a bench build */
+bool         kin_fk_enabled(void);
+bool         kin_ik_enabled(void);
+bool         kin_ik_voice_enabled(void);
+bool         kin_ik_cartesian_enabled(void);
 
 #endif /* APP_KINEMATICS_H */

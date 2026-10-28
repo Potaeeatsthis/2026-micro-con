@@ -1,10 +1,7 @@
-/* mode_single_joint.c - service mode: one joint at a time (guide 6.2, 7)
- *
- * owner: TODO(team)
- *   encoder turn  -> select J1..J6 (the lcd < / > arrows do the same through EVT_TOUCH_SELECT)
- *   joystick X    -> move the selected joint
- *   encoder press -> reset the selected target to the current commanded position
- * this is also the calibration mode: the lcd shows the target angle.
+/* mode_single_joint.c - one joint at a time (also used for calibration)
+ *   knob turn  -> select J1..J6 (or the LCD < / > arrows)
+ *   joystick X -> move the selected joint
+ *   knob press -> target = where the joint is now
  */
 #include "modes/mode_ops.h"
 #include "modes/modes.h"

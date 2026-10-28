@@ -1,17 +1,9 @@
-/* voice.c - continuous keyword spotting (port of model_realtime_code as on the board 22 Oct 2026)
+/* voice.c - continuous keyword spotting (port of model_realtime_code)
  *
- * needs, in this folder:
- *   from the released model (voice_command_research/final_model/<model>/kws_c/):
- *     kws_classes.h                       class order, generated from config.py - never edit
- *   unchanged feature code (same as the live project):
- *     kws_features.c/.h, kws_stream.c/.h, kws_feature_tables.h, kiss_fft.c/.h, _kiss_fft_guts.h
- * and Models/kws.onnx from the same release folder (X-CUBE-AI, regenerate after replacing it).
- *
- * differences from the live project:
- *   - the SAI callbacks live in app_callbacks.c and call voice_on_sai()
- *   - the audio buffer is DMA_BUF (non-cacheable), so no SCB_InvalidateDCache call
- *   - detections become EVT_VOICE_WORD events (the printf line is kept)
- *   - __io_putchar and the DWT setup moved to common/; the clip self-test stays in model_realtime_code
+ * kws_classes.h comes from the released model folder (generated, don't edit), and
+ * Models/kws.onnx from the same folder (regenerate X-CUBE-AI after replacing it).
+ * Changes from the original: SAI callbacks are in app_callbacks.c, the audio buffer is
+ * non-cacheable (DMA_BUF), and detections are posted as EVT_VOICE_WORD.
  */
 #include "voice/voice.h"
 #include "voice/kws_model.h"
@@ -29,7 +21,7 @@
 #include "network.h"
 #include <string.h>
 
-/* ---- stream settings, same values as the board on 22 Oct (context/voice/status.md) ---- */
+/* ---- stream settings ---- */
 #define VOICE_GAIN_DB        15.0f   /* KWS_GAIN_DB */
 #define VOICE_STRIDE_FRAMES  10      /* run the CNN every 10 new frames = 100 ms */
 #define VOICE_AVG            3       /* average the last 3 results */
@@ -53,7 +45,7 @@ static uint32_t s_infer_us;
 static uint32_t s_overruns_seen;
 static int      s_last_word = -1;
 static uint32_t s_last_word_ms;
-static uint32_t s_accept = VOICE_ACCEPT_ALL;   /* words the active task state wants (mode_voice) */
+static uint32_t s_accept = VOICE_ACCEPT_ALL;
 static int      s_ignored_word = -1;
 static uint32_t s_ignored_ms;
 
@@ -63,7 +55,7 @@ _Static_assert(N_CLASSES <= 32, "voice_set_accept_mask holds one bit per class")
 typedef struct { float x1; float y1; } dc_state_t;
 static dc_state_t s_dc0, s_dc1;
 
-/* one-pole dc blocker, y[n] = x[n] - x[n-1] + 0.995 y[n-1], 24-bit in -> int16 out */
+/* dc blocker: y[n] = x[n] - x[n-1] + 0.995 y[n-1] */
 static int16_t dc_block(dc_state_t *s, int32_t x24)
 {
   float x = (float)x24;
@@ -166,12 +158,12 @@ void voice_step(void)
   if (f < KWS_N_FRAMES || f - s_last_infer_frame < VOICE_STRIDE_FRAMES) return;
   s_last_infer_frame = f;
 
-  /* 1. better mic, last 101 frames -> network input */
+  /* 1. better mic, last 101 frames -> input */
   float snr_db;
   int ch = kws_stream_choose_channel(&snr_db);
   kws_stream_window(ch, kws_model_input());
 
-  /* 2. network (~43 ms for exp04) */
+  /* 2. network (~43 ms) */
   uint32_t t0 = timing_cycles();
   if (kws_model_run() != 0) return;
   s_infer_us = timing_us_since(t0);
@@ -197,8 +189,7 @@ void voice_step(void)
   if (snr_db < VOICE_MIN_SNR_DB) return;
   if (s_last_detect_ms != 0u && ms_since(now, s_last_detect_ms) < VOICE_REFRACTORY_MS) return;
 
-  /* 5. word filter: a word the task state does not want is dropped and starts no refractory,
-   *    so the word that follows is still heard. one log line per word, not one per CNN run */
+  /* 5. a word the current state doesn't accept is dropped without starting the refractory time */
   if ((s_accept & (1u << top)) == 0u) {
     if (top != s_ignored_word || ms_since(now, s_ignored_ms) >= VOICE_REFRACTORY_MS) {
       LOG("--- %s %d%% ignored (not wanted now)\r\n", CLASS_NAMES[top], (int)(top_p * 100.0f));

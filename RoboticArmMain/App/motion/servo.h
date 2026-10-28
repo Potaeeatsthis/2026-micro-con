@@ -1,9 +1,6 @@
-/* servo.h - the only code that writes the six PWM compare registers
+/* servo.h - the only code that writes the PWM compare registers (modes use motion.h)
  *
- * owner: motion member.
- * nobody outside motion/ calls servo_*; modes set targets through motion.h.
- *
- * TIM3/TIM4 run at 1 us per count with a 20 ms period, so CCR = pulse width in us.
+ * TIM3/TIM4 at 1 us per count, 20 ms period, so CCR = pulse width in us.
  *   J1 PC6 TIM3_CH1   J2 PC7 TIM3_CH2   J3 PD12 TIM4_CH1
  *   J4 PD13 TIM4_CH2  J5 PD14 TIM4_CH3  J6 PD15 TIM4_CH4
  */
@@ -14,7 +11,7 @@
 #include <stdbool.h>
 #include "common/app_types.h"
 
-/* per-servo calibration: two straight lines 0..90 and 90..180 deg (guide section 13) */
+/* per-servo calibration: two straight lines, 0..90 and 90..180 deg */
 typedef struct {
   const char *name;
   uint16_t us_0;       /* pulse at 0 deg */

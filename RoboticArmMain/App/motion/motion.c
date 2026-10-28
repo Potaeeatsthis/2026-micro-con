@@ -1,26 +1,9 @@
-/* motion.c - targets in, smooth PWM out
+/* motion.c - joint targets in, smooth PWM out
  *
- * concurrency: the TIM6 isr (priority 2) reads and writes s_tgt / s_cur. the main loop
- * changes them only inside a short critical section, so the isr never sees half of a
- * 6-joint update.
- *
- * smoothing (28 Oct 2026, the arm felt slow and jerky):
- *   - acceleration limit: each joint has a commanded speed s_vel that changes by at most
- *     accel * DT per tick (accel = speed / APP_RAMP_S), and slows down early enough to stop on
- *     its target (v <= sqrt(2 * accel * distance)): starts, stops and reversals ramp.
- *   - synchronised moves: the joint with the largest remaining move runs at the speed limit,
- *     every other joint at its share (speed and accel scaled by its distance / the largest),
- *     so the joints of one move start and arrive together. braking always uses the full accel: a
- *     joint still moving fast when a new target gives it a small share must not coast far.
- *     a jogged joint is a speed command: it is not part of the synchronisation (share 1).
- *   - unchanged: the last step snaps exactly onto the target (EVT_MOTION_DONE), the commanded
- *     angle never leaves the joint limits / J2-J5 coupling, and motion_hold(), the jog timeout,
- *     a jog release (stick back to 0) and a safety freeze stop at once (speed 0, no ramp): the
- *     ramped joint trails a jog target, so a release that only cleared the jog speed kept moving.
- *   - a reversal keeps its speed for a moment and coasts past where it was. that coast never enters
- *     the coupled zone the accepted endpoint stays out of (floor from the current pose AND the
- *     pending target), so the tick never has to rewrite the other joint's accepted target.
- * TODO(motion): per-joint speed limits if the shoulder needs to be slower than the wrist
+ * The TIM6 isr steps s_cur toward s_tgt; the main loop only changes them inside a short
+ * critical section. Each joint ramps its speed (accel = speed / APP_RAMP_S) and the joints of
+ * one move are scaled to arrive together. Braking always uses the full accel.
+ * hold, jog release, jog timeout and a safety freeze stop at once (no ramp).
  */
 #include "motion/motion.h"
 #include "motion/servo.h"
@@ -34,30 +17,24 @@
 
 #define DT_S        (1.0f / (float)APP_CONTROL_HZ)
 
-/* J2/J5 coupling. The servo_cal table gives J2 its absolute 50 deg floor; this
- * rule can only raise a floor. J5 at or above 65 deg (current or pending) lets
- * the shoulder use 50 deg, otherwise J2 must stay at 90 deg or above. While J2 is
- * below 90 deg (current or pending), J5 must stay at 65 deg or above.
- * Setters clamp the stored endpoint before returning, so an accepted target never
- * changes later. A clamped value must be reissued after the pose allows.
- * "current" is the commanded angle s_cur, not a measured joint angle: there are no
- * joint sensors, so a loaded or fast servo can lag this pose. */
-#define J2_MIN_DEG        MOTION_J2_COUPLED_DEG     /* values in motion.h: voice HOME stages around them */
+/* J2/J5 coupling: J2 may go below 90 only while J5 >= 65 (current or pending), and J5 may go
+ * below 65 only while J2 >= 90. Setters clamp the target once, so an accepted target never
+ * changes later. s_cur is the commanded angle, there are no joint sensors. */
+#define J2_MIN_DEG        MOTION_J2_COUPLED_DEG
 #define J5_WRIST_UP_DEG   MOTION_J5_WRIST_UP_DEG
 
 static joint_vec_t       s_cur;                 /* commanded angle now */
 static joint_vec_t       s_tgt;                 /* where the trajectory is heading */
-static float             s_vel[ARM_N_JOINTS];   /* commanded joint speed now, deg/s (isr; hold sets 0) */
-static volatile float    s_jog_v[ARM_N_JOINTS]; /* deg/s, 0 = no jog */
+static float             s_vel[ARM_N_JOINTS];   /* deg/s */
+static volatile float    s_jog_v[ARM_N_JOINTS];
 static volatile uint32_t s_jog_ms[ARM_N_JOINTS];
 static volatile speed_level_t s_speed = SPEED_FINE;
-static volatile bool     s_started;             /* every joint has had its first pulse */
-/* no joint has had a pulse before start-up, so each one jumps to home at full speed. all six in one
- * tick drew more current than the 6 V servo supply gives (27 Oct 2026): one joint at a time instead.
- * gripper first: during flashing its floating signal can drive it to an end */
+static volatile bool     s_started;
+/* first pulse one joint at a time: all six at once was too much current for the 6 V supply.
+ * gripper first */
 static const int         BOOT_ORDER[ARM_N_JOINTS] = { J6_GRIPPER, J1_BASE, J2_SHOULDER, J3_ELBOW,
                                                       J4_WRIST_ROLL, J5_WRIST_PITCH };
-static int               s_boot_n;              /* joints that have had their first pulse */
+static int               s_boot_n;
 static uint32_t          s_boot_ms;
 static volatile bool     s_idle = true;
 
@@ -74,7 +51,7 @@ static float speed_deg_s(void)
 static float joint_min_deg(int j, const joint_vec_t *cur, const joint_vec_t *pending)
 {
   const servo_cal_t *c = servo_cal(j);
-  float lo = c->min_deg;                            /* static calibration is always a floor */
+  float lo = c->min_deg;
 
   if (j == J2_SHOULDER) {
     if (cur->deg[J5_WRIST_PITCH] < J5_WRIST_UP_DEG && lo < J2_MIN_DEG) lo = J2_MIN_DEG;
@@ -107,7 +84,7 @@ static float clamp_joint(int j, float deg, const joint_vec_t *cur, bool *clamped
 
 void motion_init(void)
 {
-  servo_init();                                     /* CCR = 0: no pulse yet */
+  servo_init();
   for (int j = 0; j < ARM_N_JOINTS; j++) {
     s_cur.deg[j] = servo_cal(j)->home_deg;
     s_tgt.deg[j] = s_cur.deg[j];
@@ -128,21 +105,21 @@ void motion_tick(void)
     uint32_t t = HAL_GetTick();
     if (s_boot_n > 0 && ms_since(t, s_boot_ms) < MOTION_BOOT_STAGGER_MS) return;
     int j = BOOT_ORDER[s_boot_n++];
-    servo_write_deg(j, s_cur.deg[j]);               /* this joint goes to home now */
+    servo_write_deg(j, s_cur.deg[j]);
     s_boot_ms = t;
-    if (s_boot_n == ARM_N_JOINTS) s_started = true; /* targets set meanwhile start moving next tick */
+    if (s_boot_n == ARM_N_JOINTS) s_started = true;
     return;
   }
 
   bool allowed = safety_motion_allowed();
   if (!allowed) {
-    for (int j = 0; j < ARM_N_JOINTS; j++) {        /* freeze: nothing jumps when allowed again */
+    for (int j = 0; j < ARM_N_JOINTS; j++) {        /* freeze */
       s_tgt.deg[j] = s_cur.deg[j];
       s_jog_v[j] = 0.0f;
       s_vel[j] = 0.0f;
     }
     s_idle = true;
-    return;                                          /* CCRs keep their last value */
+    return;
   }
 
   uint32_t now = HAL_GetTick();
@@ -150,28 +127,26 @@ void motion_tick(void)
   const float acc = vmax / APP_RAMP_S;
   bool idle = true;
 
-  /* synchronisation: the largest remaining move sets the pace (measured before this tick's clamps
-   * and jogs: a share is only a speed scale, the limits below do not depend on it) */
+  /* the largest remaining move sets the pace */
   float max_err = 0.0f;
   for (int j = 0; j < ARM_N_JOINTS; j++) {
-    if (s_jog_v[j] != 0.0f) continue;               /* jogs are speed commands, not part of a move */
+    if (s_jog_v[j] != 0.0f) continue;
     float e = absf(s_tgt.deg[j] - s_cur.deg[j]);
     if (e > max_err) max_err = e;
   }
 
   for (int j = 0; j < ARM_N_JOINTS; j++) {
-    /* Re-clamp the stored target every tick. J2 is processed before J5, so the
-     * J5 bound sees J2's new angle and the tick can never end in an unsafe pose. */
+    /* re-clamp every tick. J2 goes before J5, so J5 sees J2's new angle */
     s_tgt.deg[j] = clamp_joint(j, s_tgt.deg[j], &s_cur, NULL);
 
     float v = s_jog_v[j];
     if (v != 0.0f) {
       if (ms_since(now, s_jog_ms[j]) > APP_JOG_TIMEOUT_MS) {
-        s_jog_v[j] = 0.0f;                          /* jog not refreshed: stop at once */
+        s_jog_v[j] = 0.0f;
         s_tgt.deg[j] = s_cur.deg[j];
         s_vel[j] = 0.0f;
       } else {
-        float lo = joint_min_deg(j, &s_cur, &s_tgt);  /* not into a zone the other joint's target forbids */
+        float lo = joint_min_deg(j, &s_cur, &s_tgt);
         s_tgt.deg[j] = clamp_joint_to(j, s_tgt.deg[j] + v * DT_S, lo, NULL);
         idle = false;
       }
@@ -180,36 +155,33 @@ void motion_tick(void)
     float err = s_tgt.deg[j] - s_cur.deg[j];
     float share = (max_err > 1e-6f && s_jog_v[j] == 0.0f) ? clampf(absf(err) / max_err, 0.05f, 1.0f) : 1.0f;
     float vlim = vmax * share, alim = acc * share;
-    /* the speed this joint wants: towards the target, never faster than it can still stop. with a speed
-     * change of alim * DT per tick, stopping from v covers v^2 / (2 alim) + v * DT / 2 */
+    /* fastest speed that can still stop on the target */
     float h = 0.5f * alim * DT_S;
     float vstop = sqrtf(h * h + 2.0f * alim * absf(err)) - h;
     float vdes = (err > 0.0f) ? minf(vlim, vstop) : (err < 0.0f) ? -minf(vlim, vstop) : 0.0f;
-    /* accel limit: speeding up at this joint's share, slowing down (or reversing) at the full accel */
+    /* speed up at the joint's share, brake at full accel */
     float dv_max = (absf(vdes) < absf(s_vel[j]) || vdes * s_vel[j] < 0.0f) ? acc * DT_S : alim * DT_S;
     float vel = s_vel[j] + clampf(vdes - s_vel[j], -dv_max, dv_max);
     float step = vel * DT_S;
     if (err != 0.0f && ((err > 0.0f && step >= err) || (err < 0.0f && step <= err))) {
-      s_cur.deg[j] = s_tgt.deg[j];                  /* last step lands exactly on the target */
+      s_cur.deg[j] = s_tgt.deg[j];
       vel = 0.0f;
     } else if (err == 0.0f && absf(vel) < alim * DT_S * 1.01f) {
-      vel = 0.0f;                                   /* at the target and slow enough: rest */
+      vel = 0.0f;
     } else {
       bool clamped = false;
       float next = s_cur.deg[j] + step;
-      /* a reversal may coast past the old position. going down, it must not cross into the coupled zone
-       * the accepted endpoint avoids (e.g. J2 below 90 while J5's target is under 65): that would make
-       * the line above rewrite the other joint's target on the next tick. stop on that floor instead */
+      /* a reversal coasts a bit: don't let it cross into the coupled zone the target avoids */
       float lo_pending = joint_min_deg(j, &s_cur, &s_tgt);
       if (step < 0.0f && next < lo_pending) {
-        next = (s_cur.deg[j] > lo_pending) ? lo_pending : s_cur.deg[j];   /* never pushed up, only stopped */
+        next = (s_cur.deg[j] > lo_pending) ? lo_pending : s_cur.deg[j];
         clamped = true;
       }
-      s_cur.deg[j] = clamp_joint(j, next, &s_cur, &clamped);   /* never past a limit / the coupling */
+      s_cur.deg[j] = clamp_joint(j, next, &s_cur, &clamped);
       if (clamped) vel = 0.0f;
     }
     s_vel[j] = vel;
-    if (s_cur.deg[j] != s_tgt.deg[j] || vel != 0.0f) idle = false;   /* exact: the last step snaps onto the target */
+    if (s_cur.deg[j] != s_tgt.deg[j] || vel != 0.0f) idle = false;
 
     servo_write_deg(j, s_cur.deg[j]);
   }
@@ -219,25 +191,23 @@ void motion_tick(void)
 }
 
 /* ---------------------------------------------------------------- main-loop side */
-/* exact = all or nothing: a target that would be clamped is not stored at all */
+/* exact = all or nothing: a target that would be clamped is not stored */
 static motion_result_t set_target(const joint_vec_t *target, bool exact)
 {
   if (target == NULL) return MOTION_REFUSED;
 
   uint32_t p = irq_save();
-  joint_vec_t cur = s_cur;                          /* coupling uses the pose we are in */
+  joint_vec_t cur = s_cur;
   joint_vec_t t;
   bool clamped = false;
   for (int j = 0; j < ARM_N_JOINTS; j++) t.deg[j] = clamp_joint(j, target->deg[j], &cur, &clamped);
 
-  /* A full target may pass the per-joint current checks and still be an unsafe
-   * endpoint, e.g. current 125/65 -> requested 50/25. Keep the wrist request and
-   * deterministically hold the shoulder at 90; report the clamp now, not later. */
+  /* per-joint checks can still pass an unsafe endpoint (e.g. 125/65 -> 50/25): hold J2 at 90 */
   if (t.deg[J2_SHOULDER] < J2_MIN_DEG && t.deg[J5_WRIST_PITCH] < J5_WRIST_UP_DEG) {
     t.deg[J2_SHOULDER] = J2_MIN_DEG;
     clamped = true;
   }
-  if (exact && clamped) {                           /* same check, nothing changes: no tick can step toward it */
+  if (exact && clamped) {
     irq_restore(p);
     return MOTION_CLAMPED;
   }
@@ -258,9 +228,9 @@ motion_result_t motion_set_joint_target(int joint, float deg)
 
   uint32_t p = irq_save();
   bool clamped = false;
-  float lo = joint_min_deg(joint, &s_cur, &s_tgt);   /* current pose AND the pending endpoint */
+  float lo = joint_min_deg(joint, &s_cur, &s_tgt);
   float v = clamp_joint_to(joint, deg, lo, &clamped);
-  s_tgt.deg[joint] = v;                             /* never rewrites the other joint */
+  s_tgt.deg[joint] = v;
   s_jog_v[joint] = 0.0f;
   s_idle = false;
   irq_restore(p);
@@ -274,8 +244,7 @@ void motion_jog(int joint, float deg_per_s)
   deg_per_s = clampf(deg_per_s, -lim, lim);
   uint32_t p = irq_save();
   if (deg_per_s == 0.0f && s_jog_v[joint] != 0.0f) {
-    /* jog released: the ramped joint trails the jog target (up to speed * APP_RAMP_S / 2), so clearing
-     * the speed alone kept it moving after release. stop this joint here; other targets untouched */
+    /* jog released: stop this joint here, it trails the jog target */
     s_tgt.deg[joint] = s_cur.deg[joint];
     s_vel[joint] = 0.0f;
   }
@@ -290,7 +259,7 @@ void motion_hold(void)
   for (int j = 0; j < ARM_N_JOINTS; j++) {
     s_jog_v[j] = 0.0f;
     s_tgt.deg[j] = s_cur.deg[j];
-    s_vel[j] = 0.0f;                                /* stop at once, no ramp: "stop" means stop */
+    s_vel[j] = 0.0f;
   }
   irq_restore(p);
 }

@@ -1,15 +1,9 @@
-/* lcd_port.c - lcd_port.h on top of the Lab08 ILI9341 driver in App/lcd/driver/
+/* lcd_port.c - lcd_port.h on top of the Lab08 ILI9341 driver
  *
- * screen: landscape 320x240, turned 180 deg (SCREEN_HORIZONTAL_2: the panel is mounted upside down on the arm). the driver blocks (HAL_SPI_Transmit),
- * so every call here is short. pictures (lcd_port_asset) and big digits (lcd_port_digits) for the
- * lcd.c pages stream straight to the panel through the driver's CS / DC / SPI5.
- *
- * touch: Lab08's TP_Read_Coordinates() is not used (1000 samples per read, portrait mapping).
- * instead: while T_IRQ is low take TOUCH_SAMPLES raw X/Y pairs, drop the read if they spread more
- * than TOUCH_MAX_SPREAD or the pen lifted, average, map with the TOUCH_RAW_* calibration.
- * a press counts only after TOUCH_CONFIRM_POLLS good reads in a row (no phantom OK, OK confirms a
- * restart after an e-stop). while held, a noisy read keeps the last position; T_IRQ high = released.
- * calibration: touch the 4 corners, read s_raw_x / s_raw_y (Live Expressions), put the values below.
+ * Landscape 320x240, rotated 180 deg because the panel is mounted upside down. The driver blocks
+ * on SPI, so every call is short.
+ * Touch: our own read instead of TP_Read_Coordinates() (too slow, portrait only). Several samples
+ * are averaged and dropped if they spread too much; a press needs TOUCH_CONFIRM_POLLS good reads.
  */
 #include <stddef.h>
 
@@ -21,35 +15,32 @@
 #include "spi.h"
 
 #define TEXT_MAX            40     /* longest string drawn in one call */
-#define FONT_W               6     /* CHAR_WIDTH in driver/5x5_font.h (not included: it defines the table) */
+#define FONT_W               6     /* CHAR_WIDTH in driver/5x5_font.h */
 
 #define SPI_TIMEOUT_MS     100u
 #define ASSET_BUF         1024u    /* bytes per SPI call while decoding a picture */
-#define DIGITS_MAX_W        64     /* widest lcd_port_digits field, pixels */
+#define DIGITS_MAX_W        64
 
 #define TOUCH_SAMPLES        8
-#define TOUCH_MAX_SPREAD    80     /* raw 12-bit counts, about 6 px */
-#define TOUCH_CONFIRM_POLLS  2     /* lcd.c polls every 50 ms */
+#define TOUCH_MAX_SPREAD    80
+#define TOUCH_CONFIRM_POLLS  2
 
-/* raw 12-bit value at screen x = 0 / x = 319 and y = 0 / y = 239. screen x comes from the
- * controller's Y channel and screen y from its X channel in this rotation.
- * measured 2026-10-26 on the bench screen: corner presses ~28 px in from each edge, extrapolated. */
-/* 27 Oct 2026: the screen was turned 180 deg, so the 26 Oct anchors are swapped end for end
- * (was X0 3823 / X319 279 / Y0 3774 / Y239 513 in SCREEN_HORIZONTAL_1). not re-measured yet */
+/* raw touch value at the screen edges (screen x = controller Y channel in this rotation) */
+/* swapped after the screen was turned 180 deg, not re-measured yet */
 #define TOUCH_RAW_X0       279
 #define TOUCH_RAW_X319    3823
 #define TOUCH_RAW_Y0       513
 #define TOUCH_RAW_Y239    3774
 
-static volatile uint16_t s_raw_x;  /* last good raw average (controller X channel), for calibration */
-static volatile uint16_t s_raw_y;  /* last good raw average (controller Y channel) */
-static int s_good;                 /* good reads in a row, capped at TOUCH_CONFIRM_POLLS */
-static int s_x, s_y;               /* last good position, screen pixels */
+static volatile uint16_t s_raw_x;  /* last raw averages, for calibration */
+static volatile uint16_t s_raw_y;
+static int s_good;
+static int s_x, s_y;
 
 void lcd_port_init(void)
 {
   ILI9341_Init();
-  ILI9341_Set_Rotation(SCREEN_HORIZONTAL_2);       /* panel mounted upside down */
+  ILI9341_Set_Rotation(SCREEN_HORIZONTAL_2);
   ILI9341_Fill_Screen(BLACK);
 }
 
@@ -67,7 +58,7 @@ void lcd_port_text(int x, int y, const char *s, uint16_t fg, uint16_t bg, int si
 {
   if (s == NULL || size < 1 || x < 0 || y < 0 || x >= LCD_WIDTH_PX || y >= LCD_HEIGHT_PX) return;
 
-  /* the font only has ' '..'~'; also cut what would run off the right edge */
+  /* font is ' '..'~' only; cut at the right edge */
   char buf[TEXT_MAX + 1];
   int max_chars = (LCD_WIDTH_PX - x) / (FONT_W * size);
   if (max_chars > TEXT_MAX) max_chars = TEXT_MAX;
@@ -81,7 +72,6 @@ void lcd_port_text(int x, int y, const char *s, uint16_t fg, uint16_t bg, int si
   ILI9341_Draw_Text(buf, (uint16_t)x, (uint16_t)y, fg, (uint16_t)size, bg);
 }
 
-/* pixel data after ILI9341_Set_Address (which ends with the memory-write command) */
 static void pixels_begin(void)
 {
   HAL_GPIO_WritePin(LCD_DC_PORT, LCD_DC_PIN, GPIO_PIN_SET);
@@ -91,7 +81,7 @@ static void pixels_begin(void)
 static void pixels_send(const uint8_t *d, uint32_t n)
 {
   while (n > 0u) {
-    uint16_t c = (uint16_t)(n > 32768u ? 32768u : n);   /* HAL takes a uint16_t count */
+    uint16_t c = (uint16_t)(n > 32768u ? 32768u : n);
     (void)HAL_SPI_Transmit(HSPI_INSTANCE, (uint8_t *)d, c, SPI_TIMEOUT_MS);
     d += c;
     n -= c;
@@ -108,10 +98,8 @@ static bool inside(int x, int y, int w, int h)
   return w > 0 && h > 0 && x >= 0 && y >= 0 && x + w <= LCD_WIDTH_PX && y + h <= LCD_HEIGHT_PX;
 }
 
-/* RLE format (tools/build_lcd_assets.py): header byte h, then
- *   h < 128 : (h + 3) identical pixels, 2 bytes follow
- *   h >= 128: (h - 127) literal pixels, 2 bytes each follow
- * pixels are big-endian RGB565, the order the panel wants. decoded while streaming, no frame buffer. */
+/* RLE (tools/build_lcd_assets.py): h < 128 -> h + 3 copies of the next pixel,
+ * h >= 128 -> h - 127 literal pixels. big-endian RGB565 */
 void lcd_port_asset(int id, int x, int y)
 {
   static uint8_t buf[ASSET_BUF];
@@ -120,9 +108,9 @@ void lcd_port_asset(int id, int x, int y)
   if (!inside(x, y, a->w, a->h)) return;
 
   ILI9341_Set_Address((uint16_t)x, (uint16_t)y, (uint16_t)(x + a->w - 1), (uint16_t)(y + a->h - 1));
-  uint32_t left = (uint32_t)a->w * (uint32_t)a->h;      /* pixels still to send */
+  uint32_t left = (uint32_t)a->w * (uint32_t)a->h;
   const uint8_t *p = a->rle;
-  uint32_t n = 0;                                      /* bytes waiting in buf */
+  uint32_t n = 0;
   pixels_begin();
   while (left > 0u) {
     uint8_t h = *p++;
@@ -145,7 +133,7 @@ void lcd_port_asset(int id, int x, int y)
   pixels_end();
 }
 
-/* fg over bg with alpha 0..255, result byte-swapped so it goes out big-endian */
+/* blend fg over bg, alpha 0..255 */
 static uint16_t blend565(uint16_t fg, uint16_t bg, uint32_t a)
 {
   uint32_t r = (((fg >> 11) & 31u) * a + ((bg >> 11) & 31u) * (255u - a)) / 255u;
@@ -165,7 +153,7 @@ void lcd_port_digits(int x_right, int y, int field_w, const char *s, uint16_t fg
   if (field_w <= 0 || field_w > DIGITS_MAX_W || !inside(x0, y, field_w, LCD_DIGIT_H)) return;
 
   for (int i = 0; i < field_w * LCD_DIGIT_H; i++) buf[i] = blend565(bg, bg, 0u);
-  int start = field_w - n * LCD_DIGIT_W;               /* right-aligned; a too-long text loses its left end */
+  int start = field_w - n * LCD_DIGIT_W;               /* right-aligned */
   for (int c = 0; c < n; c++) {
     char ch = s[c];
     int g = (ch >= '0' && ch <= '9') ? ch - '0' : (ch == '-' ? 10 : 11);
@@ -188,8 +176,7 @@ static bool pen_down(void)
   return HAL_GPIO_ReadPin(TP_IRQ_PORT, TP_IRQ_PIN) == GPIO_PIN_RESET;
 }
 
-/* one 12-bit conversion: command byte, then 16 clocks. TP_Read samples after each falling edge,
- * so the busy bit is already gone: 12 data bits + 4 zeros (measured: >> 3 gave values over 4095) */
+/* one 12-bit conversion: 12 data bits + 4 zeros */
 static uint16_t read_channel(uint8_t cmd)
 {
   TP_Write(cmd);
@@ -204,7 +191,6 @@ static int map_axis(int raw, int raw_at_0, int raw_at_max, int max_px)
   return px;
 }
 
-/* true with a stable position, false if the pen lifted or the samples disagree */
 static bool read_touch(int *x, int *y)
 {
   uint16_t min_x = 0xFFFFu, max_x = 0u, min_y = 0xFFFFu, max_y = 0u;
@@ -246,7 +232,7 @@ bool lcd_port_touch(int *x, int *y)
     s_y = py;
     if (s_good < TOUCH_CONFIRM_POLLS) s_good++;
   } else if (s_good < TOUCH_CONFIRM_POLLS) {
-    s_good = 0;                                 /* not confirmed yet: start over */
+    s_good = 0;
   }
   if (s_good < TOUCH_CONFIRM_POLLS) return false;
 

@@ -1,9 +1,7 @@
-/* modes.h - mode state machine + safe mode switching (guide sections 6, 7, 9)
+/* modes.h - active mode + safe mode switching
  *
- * owner: core for modes.c; each mode file has its own owner (see TEAM_GUIDE.md).
- * modes_step() is the ONLY consumer of the event queue. it handles the global events
- * (MODE button, mode tabs, fine/fast, restart confirm) and forwards the rest to the
- * active mode's on_event().
+ * modes_step() is the only consumer of the event queue: it handles the global events (mode tabs,
+ * fine/fast) and passes the rest to the active mode.
  */
 #ifndef APP_MODES_H
 #define APP_MODES_H
@@ -20,12 +18,11 @@ const char *modes_name(arm_mode_t m);
 bool        modes_switch_pending(void);
 void        modes_request(arm_mode_t m);     /* starts the safe switching procedure */
 
-/* the joint / group the joystick moves. the mode owns it; the knob (EVT_ENC_STEP) and the lcd arrows
- * (EVT_TOUCH_SELECT) both change it, and the lcd pages draw whatever these return */
+/* the joint / group the joystick moves (knob and LCD arrows change it) */
 int         mode_single_joint_selected(void);   /* 0..5 = J1..J6 */
 int         mode_joint_group_selected(void);    /* 0..2 = J1/J2, J3/J4, J5/J6 */
 
-/* fills `n` text lines for the lcd from the active mode (or the switching status) */
+/* LCD text lines from the active mode */
 void        modes_describe(char (*lines)[LCD_COLS], int n);
 
 #endif /* APP_MODES_H */

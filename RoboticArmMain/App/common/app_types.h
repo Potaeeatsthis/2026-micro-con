@@ -1,8 +1,4 @@
-/* app_types.h - types shared by more than one module
- *
- * owner: core. add a type here only when two or more modules need it;
- * a type used by one module stays in that module's header.
- */
+/* app_types.h - types used by more than one module */
 #ifndef APP_TYPES_H
 #define APP_TYPES_H
 
@@ -26,12 +22,12 @@ typedef struct {
   float deg[ARM_N_JOINTS];
 } joint_vec_t;
 
-/* tool target in the robot-base frame, millimetres (same frame the pi reports) */
+/* tool target in the robot frame, mm (same frame the pi uses) */
 typedef struct {
   float x_mm;
   float y_mm;
   float z_mm;
-  float pitch_deg;   /* tool pitch; TODO(ik): confirm which orientation terms the ik needs */
+  float pitch_deg;   /* tool pitch */
 } cart_pose_t;
 
 typedef enum {
@@ -39,7 +35,6 @@ typedef enum {
   SPEED_FAST
 } speed_level_t;
 
-/* order = the MODE button cycle */
 typedef enum {
   MODE_VOICE = 0,
   MODE_CARTESIAN,
@@ -48,7 +43,7 @@ typedef enum {
   MODE_COUNT
 } arm_mode_t;
 
-/* objects the pi can find; names match the pi protocol (blue_box ... hand, station) */
+/* objects the pi can find; names match the pi protocol */
 typedef enum {
   OBJ_BLUE_BOX = 0,
   OBJ_GREEN_BOX,
@@ -56,7 +51,7 @@ typedef enum {
   OBJ_BLACK_BOX,
   OBJ_BOX_COUNT,               /* boxes only (voice words, colours) */
   OBJ_HAND = OBJ_BOX_COUNT,    /* palm centre from the pi, may move */
-  OBJ_STATION,                 /* free drop spot on the station top, from the pi (found by depth) */
+  OBJ_STATION,                 /* free drop spot on the station, from the pi */
   OBJ_COUNT,
   OBJ_NONE = 0xFF
 } object_id_t;
