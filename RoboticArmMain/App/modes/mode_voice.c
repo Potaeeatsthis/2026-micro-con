@@ -27,6 +27,9 @@
  * multi-step moves (grasp, place, go home, jog queue) are "scripts": a short list of
  * steps run one after another, the next step starts on EVT_MOTION_DONE. a stop or a
  * fatal fault aborts the script and goes to S10.
+ * ik (28 Oct 2026, while ik is still switched off in firmware): grasp and place search their pitch
+ * (GRASP_PITCH_*); every pose is solved before step 1; a target motion would clamp or refuse is a
+ * failed step (JOINT LIMIT / MOTION REFUSED -> MOVE FAILED -> S10), never a move to another pose.
  *
  * bench flags (app_config_local.h only), to walk every state before the arm exists:
  *   APP_VOICE_DRY_RUN  each script step is logged ("dry-run: ...") and counts as done after
@@ -72,6 +75,13 @@ _Static_assert((int)HAND_RELEASE_MM > 0 && (int)HAND_RELEASE_MM < (int)APPROACH_
 #define STATION_RELEASE_MM 20.0f
 _Static_assert((int)STATION_RELEASE_MM > 0 && (int)STATION_RELEASE_MM < (int)APPROACH_MM,
                "0 < STATION_RELEASE_MM < APPROACH_MM");
+/* grasp / place orientation. pitch = the tool approach in the arm's vertical plane (kinematics.h):
+ * 0 = gripper pointing up, 180 = straight down, smaller = tilted toward the arm's reach (home is ~148).
+ * straight down only reaches x ~200..240 mm near the table, so grasp / place try 180 first and tilt
+ * GRASP_PITCH_STEP_DEG at a time down to GRASP_PITCH_MIN_DEG (script_check). one pitch per script. */
+#define GRASP_PITCH_PREF_DEG 180.0f
+#define GRASP_PITCH_MIN_DEG  120.0f
+#define GRASP_PITCH_STEP_DEG 10.0f
 #define JOG_MAX_ITEMS      10      /* guide: bounded queue */
 #define JOG_MAX_TRAVEL_MM  300.0f  /* TODO(voice): validate on the real arm */
 #define JOG_DEFAULT_MM     20
@@ -206,6 +216,17 @@ static bool at_home(void)
   return true;
 }
 
+/* all or nothing: a clamped or refused target is a failed step (the script stops via
+ * SCRIPT_FAILED / controlled_stop), never a move to a different pose than planned */
+static bool target_exact(const joint_vec_t *t)
+{
+  motion_result_t r = motion_set_target_exact(t);
+  if (r == MOTION_OK) return true;
+  motion_hold();
+  lcd_show_message(r == MOTION_CLAMPED ? "JOINT LIMIT" : "MOTION REFUSED", 3000u);
+  return false;
+}
+
 static bool pose_to_target(const cart_pose_t *p)
 {
   joint_vec_t now, sol;
@@ -216,7 +237,7 @@ static bool pose_to_target(const cart_pose_t *p)
     return false;
   }
   sol.deg[J6_GRIPPER] = now.deg[J6_GRIPPER];
-  return motion_set_target(&sol) != MOTION_REFUSED;
+  return target_exact(&sol);
 }
 
 static bool run_step(const script_step_t *s)
@@ -233,12 +254,12 @@ static bool run_step(const script_step_t *s)
       motion_get_current(&t);
       if (t.deg[J2_SHOULDER] < MOTION_J2_COUPLED_DEG) t.deg[J2_SHOULDER] = MOTION_J2_COUPLED_DEG;
       if (t.deg[J5_WRIST_PITCH] < MOTION_J5_WRIST_UP_DEG) t.deg[J5_WRIST_PITCH] = MOTION_J5_WRIST_UP_DEG;
-      return motion_set_target(&t) == MOTION_OK;
+      return target_exact(&t);
     }
     case STEP_HOME: {
       joint_vec_t home;
       home_target(&home);
-      if (motion_set_target(&home) == MOTION_OK) return true;
+      if (motion_set_target_exact(&home) == MOTION_OK) return true;
       lcd_show_message("HOME BLOCKED", 3000u);           /* would end early at a clamped pose */
       motion_hold();
       return false;
@@ -264,29 +285,64 @@ static bool script_run_current(void)
 }
 
 /* every pose of the script must be solvable BEFORE the first step runs, so a script
- * never starts (e.g. opens the gripper) and then gets stuck halfway */
-static bool script_check(void)
+ * never starts (e.g. opens the gripper) and then gets stuck halfway. each pose is solved from the
+ * previous pose's solution (the arm's real order), so the J2/J5 check matches what motion sees */
+static kin_status_t script_check_poses(void)
 {
-#if APP_VOICE_DRY_RUN
-  return true;                                        /* no ik yet: every pose counts as reachable */
-#endif
-  joint_vec_t now, sol;
-  motion_get_current(&now);
+  joint_vec_t seed, sol;
+  motion_get_current(&seed);
   for (int i = 0; i < s_script_len; i++) {
     if (s_script[i].kind != STEP_POSE) continue;
-    kin_status_t st = kin_ik(&s_script[i].pose, &now, &sol);
-    if (st != KIN_OK) {
-      lcd_show_message(kin_status_name(st), 3000u);
-      return false;
+    kin_status_t st = kin_ik(&s_script[i].pose, &seed, &sol);
+    if (st != KIN_OK) return st;
+    seed = sol;
+  }
+  return KIN_OK;
+}
+
+static void script_set_pitch(float pitch_deg)
+{
+  for (int i = 0; i < s_script_len; i++) {
+    if (s_script[i].kind == STEP_POSE) s_script[i].pose.pitch_deg = pitch_deg;
+  }
+}
+
+/* search_pitch (grasp / place): straight down first, then tilt 10 deg at a time; the first pitch that
+ * solves EVERY pose is used for the whole script, so the gripper does not turn between steps */
+static bool script_check(bool search_pitch)
+{
+#if APP_VOICE_DRY_RUN
+  if (search_pitch) script_set_pitch(GRASP_PITCH_PREF_DEG);
+  return true;                                        /* no ik yet: every pose counts as reachable */
+#endif
+  kin_status_t st;
+  if (!search_pitch) {
+    st = script_check_poses();
+  } else {
+    st = KIN_OUT_OF_REACH;
+    const int n = (int)((GRASP_PITCH_PREF_DEG - GRASP_PITCH_MIN_DEG) / GRASP_PITCH_STEP_DEG) + 1;
+    for (int k = 0; k < n; k++) {
+      float pitch = GRASP_PITCH_PREF_DEG - (float)k * GRASP_PITCH_STEP_DEG;
+      script_set_pitch(pitch);
+      st = script_check_poses();
+      if (st == KIN_OK) {
+        LOG("voice-mode: pitch %d deg\r\n", (int)pitch);
+        break;
+      }
+      if (st == KIN_NOT_READY) break;               /* ik off: no pitch will help */
     }
+  }
+  if (st != KIN_OK) {
+    lcd_show_message(kin_status_name(st), 3000u);
+    return false;
   }
   return true;
 }
 
 /* checks the whole script, enters the moving state, runs step 1; on failure goes back */
-static bool script_start(vstate_t moving)
+static bool script_start(vstate_t moving, bool search_pitch)
 {
-  if (s_script_len == 0 || !script_check()) {
+  if (s_script_len == 0 || !script_check(search_pitch)) {
     script_clear();
     return false;
   }
@@ -363,7 +419,7 @@ static void go_home_then_idle(bool open_first)
   if (now.deg[J2_SHOULDER] < MOTION_J2_COUPLED_DEG) script_add(STEP_HOME_RAISE, NULL, false);
 #endif
   script_add(STEP_HOME, NULL, false);
-  (void)script_start(S9_RELEASE_HOME);
+  (void)script_start(S9_RELEASE_HOME, false);
 }
 
 /* S7 / S11 remember where they came from, so "no" and "stop" go back there */
@@ -443,7 +499,7 @@ static void start_grasp(void)
   script_add(STEP_POSE, &s_obj_pose, false);
   script_add(STEP_GRIPPER, NULL, true);
   script_add(STEP_POSE, &above, false);
-  (void)script_start(S3_GRASPING);                   /* on failure it stays in S2 */
+  (void)script_start(S3_GRASPING, true);             /* on failure it stays in S2 */
 }
 
 /* above -> release height -> open -> above. release_mm = how far above target the gripper opens */
@@ -457,7 +513,7 @@ static void place_at(const cart_pose_t *target, float release_mm)
   script_add(STEP_POSE, &release, false);
   script_add(STEP_GRIPPER, NULL, false);
   script_add(STEP_POSE, &above, false);
-  (void)script_start(S8B_PLACING);
+  (void)script_start(S8B_PLACING, true);
 }
 
 /* destinations the pi finds (they can move); the rest are fixed poses */
@@ -513,7 +569,7 @@ static void run_queue(void)
     script_add(STEP_POSE, &p, false);
   }
   if (travel > JOG_MAX_TRAVEL_MM) { lcd_show_message("QUEUE TOO LONG", 3000u); script_clear(); return; }
-  (void)script_start(S8A_RUN_QUEUE);
+  (void)script_start(S8A_RUN_QUEUE, false);         /* keeps the pitch it is holding at */
 }
 
 static void on_word(int w)
@@ -703,7 +759,7 @@ static void on_event(const app_event_t *e)
     case EVT_PI_OBJECT:
       if (s_state == S7_CONFIRM_PLACE && s_pi_wait && dest_from_pi(s_dest) && (object_id_t)e->arg == dest_obj(s_dest)) {
         s_pi_wait = false;
-        cart_pose_t target = { (float)e->v[0], (float)e->v[1], (float)e->v[2], 0.0f };  /* TODO(ik): place orientation */
+        cart_pose_t target = { (float)e->v[0], (float)e->v[1], (float)e->v[2], GRASP_PITCH_PREF_DEG };  /* place_at picks the pitch */
         place_at(&target, s_dest == DEST_HAND ? HAND_RELEASE_MM : STATION_RELEASE_MM);  /* on failure: stays in S7 */
       }
       else if (s_state == S1_WAIT_OBJECT && s_pi_wait && (object_id_t)e->arg == s_obj) {
@@ -711,7 +767,7 @@ static void on_event(const app_event_t *e)
         s_obj_pose.x_mm = (float)e->v[0];
         s_obj_pose.y_mm = (float)e->v[1];
         s_obj_pose.z_mm = (float)e->v[2];
-        s_obj_pose.pitch_deg = 0.0f;                  /* TODO(ik): grasp orientation */
+        s_obj_pose.pitch_deg = GRASP_PITCH_PREF_DEG;  /* start_grasp picks the final pitch */
         set_state(S2_CONFIRM_OBJECT);
       }
       break;

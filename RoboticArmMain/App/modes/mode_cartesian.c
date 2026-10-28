@@ -1,8 +1,9 @@
 /* mode_cartesian.c - joystick moves X/Y, encoder moves Z, encoder press = gripper (guide 7.1)
  *
  * owner: TODO(team) (works together with the ik member)
- * the target pose is only accepted if ik solves it; otherwise the last reachable pose
- * stays and the lcd shows the reason (OUT OF REACH / IK NOT READY).
+ * the target pose is only accepted if ik solves it AND motion takes the solution unchanged;
+ * otherwise the arm holds, the last good pose stays and the lcd shows the reason
+ * (OUT OF REACH / JOINT LIMIT / IK NOT READY / MOTION REFUSED).
  * while IK is not activated (kin_ik_enabled() false) the whole mode stays blocked, gripper
  * included, even though FK is available for the estimated X/Y/Z display.
  */
@@ -40,7 +41,14 @@ static bool try_pose(const cart_pose_t *p)
     return false;
   }
   sol.deg[J6_GRIPPER] = now.deg[J6_GRIPPER];
-  (void)motion_set_target(&sol);
+  /* all or nothing: a clamped / refused target would leave s_pose describing a pose the arm is not
+   * going to, so it is a failure. the arm stops where it is and s_pose keeps the last good pose */
+  motion_result_t r = motion_set_target_exact(&sol);
+  if (r != MOTION_OK) {
+    motion_hold();
+    lcd_show_message(r == MOTION_CLAMPED ? "JOINT LIMIT" : "MOTION REFUSED", 1500u);
+    return false;
+  }
   return true;
 }
 
