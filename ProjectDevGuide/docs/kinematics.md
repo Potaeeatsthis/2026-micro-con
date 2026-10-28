@@ -42,8 +42,13 @@ joint-interpolated, not a straight Cartesian line. This is not a full orientatio
 `cart_pose_t` carries only the projected pitch. If J4 is more than 2.1 deg from the reference at entry
 (`CART_MAX_ROLL_DEG`: the tested 2 deg plus 0.1 deg margin), the mode stays blocked and shows
 `ALIGN J4 <reference>`. Align J4 in a manual mode and re-enter; there is no automatic alignment.
+The block reason (`ALIGN J4 88`, or the IK status) is shown on the LCD Cartesian page, in yellow on the
+line under the X/Y/Z rows, when the page opens and again on every knob turn / press or stick push
+while blocked; refused moves (`JOINT LIMIT`, `OUT OF REACH`) show there too (28 Oct 2026). J4 is the
+Y axis of joint group 2, so using group 2 is the usual way to end up blocked.
 
-**Cartesian controls.** The joystick moves X/Y at 20 mm/s in FINE and 60 mm/s in FAST (mode entry
+**Cartesian controls.** The joystick moves X/Y at 20 mm/s in FINE and 60 mm/s in FAST: stick up = forward
+(+X), stick right = the arm's right (-Y), for an operator behind the arm (28 Oct 2026; mode entry
 resets to FINE). One encoder detent moves Z by 5 mm. The encoder press toggles the gripper; J6 can be
 commanded to 0 deg (closed) and there is no deadman. Centring the stick issues no new request, but it
 does **not** cancel an already queued target: the arm continues to the last accepted target. Exit calls

@@ -5,7 +5,12 @@
  * main loop is busy with the CNN or the LCD. the EXTI lines on these pins are kept
  * (course requirement + quick edge stats) but the decision is made here.
  *
- * directions measured on the bench 2026-10-24, KY-023 mounted with its pins pointing left:
+ * KY-023 mounting (JOY_PINS_AWAY, below): input_joy_x() is always the OPERATOR's left-right (+ = right) and
+ * input_joy_y() the operator's up-down (+ = up, away from the operator), whatever way the module is turned.
+ *   JOY_PINS_AWAY 1 (default, the panel since 28 Oct 2026): pins pointing AWAY from the operator, i.e. the
+ *     module turned 90 deg clockwise from the bench mounting: right = PC0 low, up = PA3 low
+ *   JOY_PINS_AWAY 0: the 24 Oct bench mounting, pins pointing LEFT: right = PA3 high, up = PC0 low
+ * directions first measured on the bench 2026-10-24 with the pins pointing left:
  * right = PA3 high, up (away from the user) = PC0 low, so JOY_Y_SIGN = -1 makes right and up
  * both positive. KY-040 clockwise counts up, ENC_SIGN = +1. if the module is mounted
  * differently on the final panel, re-measure and change only these signs.
@@ -43,8 +48,20 @@
 
 #define JOY_DEADZONE      0.08f                  /* fraction of full deflection */
 #define JOY_CENTER_TOL    0.15f                  /* "near centre" for the fine/fast press */
+#ifndef JOY_PINS_AWAY
+#define JOY_PINS_AWAY     1                     /* see header: 1 = panel mounting, 0 = bench (pins left) */
+#endif
+#if JOY_PINS_AWAY
+#define JOY_X_CH          1                     /* operator left-right is the module's PC0 axis */
+#define JOY_X_SIGN        -1.0f                 /* right reads low on PC0 */
+#define JOY_Y_CH          0                     /* operator up-down is the module's PA3 axis */
+#define JOY_Y_SIGN        -1.0f                 /* up (away) reads low on PA3 */
+#else
+#define JOY_X_CH          0                     /* PA3 */
 #define JOY_X_SIGN        1.0f
-#define JOY_Y_SIGN        -1.0f                 /* up reads low on PC0, see header */
+#define JOY_Y_CH          1                     /* PC0 */
+#define JOY_Y_SIGN        -1.0f                 /* up reads low on PC0 */
+#endif
 #define ENC_SIGN          1
 #define ENC_COUNTS_PER_DETENT 4
 
@@ -181,8 +198,11 @@ static float axis(uint16_t raw, uint16_t center, float sign)
   return clampf(v * sign, -1.0f, 1.0f);
 }
 
-float input_joy_x(void) { return axis(s_raw[0], s_center_x, JOY_X_SIGN); }
-float input_joy_y(void) { return axis(s_raw[1], s_center_y, JOY_Y_SIGN); }
+/* s_center_x / s_center_y belong to the ADC channels (raw[0] PA3, raw[1] PC0), not to the operator axes */
+static uint16_t center_of(int ch) { return (ch == 0) ? s_center_x : s_center_y; }
+
+float input_joy_x(void) { return axis(s_raw[JOY_X_CH], center_of(JOY_X_CH), JOY_X_SIGN); }
+float input_joy_y(void) { return axis(s_raw[JOY_Y_CH], center_of(JOY_Y_CH), JOY_Y_SIGN); }
 
 bool input_joy_centered(void)
 {

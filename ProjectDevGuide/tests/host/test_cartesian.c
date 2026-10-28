@@ -110,18 +110,18 @@ int main(void)
   }
 
   printf("== XY: one 20 ms step moves only the commanded axis\n");
-  g_joy_x = 1.0f; g_joy_y = 0.0f;
-  control_tick();
-  target_fk(&p1);
-  CHECK(p1.x_mm > p0.x_mm + 0.2f && fabsf(p1.y_mm - p0.y_mm) < 0.2f,
-        "X+ moves X, not Y");
-  p0 = p1;
-
   g_joy_x = 0.0f; g_joy_y = 1.0f;
   control_tick();
   target_fk(&p1);
-  CHECK(p1.y_mm > p0.y_mm + 0.2f && fabsf(p1.x_mm - p0.x_mm) < 0.2f,
-        "Y+ moves Y, not X");
+  CHECK(p1.x_mm > p0.x_mm + 0.2f && fabsf(p1.y_mm - p0.y_mm) < 0.2f,
+        "stick up moves forward (+X), not Y");
+  p0 = p1;
+
+  g_joy_x = 1.0f; g_joy_y = 0.0f;
+  control_tick();
+  target_fk(&p1);
+  CHECK(p1.y_mm < p0.y_mm - 0.2f && fabsf(p1.x_mm - p0.x_mm) < 0.2f,
+        "stick right moves to the arm's right (-Y), not X");
   p0 = p1;
 
   printf("== centre: no new request; an already queued target is not cancelled\n");
@@ -150,7 +150,7 @@ int main(void)
   CHECK(same_joints(&cur, &tgt), "refusal holds the target at the current pose");
   CHECK(fabsf(held.z_mm - ahead.z_mm) > 5.0f, "the cancelled request was ahead of the held pose");
 
-  g_joy_x = 0.5f; g_joy_y = 0.0f;
+  g_joy_x = 0.0f; g_joy_y = 0.5f;                      /* half up = +X */
   control_tick();                                      /* retry: must start from the held pose */
   target_fk(&retry);
   CHECK(fabsf(retry.z_mm - held.z_mm) < 0.5f,
@@ -158,6 +158,64 @@ int main(void)
   CHECK(retry.z_mm > ahead.z_mm + 5.0f, "XY retry did not resume the cancelled request");
   CHECK(fabsf(retry.x_mm - (held.x_mm + 0.2f)) < 0.2f, "XY retry increments X from the held pose");
   CHECK(tgt.deg[J6_GRIPPER] == setup.deg[J6_GRIPPER], "no automatic gripper command on approach");
+
+  printf("== blocked (J4 far from the reference): a control attempt shows why, nothing moves\n");
+  {
+    char align[24];
+    snprintf(align, sizeof align, "ALIGN J4 %d", (int)ARM_J4_ZERO_DEG);
+    g_joy_x = 0.0f; g_joy_y = 0.0f;
+    MODE_CARTESIAN_OPS.exit();
+    motion_set_joint_target(J4_WRIST_ROLL, 120.0f);
+    run_motion_ms(4000);
+    MODE_CARTESIAN_OPS.enter();
+    motion_get_target(&before);
+    g_msg[0] = '\0';
+    e.type = EVT_ENC_STEP; e.v[0] = -1;
+    MODE_CARTESIAN_OPS.on_event(&e);
+    CHECK(strcmp(g_msg, align) == 0, "knob turn while blocked: shows ALIGN J4");
+    g_msg[0] = '\0';
+    g_joy_y = 0.5f;
+    control_tick();
+    g_joy_y = 0.0f;
+    CHECK(strcmp(g_msg, align) == 0, "stick push while blocked: shows ALIGN J4");
+    motion_get_target(&tgt);
+    CHECK(same_joints(&before, &tgt), "and nothing moves");
+    MODE_CARTESIAN_OPS.exit();
+  }
+
+  printf("== joint groups: stick axes (operator view) and directions, set on the arm 28 Oct 2026\n");
+  {
+    /* {joint on X (right), joint on Y (up)} and the direction a push right / up moves it */
+    static const int   AX[3][2] = { { J1_BASE, J2_SHOULDER }, { J4_WRIST_ROLL, J3_ELBOW }, { J6_GRIPPER, J5_WRIST_PITCH } };
+    static const float SG[3][2] = { { -1.0f, 1.0f }, { -1.0f, -1.0f }, { -1.0f, 1.0f } };
+    joint_vec_t t0, t1;
+    MODE_JOINT_GROUP_OPS.enter();
+    run_motion_ms(200);
+    for (int g = 0; g < 3; g++) {
+      if (g > 0) {
+        app_event_t sel = { .type = EVT_ENC_STEP, .v = { 1, 0, 0 } };
+        MODE_JOINT_GROUP_OPS.on_event(&sel);              /* next group */
+        run_motion_ms(100);
+      }
+      for (int a = 0; a < 2; a++) {
+        motion_get_target(&t0);
+        g_joy_x = (a == 0) ? 1.0f : 0.0f; g_joy_y = (a == 1) ? 1.0f : 0.0f;
+        MODE_JOINT_GROUP_OPS.step();
+        run_motion_ms(100);
+        motion_get_target(&t1);
+        g_joy_x = 0.0f; g_joy_y = 0.0f;
+        int other = AX[g][1 - a];
+        float d = t1.deg[AX[g][a]] - t0.deg[AX[g][a]];
+        char m[72];
+        snprintf(m, sizeof m, "group %d stick %s: J%d %s, J%d still", g + 1, a ? "up" : "right", AX[g][a] + 1,
+                 SG[g][a] > 0 ? "up" : "down", other + 1);
+        CHECK((SG[g][a] > 0 ? d > 0.5f : d < -0.5f) && fabsf(t1.deg[other] - t0.deg[other]) < 0.01f, m);
+        MODE_JOINT_GROUP_OPS.step();                    /* centred: stop the jog */
+        run_motion_ms(200);
+      }
+    }
+    MODE_JOINT_GROUP_OPS.exit();
+  }
 
   printf("\n%d passed, %d failed\n", passes, fails);
   return fails ? 1 : 0;

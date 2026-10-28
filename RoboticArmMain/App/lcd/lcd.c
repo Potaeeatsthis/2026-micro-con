@@ -103,6 +103,8 @@ static int      s_servo;                      /* single page: 0..5 */
 static int      s_group;                      /* group page: 0..2 */
 static char     s_val_shown[3][8];
 static int      s_speed_shown = -1;           /* -1 = tag not drawn yet, else 0 FINE / 1 FAST */
+static int      s_label_x, s_label_y;         /* the line under the X/Y/Z rows (draw_value_label) */
+static char     s_label_shown[LCD_COLS];
 static uint32_t s_last_values;
 static overlay_t    s_ov;                     /* pop-up on top of the page */
 static confirm_t    s_conf;
@@ -182,14 +184,32 @@ void lcd_show_message(const char *msg, uint32_t duration_ms)
 }
 
 /* ---------------------------------------------------------------- page components */
+/* the line under the Z row, above the Back button, left of the arm picture: normally "XYZ ESTIMATED, mm"
+ * (the numbers are FK from the COMMANDED angles, no joint sensors: an estimate). while a message from
+ * lcd_show_message() is active (JOINT LIMIT, OUT OF REACH, ALIGN J4 88 ...) it shows that instead, in
+ * yellow, so a refused or blocked move is visible on the picture pages too. redrawn only on change */
+#define VALUE_LABEL_W     132                   /* x 14 + 132 stays left of the arm picture (x 150) */
+#define VALUE_LABEL_CHARS 21                    /* size-1 text, 6 px per character */
+static void draw_value_label(void)
+{
+  bool msg = s_msg[0] != '\0' && (int32_t)(s_msg_until - HAL_GetTick()) > 0;
+  char want[LCD_COLS];
+  snprintf(want, sizeof want, "%.*s", VALUE_LABEL_CHARS, msg ? s_msg : "XYZ ESTIMATED, mm");
+  if (strcmp(s_label_shown, want) == 0) return;
+  lcd_port_fill(s_label_x, s_label_y, VALUE_LABEL_W, 8, LCD_BG);
+  lcd_port_text(s_label_x, s_label_y, want, msg ? LCD_YELLOW : LCD_GREY, LCD_BG, 1);
+  memcpy(s_label_shown, want, sizeof s_label_shown);
+}
+
 static void draw_rows(int x, const int y[3])
 {
   lcd_port_asset(LCD_A_ROW_X, x, y[0]);
   lcd_port_asset(LCD_A_ROW_Y, x, y[1]);
   lcd_port_asset(LCD_A_ROW_Z, x, y[2]);
-  /* the numbers are FK from the COMMANDED angles (no joint sensors, candidate zeros): an estimate.
-   * the gap under the Z row and above the Back button, left of the arm picture, holds this line */
-  lcd_port_text(x, y[2] + LCD_ROW_H + 3, "XYZ ESTIMATED, mm", LCD_GREY, LCD_BG, 1);
+  s_label_x = x;
+  s_label_y = y[2] + LCD_ROW_H + 3;
+  s_label_shown[0] = '\0';                      /* new page: always draw it */
+  draw_value_label();
 }
 
 static void draw_buttons(void)
@@ -684,6 +704,7 @@ void lcd_step(void)
     sync_selection();                           /* every pass: the picture follows a knob click at once */
     int fast = (motion_get_speed() == SPEED_FAST) ? 1 : 0;
     if (fast != s_speed_shown) draw_speed_tag(fast);
+    draw_value_label();                         /* message or the XYZ label, only when it changes */
     if (s_last_values == 0u || ms_since(now, s_last_values) >= SINGLE_VALUES_MS) {
       s_last_values = now | 1u;                 /* never 0, so 0 can mean "draw now" */
       page_values_for(s_screen);

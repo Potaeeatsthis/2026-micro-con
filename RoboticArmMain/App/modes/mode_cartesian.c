@@ -117,9 +117,23 @@ static void enter(void)
 
 static void exit_(void) { motion_hold(); }
 
+/* blocked mode: a knob turn / press or a stick push shows WHY nothing moves (on the lcd page too),
+ * instead of silently doing nothing. it never moves anything */
+static void show_block_reason(void)
+{
+  char msg[24];
+  if (!kin_ik_cartesian_enabled())  snprintf(msg, sizeof msg, "IK DISABLED");
+  else if (s_roll_blocked)          snprintf(msg, sizeof msg, "ALIGN J4 %d", (int)ARM_J4_ZERO_DEG);
+  else                              snprintf(msg, sizeof msg, "%s", kin_status_name(s_last_status));
+  lcd_show_message(msg, 2000u);
+}
+
 static void on_event(const app_event_t *e)
 {
-  if (!s_ready) return;
+  if (!s_ready) {
+    if (e->type == EVT_ENC_STEP || e->type == EVT_ENC_PRESS) show_block_reason();
+    return;
+  }
   switch ((evt_type_t)e->type) {
     case EVT_ENC_STEP: {
       cart_pose_t p;
@@ -142,7 +156,12 @@ static void step(void)
   uint32_t now = HAL_GetTick();
   float dt = (float)ms_since(now, s_last_ms) * 0.001f;
   s_last_ms = now;
-  if (!s_ready) return;
+  if (!s_ready) {
+#if APP_USE_INPUT
+    if (input_joy_x() != 0.0f || input_joy_y() != 0.0f) show_block_reason();
+#endif
+    return;
+  }
   dt = clampf(dt, 0.0f, 0.1f);
 
 #if APP_USE_INPUT
@@ -151,8 +170,10 @@ static void step(void)
   float v = (motion_get_speed() == SPEED_FAST) ? XY_FAST_MM_S : XY_FINE_MM_S;
   cart_pose_t p;
   if (!control_origin(&p)) return;
-  p.x_mm += jx * v * dt;
-  p.y_mm += jy * v * dt;
+  /* operator behind the arm (28 Oct 2026): stick up = forward (+X), stick right = the arm's right (-Y).
+   * input_joy_x/y are already the operator's right / up (input.c handles the module mounting) */
+  p.x_mm += jy * v * dt;
+  p.y_mm -= jx * v * dt;
   if (try_pose(&p)) s_pose = p;
 #endif
 }

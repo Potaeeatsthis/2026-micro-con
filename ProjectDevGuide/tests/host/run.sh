@@ -58,7 +58,7 @@ gcc -std=gnu11 -O1 -g -Wall -Wextra -Werror -Wshadow -Wno-unused-parameter \
 # the input-enabled Cartesian path: real mode + motion + kinematics, fake joystick and lcd message
 gcc -std=gnu11 -O1 -g -Wall -Wextra -Werror -Wshadow -Wno-unused-parameter \
   -DAPP_USE_INPUT=1 -I"$HERE/fake" -I"$A" -o "$T/test_cartesian" "$HERE/test_cartesian.c" \
-  "$A/modes/mode_cartesian.c" "$A/modes/gripper.c" \
+  "$A/modes/mode_cartesian.c" "$A/modes/gripper.c" "$A/modes/mode_joint_group.c" "$A/modes/mode_manual.c" \
   "$A/common/app_events.c" "$A/common/app_fault.c" "$A/safety/safety.c" \
   "$A/motion/motion.c" "$A/motion/servo.c" "$A/motion/servo_cal.c" "$A/kinematics/kinematics.c" -lm
 # kinematics: the default build has FK on, voice IK off and Cartesian IK on; the cart-off build

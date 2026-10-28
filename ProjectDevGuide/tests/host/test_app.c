@@ -862,6 +862,18 @@ int main(void)
     int same = 1;
     for (int j = 0; j < ARM_N_JOINTS; j++) if (after.deg[j] != before.deg[j]) same = 0;
     CHECK(same, "blocked entry sets no target");
+    tap(40, 210);                                      /* voice page Back -> select */
+    lcd_clear_log();
+    tap(80, 170);                                      /* Cartesian card -> the cartesian page */
+    CHECK(lcd_drew_text(align), "the cartesian page shows why it is blocked (ALIGN J4)");
+    lcd_clear_log();
+    lcd_pass(3500);
+    CHECK(lcd_drew_text("XYZ ESTIMATED, mm"), "after the message time the XYZ label comes back");
+    lcd_clear_log();
+    app_event_post(EVT_ENC_STEP, 0, -1, 0, 0);
+    lcd_pass(100);
+    CHECK(lcd_drew_text(align), "a knob turn while blocked shows it again");
+    motion_get_target(&before);
     app_event_post(EVT_ENC_STEP, 0, -1, 0, 0);
     app_event_post(EVT_ENC_PRESS, 0, 0, 0, 0);
     run_ms(500);

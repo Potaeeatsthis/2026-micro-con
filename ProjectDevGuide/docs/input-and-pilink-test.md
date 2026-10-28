@@ -64,6 +64,11 @@ Mounting used for the measured directions: **KY-023 with its pins pointing left*
 With that, `input.c` uses `JOY_X_SIGN +1`, `JOY_Y_SIGN -1`, `ENC_SIGN +1`, so **right, up (away from the
 operator) and clockwise are positive**. A different mounting needs only these three signs changed.
 
+**Panel mounting (28 Oct 2026): pins pointing AWAY from the operator** (the module turned 90 deg clockwise
+from the bench). `input.c` handles it with `JOY_PINS_AWAY 1` (the default): operator left-right comes from
+PC0 (right = low) and up-down from PA3 (up = low), so `input_joy_x()` / `input_joy_y()` are still the
+operator's right / up. `JOY_PINS_AWAY 0` restores the bench mounting above.
+
 First run of anything new: **servo signal wires disconnected**.
 
 ## 3. Raspberry Pi setup (once)
