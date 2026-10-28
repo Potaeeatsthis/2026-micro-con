@@ -258,20 +258,25 @@ static int ik_callers(void)
   CHECK(strcmp(screen_line(0), "S4 HOLDING") == 0, "grasp finished -> S4 holding");
   motion_get_current(&now);
   CHECK(kin_fk(&now, &est) == KIN_OK && fabsf(est.x_mm - 240.0f) < 0.5f && fabsf(est.y_mm) < 0.5f &&
-        fabsf(est.z_mm - 80.0f) < 0.5f && fabsf(est.pitch_deg - 160.0f) < 0.5f, "ends above the box (z + 50) at pitch 160");
+        fabsf(est.z_mm - 72.5f) < 0.5f && fabsf(est.pitch_deg - 160.0f) < 0.5f,
+        "ends above the grasp point (top 30 - 7.5 + 50 = 72.5) at pitch 160");
 
   printf("== ik build: cartesian keeps its last good pose at a joint limit\n");
   modes_request(MODE_CARTESIAN); run_ms(100);
   CHECK(modes_current() == MODE_CARTESIAN, "cartesian on");
-  CHECK(strcmp(screen_line(2), "Z: 79 mm") == 0 || strcmp(screen_line(2), "Z: 80 mm") == 0,
-        "starts from the FK pose (z 80, shown truncated)");
+  {
+    char want[LCD_COLS];
+    snprintf(want, sizeof want, "Z: %d mm", (int)est.z_mm);
+    CHECK(strcmp(screen_line(2), want) == 0, "starts from the FK pose");
+  }
+  float z0 = est.z_mm;
   app_event_post(EVT_ENC_STEP, 0, -1, 0, 0); run_ms(2000);
   motion_get_current(&now);
-  CHECK(kin_fk(&now, &est) == KIN_OK && fabsf(est.z_mm - 75.0f) < 0.5f, "knob -1 -> 5 mm down");
+  CHECK(kin_fk(&now, &est) == KIN_OK && fabsf(est.z_mm - (z0 - 5.0f)) < 0.5f, "knob -1 -> 5 mm down");
   char z_line[LCD_COLS];
   snprintf(z_line, sizeof z_line, "%s", screen_line(2));
   motion_get_target(&t0);
-  app_event_post(EVT_ENC_STEP, 0, 10, 0, 0); run_ms(500);       /* z 125: past the reach at pitch 160 */
+  app_event_post(EVT_ENC_STEP, 0, 10, 0, 0); run_ms(500);       /* +50 mm: past the reach at pitch 160 */
   motion_get_target(&t1);
   CHECK(strcmp(screen_line(2), z_line) == 0, "refused: the pose stays the last good one");
   CHECK(same_pose(&t0, &t1), "and the arm does not move");
