@@ -23,6 +23,11 @@ void app_events_init(void)
 
 bool app_event_post(evt_type_t type, uint16_t arg, int32_t v0, int32_t v1, int32_t v2)
 {
+  return app_event_post_at(type, arg, v0, v1, v2, HAL_GetTick());
+}
+
+bool app_event_post_at(evt_type_t type, uint16_t arg, int32_t v0, int32_t v1, int32_t v2, uint32_t tick_ms)
+{
   bool ok = false;
   uint32_t primask = __get_PRIMASK();   /* restores the caller's state, so nesting is safe */
   __disable_irq();
@@ -35,7 +40,7 @@ bool app_event_post(evt_type_t type, uint16_t arg, int32_t v0, int32_t v1, int32
     e->v[0] = v0;
     e->v[1] = v1;
     e->v[2] = v2;
-    e->tick_ms = HAL_GetTick();
+    e->tick_ms = tick_ms;
     s_head = s_head + 1u;
     if (used + 1u > s_high_water) s_high_water = used + 1u;
     ok = true;

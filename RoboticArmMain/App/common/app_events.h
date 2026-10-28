@@ -62,7 +62,8 @@ typedef struct {
   uint16_t type;     /* evt_type_t */
   uint16_t arg;
   int32_t  v[3];
-  uint32_t tick_ms;  /* HAL_GetTick() when posted */
+  uint32_t tick_ms;  /* when it happened: HAL_GetTick() at post time, except EVT_ENC_PRESS / EVT_JOY_PRESS:
+                      * the tick of the debounced press edge (input_tick), even if posted later */
 } app_event_t;
 
 void     app_events_init(void);
@@ -70,6 +71,8 @@ void     app_events_init(void);
 /* safe from any context (isr or main). returns false if the queue was full (event dropped) */
 bool     app_event_post(evt_type_t type, uint16_t arg, int32_t v0, int32_t v1, int32_t v2);
 static inline bool app_event_post0(evt_type_t type) { return app_event_post(type, 0, 0, 0, 0); }
+/* same, with the time the thing happened (e.g. a button edge seen in an isr before this post) */
+bool     app_event_post_at(evt_type_t type, uint16_t arg, int32_t v0, int32_t v1, int32_t v2, uint32_t tick_ms);
 
 /* main loop only, called by modes_step() */
 bool     app_event_pop(app_event_t *out);

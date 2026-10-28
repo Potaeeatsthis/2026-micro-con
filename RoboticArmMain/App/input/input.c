@@ -83,6 +83,7 @@ static volatile uint8_t  s_btn_hist[BTN_COUNT];   /* last samples, bit0 = newest
 static volatile bool     s_btn_state[BTN_COUNT];
 static volatile uint8_t  s_btn_press_flags;       /* set in isr, cleared in input_step */
 static volatile uint8_t  s_btn_release_flags;     /* same, for debounced releases */
+static volatile uint32_t s_btn_press_ms[BTN_COUNT]; /* HAL_GetTick() of the last debounced press edge */
 static volatile uint32_t s_exti_edges;
 
 /* encoder */
@@ -152,6 +153,7 @@ void input_tick(void)
     s_btn_hist[b] = h;
     if (h == 0x03u && !s_btn_state[b]) {
       s_btn_state[b] = true;
+      s_btn_press_ms[b] = HAL_GetTick();
       s_btn_press_flags |= (uint8_t)(1u << b);
     } else if (h == 0x00u && s_btn_state[b]) {
       s_btn_state[b] = false;
@@ -244,9 +246,11 @@ static void test_screen_log(void)
 }
 #endif
 
-static void post(evt_type_t type, const char *name, int32_t v0)
+/* tick_ms = when it happened (a press: its debounced edge, so a late main-loop pass does not make an
+ * old press look new; see app_event_t) */
+static void post(evt_type_t type, const char *name, int32_t v0, uint32_t tick_ms)
 {
-  bool ok = app_event_post(type, 0, v0, 0, 0);
+  bool ok = app_event_post_at(type, 0, v0, 0, 0, tick_ms);
 #if INPUT_EVT_LOG
   test_evt(type, name, v0, ok);
 #else
@@ -263,12 +267,14 @@ void input_step(void)
   __disable_irq();
   uint8_t flags = s_btn_press_flags;
   uint8_t released = s_btn_release_flags;
+  uint32_t enc_ms = s_btn_press_ms[BTN_ENC_I];
+  uint32_t joy_ms = s_btn_press_ms[BTN_JOY_I];
   s_btn_press_flags = 0u;
   s_btn_release_flags = 0u;
   __set_PRIMASK(p);
 
-  if (flags & (1u << BTN_ENC_I))  post(EVT_ENC_PRESS, "ENC_PRESS", 0);
-  if ((flags & (1u << BTN_JOY_I)) && input_joy_centered()) post(EVT_JOY_PRESS, "JOY_PRESS", 0);
+  if (flags & (1u << BTN_ENC_I))  post(EVT_ENC_PRESS, "ENC_PRESS", 0, enc_ms);
+  if ((flags & (1u << BTN_JOY_I)) && input_joy_centered()) post(EVT_JOY_PRESS, "JOY_PRESS", 0, joy_ms);
 
   int16_t cnt = (int16_t)__HAL_TIM_GET_COUNTER(&htim1);
   int16_t enc_delta = (int16_t)(cnt - s_enc_last);
@@ -277,7 +283,7 @@ void input_step(void)
   int32_t detents = s_enc_accum / ENC_COUNTS_PER_DETENT;
   if (detents != 0) {
     s_enc_accum -= detents * ENC_COUNTS_PER_DETENT;
-    post(EVT_ENC_STEP, "ENC_STEP", detents * ENC_SIGN);
+    post(EVT_ENC_STEP, "ENC_STEP", detents * ENC_SIGN, HAL_GetTick());
   }
 #if INPUT_SCREEN_LOG
   test_screen_log();
