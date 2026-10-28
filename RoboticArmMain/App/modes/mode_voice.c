@@ -317,7 +317,8 @@ static void script_set_pitch(float pitch_deg)
 }
 
 /* search_pitch (grasp / place): straight down first, then tilt 10 deg at a time; the first pitch that
- * solves EVERY pose is used for the whole script, so the gripper does not turn between steps */
+ * solves EVERY pose is used for the whole script. The same pitch is requested at each waypoint; pitch
+ * may change during travel. */
 static bool script_check(bool search_pitch)
 {
 #if APP_VOICE_DRY_RUN

@@ -29,7 +29,7 @@ validate selected, physically clear poses on the board (IK bench test below).
 grasp and place, so IK refused every table target. Now grasp and place **search the pitch**:
 180 first, then 10 deg less at a time down to 120 (`GRASP_PITCH_*` in `mode_voice.c`). The first pitch
 for which **every pose of the script** solves (above, grasp / release, lift) is used for the whole
-script, so the gripper does not turn between steps. The poses are solved in order, each from the
+script. The same pitch is requested at each waypoint; pitch may change during travel. The poses are solved in order, each from the
 previous solution, so the J2/J5 check is the one motion will see. If no pitch fits, the LCD shows the
 IK status and nothing moves (the gripper does not open). The jog queue keeps the pitch it is holding.
 
@@ -99,8 +99,10 @@ Procedure:
    Have the servo power switch in reach.
 2. Power on. Motion sends home one joint at a time. The screen shows the target, the IK angles,
    `NOW` (commanded), `EST` (FK of now), `MAX MOVE` and `KNOB PRESS = GO`. Check the IK angles above.
-   A press made before `KNOB PRESS = GO` appears is dropped, and one within 0.5 s after it
-   (`IK_BENCH_ARM_MS`) is ignored: GO always needs a fresh press.
+   GO needs a **new** knob press: its debounced edge must come at least 0.5 s (`IK_BENCH_ARM_MS`) after
+   `KNOB PRESS = GO` appears. This is judged by the edge time recorded in the input tick, not by when the
+   main loop handles the event, so a late-handled early press never counts. A knob held through start-up
+   counts only after it is released and pressed again.
 3. Knob press: the arm moves at fine speed. **Any press (knob, or stick press with the stick centred)
    stops it** (`STOPPED`); the servo power switch is the hard stop.
 4. Arrived (`MEASURE. PRESS = HOME`): `EST` and `ERR` are the FK estimate of the reached pose and its
@@ -238,7 +240,9 @@ Limits and coupling:
 ## Tests
 
 `test_ik_bench.c` runs the bench screen with the guard at 0 (`kin_ik()` refused, `kin_ik_bench()` solves,
-a press queued on the last start-up tick or right after arming is not GO, go / stop / home, exact target). `test_app.c` is also built with `-DARM_GEOMETRY_MEASURED=1 -DAPP_TEST_IK=1`
+through the real `input.c` path: a knob held across start-up, a press queued on the last start-up tick,
+and a press 100 ms after READY that is handled only after the window are all not GO; a new press is.
+Go / stop / home, exact target). `test_app.c` is also built with `-DARM_GEOMETRY_MEASURED=1 -DAPP_TEST_IK=1`
 for the IK callers (pitch search picks 160 for a box top at 240, 0, 30; 182, -45, 30 is refused before
 anything moves; Cartesian keeps its last good pose at a limit).
 
