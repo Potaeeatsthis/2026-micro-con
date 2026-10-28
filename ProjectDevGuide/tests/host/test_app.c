@@ -15,6 +15,10 @@
 #include "motion/motion.h"
 #include "motion/servo.h"
 #include "modes/modes.h"
+#include "modes/gripper.h"
+#include "kinematics/kinematics.h"
+#include "kinematics/arm_geometry.h"
+#include "lcd/lcd_assets.h"
 #include "lcd/lcd.h"
 
 /* pi_link.c included so the test can inject bytes into its private rx ring */
@@ -46,6 +50,7 @@ HAL_StatusTypeDef HAL_UART_AbortReceive(UART_HandleTypeDef *h) { (void)h; return
 
 /* voice stubs over the real generated class order (App/voice/kws_classes.h) */
 #include "voice/kws_classes.h"
+#include <math.h>
 int voice_class_id(const char *n) { for (int i = 0; i < N_CLASSES; i++) if (!strcmp(CLASS_NAMES[i], n)) return i; return -1; }
 const char *voice_class_name(int id) { return (id >= 0 && id < N_CLASSES) ? CLASS_NAMES[id] : "?"; }
 int voice_last_word(void) { return -1; }
@@ -57,6 +62,7 @@ static int fails, passes;
 #define CHECK(cond, msg) do { if (cond) { passes++; } else { fails++; printf("  FAIL: %s (line %d)\n", msg, __LINE__); } } while (0)
 
 static void loop_pass(void) { pi_link_step(); modes_step(); }
+#define BOOT_MS (MOTION_BOOT_STAGGER_MS * ARM_N_JOINTS + 100u)   /* staggered start-up, all six + margin */
 static int g_trace;
 static float tgt(int j);
 static float cur(int j);
@@ -70,6 +76,23 @@ static void run_ms(uint32_t ms)
 }
 static float cur(int j) { joint_vec_t v; motion_get_current(&v); return v.deg[j]; }
 static float tgt(int j) { joint_vec_t v; motion_get_target(&v); return v.deg[j]; }
+static void run_motion_ms(uint32_t ms)
+{
+  for (uint32_t t = 0; t < ms; t += 20) { g_tick += 20; motion_tick(); }
+}
+static motion_result_t set_pair_target(float j2_deg, float j5_deg)
+{
+  joint_vec_t t;
+  motion_get_current(&t);
+  t.deg[J2_SHOULDER] = j2_deg;
+  t.deg[J5_WRIST_PITCH] = j5_deg;
+  return motion_set_target(&t);
+}
+static void run_jog(int joint, float deg_per_s, uint32_t ms)
+{
+  for (uint32_t t = 0; t < ms; t += 20) { motion_jog(joint, deg_per_s); g_tick += 20; motion_tick(); }
+  for (uint32_t t = 0; t < 200; t += 20) { g_tick += 20; motion_tick(); }  /* timeout + final step */
+}
 static void say(const char *w) { app_event_post(EVT_VOICE_WORD, (uint16_t)voice_class_id(w), 900, 0, 0); loop_pass(); }
 static void pi_rx(const char *s)
 {
@@ -83,6 +106,31 @@ static const char *screen_line(int i)
   modes_describe(lines, LCD_DETAIL_LINES);
   return lines[i];
 }
+/* scripted touch on the fake lcd (fake/lcd_port_fake.c): a tap = finger down for one poll, then up */
+extern int fake_lcd_touch_x, fake_lcd_touch_y, fake_lcd_touch_down;
+extern int fake_lcd_assets[256], fake_lcd_n;
+extern char fake_lcd_texts[32][32];
+extern int fake_lcd_text_n;
+static void lcd_pass(uint32_t ms) { for (uint32_t t = 0; t < ms; t += 20) { g_tick += 20; motion_tick(); loop_pass(); lcd_step(); } }
+static void tap(int x, int y)
+{
+  fake_lcd_touch_x = x; fake_lcd_touch_y = y; fake_lcd_touch_down = 1;
+  lcd_pass(200);
+  fake_lcd_touch_down = 0;
+  lcd_pass(200);
+}
+static int lcd_drew_asset(int id)
+{
+  for (int i = 0; i < fake_lcd_n; i++) if (fake_lcd_assets[i] == id) return 1;
+  return 0;
+}
+static int lcd_drew_text(const char *s)
+{
+  for (int i = 0; i < fake_lcd_text_n; i++) if (strcmp(fake_lcd_texts[i], s) == 0) return 1;
+  return 0;
+}
+static void lcd_clear_log(void) { fake_lcd_n = 0; fake_lcd_text_n = 0; }
+
 static int count_events_type(uint16_t type)
 {
   /* peeks by draining into a temp array and re-posting */
@@ -107,9 +155,39 @@ static void check_servo_cal(int joint, uint16_t us0, uint16_t us90, uint16_t us1
   CHECK(servo_deg_to_us(joint, 135.0f) == (uint16_t)((us90 + us180) / 2u), msg);
 }
 
-#if APP_VOICE_DRY_RUN
-/* second build (run.sh, -DAPP_VOICE_DRY_RUN=1): ik is not measured yet, so only a dry run can
- * reach S4 HOLDING and walk "hand" and "station" end to end. moves are read back from the dry-run log. */
+static void check_cal_limits_home(int joint, float min_deg, float max_deg,
+                                  float home_deg, uint16_t home_us)
+{
+  char msg[64];
+  const servo_cal_t *c = servo_cal(joint);
+  snprintf(msg, sizeof msg, "J%d safe min limit", joint + 1);
+  CHECK(c->min_deg == min_deg, msg);
+  snprintf(msg, sizeof msg, "J%d safe max limit", joint + 1);
+  CHECK(c->max_deg == max_deg, msg);
+  snprintf(msg, sizeof msg, "J%d home angle", joint + 1);
+  CHECK(c->home_deg == home_deg, msg);
+  snprintf(msg, sizeof msg, "J%d home pulse", joint + 1);
+  CHECK(servo_deg_to_us(joint, c->home_deg) == home_us, msg);
+}
+
+static void check_joint_clamp(int joint, float min_deg, float max_deg)
+{
+  char msg[64];
+  snprintf(msg, sizeof msg, "J%d below-min target clamps", joint + 1);
+  CHECK(motion_set_joint_target(joint, min_deg - 10.0f) == MOTION_CLAMPED &&
+        tgt(joint) == min_deg, msg);
+  snprintf(msg, sizeof msg, "J%d above-max target clamps", joint + 1);
+  CHECK(motion_set_joint_target(joint, max_deg + 10.0f) == MOTION_CLAMPED &&
+        tgt(joint) == max_deg, msg);
+  snprintf(msg, sizeof msg, "J%d boundaries are accepted", joint + 1);
+  CHECK(motion_set_joint_target(joint, min_deg) == MOTION_OK &&
+        tgt(joint) == min_deg &&
+        motion_set_joint_target(joint, max_deg) == MOTION_OK &&
+        tgt(joint) == max_deg, msg);
+}
+
+#if APP_VOICE_DRY_RUN || APP_TEST_IK
+/* stdout (LOG) captured into a temp file, for the dry-run and the ik builds */
 static FILE *g_log;
 static int   g_saved_stdout = -1;
 static void log_capture(void)
@@ -133,12 +211,174 @@ static void log_release(void)
   if (!g_log) return;
   fflush(stdout); dup2(g_saved_stdout, 1); close(g_saved_stdout); fclose(g_log); g_log = NULL;
 }
+#endif
+
+#if APP_TEST_IK
+/* third build (run.sh, -DAPP_TEST_IK=1): the IK callers with the firmware IK guards (voice IK on since
+ * 28 Oct 2026). voice grasp searches one pitch for the whole script; a target no pitch reaches is
+ * refused before anything moves; cartesian keeps its last good pose at a joint limit. */
+static int same_pose(const joint_vec_t *a, const joint_vec_t *b)
+{
+  for (int j = 0; j < ARM_N_JOINTS; j++) if (fabsf(a->deg[j] - b->deg[j]) > 0.001f) return 0;
+  return 1;
+}
+
+static int ik_callers(void)
+{
+  joint_vec_t t0, t1, now;
+  cart_pose_t est;
+  motion_init(); pi_link_init(); lcd_init(); modes_init();
+  run_ms(BOOT_MS);
+
+  printf("== ik build (test only): voice refuses a box no pitch reaches, before anything moves\n");
+  CHECK(kin_ik_voice_enabled() && !kin_ik_enabled(), "firmware guards: voice IK on, global kin_ik() off");
+  say("pick"); say("red box"); pi_link_on_tx_done();
+  pi_rx("OBJ red_box 182 -45 30\n");
+  CHECK(strcmp(screen_line(0), "S2 CONFIRM BOX") == 0, "OBJ -> S2");
+  motion_get_target(&t0);
+  say("yes");
+  run_ms(500);
+  motion_get_target(&t1);
+  CHECK(strcmp(screen_line(0), "S2 CONFIRM BOX") == 0, "182 -45 30: no pitch 180..110 solves it, stays S2");
+  CHECK(same_pose(&t0, &t1), "nothing moved, the gripper did not open");
+  say("stop");
+
+  printf("== ik build: voice grasp uses the first pitch (180 -> 110) that solves every pose\n");
+  say("pick"); say("red box"); pi_link_on_tx_done();
+  pi_rx("OBJ red_box 240 0 30\n");
+  CHECK(lcd_voice_pick() == LCD_BOX_RED, "lcd: Pick Color shows the colour asked for (red)");
+  CHECK(lcd_voice_detected(LCD_BOX_RED), "lcd: the pi found it, red gets its tick");
+  CHECK(lcd_status_shown() == 0, "lcd: no pop-up while waiting for yes");
+  log_capture();
+  CHECK(g_log != NULL, "log capture works (tmpfile)");
+  say("yes");
+  int grasping = strcmp(screen_line(0), "S3 GRASPING") == 0;
+  int proc = lcd_status_shown() == LCD_STATUS_PROCESSING;
+  for (int i = 0; i < 2000 && strcmp(screen_line(0), "S4 HOLDING") != 0; i++) run_ms(20);
+  int p160 = log_has("voice-mode: pitch 160 deg");
+  int p_other = log_has("voice-mode: pitch 180 deg") || log_has("voice-mode: pitch 170 deg");
+  log_release();
+  CHECK(grasping, "yes -> S3 grasping");
+  CHECK(proc, "lcd: PROCESSING pop-up while grasping");
+  CHECK(p160 && !p_other, "180 and 170 do not fit above + box, 160 does: one pitch for the script");
+  CHECK(strcmp(screen_line(0), "S4 HOLDING") == 0, "grasp finished -> S4 holding");
+  CHECK(lcd_status_shown() == 0, "lcd: the pop-up goes when it holds the box (S4 waits for a word)");
+  motion_get_current(&now);
+  CHECK(kin_fk(&now, &est) == KIN_OK && fabsf(est.x_mm - 240.0f) < 0.5f && fabsf(est.y_mm) < 0.5f &&
+        fabsf(est.z_mm - 89.5f) < 0.5f && fabsf(est.pitch_deg - 160.0f) < 0.5f,
+        "holds the box 70 mm above the grasp point (top 30 - 10.5 + 50 + 20 = 89.5) at pitch 160");
+
+  printf("== ik build: cartesian keeps its last good pose at a joint limit\n");
+  modes_request(MODE_CARTESIAN); run_ms(100);
+  CHECK(modes_current() == MODE_CARTESIAN, "cartesian on");
+  {
+    char want[LCD_COLS];
+    snprintf(want, sizeof want, "Z: %d mm", (int)est.z_mm);
+    CHECK(strcmp(screen_line(2), want) == 0, "starts from the FK pose");
+  }
+  float z0 = est.z_mm;
+  app_event_post(EVT_ENC_STEP, 0, -1, 0, 0); run_ms(2000);
+  motion_get_current(&now);
+  CHECK(kin_fk(&now, &est) == KIN_OK && fabsf(est.z_mm - (z0 - 5.0f)) < 0.5f, "knob -1 -> 5 mm down");
+  char z_line[LCD_COLS];
+  snprintf(z_line, sizeof z_line, "%s", screen_line(2));
+  motion_get_target(&t0);
+  app_event_post(EVT_ENC_STEP, 0, 10, 0, 0); run_ms(500);       /* +50 mm: past the reach at pitch 160 */
+  motion_get_target(&t1);
+  CHECK(strcmp(screen_line(2), z_line) == 0, "refused: the pose stays the last good one");
+  CHECK(same_pose(&t0, &t1), "and the arm does not move");
+
+  printf("== ik build: voice \"base\" places at the fixed spot 220 120 (opens at z 12), then home\n");
+  {
+    float best = 1e9f;
+    app_event_post(EVT_TOUCH_MODE_TAB, MODE_VOICE, 0, 0, 0); run_ms(100);
+    CHECK(modes_current() == MODE_VOICE && strcmp(screen_line(0), "S4 HOLDING") == 0, "back in voice, still holding");
+    say("base");
+    CHECK(strcmp(screen_line(0), "S7 CONFIRM PLACE") == 0, "base -> S7 asks");
+    say("yes");
+    CHECK(strcmp(screen_line(0), "S8 PLACING") == 0, "yes -> S8 placing");
+    for (int i = 0; i < 1500 && strcmp(screen_line(0), "S0 IDLE") != 0; i++) {
+      run_ms(20);
+      motion_get_current(&now);
+      if (kin_fk(&now, &est) == KIN_OK) {
+        float d = sqrtf((est.x_mm - 220.0f) * (est.x_mm - 220.0f) + (est.y_mm - 120.0f) * (est.y_mm - 120.0f) +
+                        (est.z_mm - 12.0f) * (est.z_mm - 12.0f));
+        if (d < best) best = d;
+      }
+    }
+    CHECK(best < 1.0f, "the arm reached the base drop point 220 120 12");
+    CHECK(strcmp(screen_line(0), "S0 IDLE") == 0, "placed, home, S0");
+  }
+
+  printf("== ik build: a far box needs the wrist up first: the planner adds a raise step\n");
+  {
+    int raise;
+    say("pick"); say("red box"); pi_link_on_tx_done();
+    pi_rx("OBJ red_box 300 90 15\n");
+    log_capture();
+    say("yes");
+    for (int i = 0; i < 1500 && strcmp(screen_line(0), "S4 HOLDING") != 0; i++) run_ms(20);
+    raise = log_has(", 6 steps") || log_has(", 7 steps");
+    log_release();
+    CHECK(raise, "300 90 15: grasp planned with raise steps (wrist up before, shoulder up after)");
+    CHECK(strcmp(screen_line(0), "S4 HOLDING") == 0, "and grasped -> S4");
+    motion_get_current(&now);
+    CHECK(kin_fk(&now, &est) == KIN_OK && fabsf(est.x_mm - 300.0f) < 1.0f && fabsf(est.y_mm - 90.0f) < 1.0f,
+          "lifted above the far box");
+    say("base"); say("yes");
+    for (int i = 0; i < 2000 && strcmp(screen_line(0), "S0 IDLE") != 0; i++) run_ms(20);
+    CHECK(strcmp(screen_line(0), "S0 IDLE") == 0, "placed at base, home, S0");
+  }
+
+  printf("== ik build: a near box only fits with the short approach (30 mm)\n");
+  {
+    say("pick"); say("red box"); pi_link_on_tx_done();
+    pi_rx("OBJ red_box 200 60 15\n");
+    say("yes");
+    for (int i = 0; i < 1500 && strcmp(screen_line(0), "S4 HOLDING") != 0; i++) run_ms(20);
+    CHECK(strcmp(screen_line(0), "S4 HOLDING") == 0, "200 60 15 grasped -> S4");
+    motion_get_current(&now);
+    CHECK(kin_fk(&now, &est) == KIN_OK && est.z_mm > 15.0f - 10.5f + 30.0f - 1.0f && est.z_mm < 15.0f - 10.5f + 50.0f - 1.0f,
+          "lifted 30..50 mm above the grasp point (the 50 mm approach does not fit there)");
+  }
+
+  printf("\n%d passed, %d failed\n", passes, fails);
+  return fails ? 1 : 0;
+}
+#endif
+
+#if APP_VOICE_DRY_RUN
+/* second build (run.sh, -DAPP_VOICE_DRY_RUN=1): ik is not measured yet, so only a dry run can
+ * reach S4 HOLDING and walk "hand" and "station" end to end. moves are read back from the dry-run log. */
 static uint32_t word_bit(const char *w) { return 1u << voice_class_id(w); }
 
 static int voice_hand_dry_run(void)
 {
   motion_init(); pi_link_init(); lcd_init(); modes_init();
-  run_ms(100);
+  run_ms(BOOT_MS);
+
+  printf("== voice page (dry run): the LCD shows the task state and the position to confirm\n");
+  lcd_pass(100);
+  tap(100, 160);                                       /* home: Start */
+  lcd_clear_log();
+  tap(230, 170);                                       /* Voice card -> voice page */
+  CHECK(lcd_drew_text("FINE"), "voice page shows the motion speed (FINE)");
+  app_event_post(EVT_JOY_PRESS, 0, 0, 0, 0);           /* joystick press = fine / fast, also in voice */
+  lcd_pass(40);
+  CHECK(motion_get_speed() == SPEED_FAST, "a joystick press in voice mode switches to FAST");
+  CHECK(lcd_drew_text("FAST"), "and the voice page follows it (FAST)");
+  app_event_post(EVT_JOY_PRESS, 0, 0, 0, 0);
+  lcd_pass(40);
+  CHECK(motion_get_speed() == SPEED_FINE, "a second press goes back to FINE");
+  lcd_clear_log();
+  say("pick"); say("red box"); pi_link_on_tx_done();
+  pi_rx("OBJ red_box 182 -45 30\n");
+  lcd_pass(100);
+  CHECK(lcd_drew_text("S2 CONFIRM BOX  182 -45 30 mm"), "voice page: state + position before yes");
+  CHECK(lcd_voice_pick() == LCD_BOX_RED && lcd_voice_detected(LCD_BOX_RED), "voice page: red picked and ticked");
+  say("stop");
+  lcd_pass(100);
+  CHECK(lcd_drew_text("S0 IDLE  Gripper: EMPTY"), "voice page: back to S0");
 
   printf("== voice hand (dry run): live palm position from the pi\n");
   say("pick"); say("red box"); pi_link_on_tx_done();
@@ -146,6 +386,37 @@ static int voice_hand_dry_run(void)
   say("yes");
   run_ms(8000);
   CHECK(strcmp(screen_line(0), "S4 HOLDING") == 0, "dry-run grasp -> S4 holding");
+
+  printf("== jog step slider (voice page, top right): 1.00 cm, then a forward jog moves 10 mm\n");
+  {
+    char line[LCD_COLS];
+    lcd_clear_log();
+    tap(240, 20);                                      /* middle of the track: 1.00 cm */
+    CHECK(lcd_drew_text("JOG STEP 1.00 cm"), "slider shows 1.00 cm");
+    say("forward");
+    snprintf(line, sizeof line, "%s", screen_line(1));
+    CHECK(strcmp(screen_line(0), "S6 JOG QUEUE") == 0 && strcmp(line, "Queue 1/10 step 1.00 cm") == 0,
+          "forward -> S6, one 1.00 cm step queued");
+    CHECK(strcmp(lcd_voice_queue(), "[forward 1.00]") == 0, "jog queue pop-up text is [forward 1.00]");
+    lcd_step();
+    CHECK(lcd_drew_text("[forward 1.00]"), "the voice page draws the jog queue pop-up");
+    tap(208, 20);                                      /* the slider still works under the pop-up: 0.50 cm */
+    CHECK(lcd_drew_text("JOG STEP 0.50 cm"), "slider usable while the queue pop-up is up");
+    say("right");
+    CHECK(strcmp(lcd_voice_queue(), "[forward 1.00, right 0.50]") == 0, "queue pop-up adds right 0.50");
+    say("undo");
+    CHECK(strcmp(lcd_voice_queue(), "[forward 1.00]") == 0, "undo removes the last entry from the pop-up");
+    log_capture();
+    say("yes");
+    run_ms(3000);
+    int moved = log_has("move to 192 -45 89 mm");     /* held at 182 -45 89.5 (top 30 - 10.5 + lift 70), +X 10 mm */
+    log_release();
+    CHECK(moved, "the queued step moves 10 mm forward (+X)");
+    CHECK(strcmp(screen_line(0), "S4 HOLDING") == 0, "queue done -> S4 holding");
+    CHECK(lcd_voice_queue()[0] == '\0', "queue pop-up hidden after the queue ran");
+    tap(304, 20);                                      /* right end: back to the 2.00 cm default */
+    CHECK(lcd_drew_text("JOG STEP 2.00 cm"), "slider right end = 2.00 cm");
+  }
 
   say("hand");
   CHECK(strcmp(screen_line(0), "S7 CONFIRM PLACE") == 0 && strcmp(screen_line(1), "Place at HAND?") == 0, "hand -> S7 asks");
@@ -181,11 +452,19 @@ static int voice_hand_dry_run(void)
   CHECK(g_log != NULL, "log capture works (tmpfile)");
   pi_rx("OBJ hand 101 -4 279\n");
   int placing = strcmp(screen_line(0), "S8 PLACING") == 0;
-  run_ms(8000);
+  int proc = lcd_status_shown() == LCD_STATUS_PROCESSING;
+  int complete = 0;
+  for (int i = 0; i < 400 && strcmp(screen_line(0), "S0 IDLE") != 0; i++) {
+    run_ms(20);
+    if (strcmp(screen_line(0), "S9 GOING HOME") == 0 && lcd_status_shown() == LCD_STATUS_COMPLETE) complete = 1;
+  }
   int above = log_has("move to 101 -4 329 mm"), release = log_has("move to 101 -4 309 mm");
   int open_ = log_has("gripper OPEN"), palm = log_has("move to 101 -4 279 mm");
   log_release();
   CHECK(placing, "OBJ hand -> S8 placing");
+  CHECK(proc, "lcd: PROCESSING while placing");
+  CHECK(complete, "lcd: COMPLETE while it goes home after the place");
+  CHECK(lcd_status_shown() == 0, "lcd: no pop-up once back in S0");
   CHECK(above, "first above the palm (+APPROACH_MM)");
   CHECK(release && open_, "opens at palm + HAND_RELEASE_MM");
   CHECK(!palm, "never goes down to the palm itself");
@@ -215,7 +494,7 @@ static int voice_hand_dry_run(void)
   pi_rx("OBJ station 50 60 120\n");
   placing = strcmp(screen_line(0), "S8 PLACING") == 0;
   run_ms(8000);
-  above = log_has("move to 50 60 170 mm"); release = log_has("move to 50 60 140 mm");
+  above = log_has("move to 50 60 170 mm"); release = log_has("move to 50 60 145 mm");
   open_ = log_has("gripper OPEN"); palm = log_has("move to 50 60 120 mm");
   log_release();
   CHECK(placing, "OBJ station -> S8 placing");
@@ -234,6 +513,9 @@ int main(void)
 #if APP_VOICE_DRY_RUN
   return voice_hand_dry_run();
 #endif
+#if APP_TEST_IK
+  return ik_callers();
+#endif
   printf("== event queue\n");
   app_events_init();
   for (int i = 0; i < 40; i++) app_event_post(EVT_ENC_STEP, 0, i, 0, 0);
@@ -242,45 +524,413 @@ int main(void)
   CHECK(e.v[0] == 0, "fifo order");
   app_events_drain(); app_events_init();
 
-  printf("== servo calibration (measured unloaded endpoints; limits/home are placeholders)\n");
+  printf("== servo calibration (measured unloaded endpoints; installed homes/limits)\n");
   check_servo_cal(J1_BASE,         500, 1460, 2430);
   check_servo_cal(J2_SHOULDER,     500, 1430, 2440);
   check_servo_cal(J3_ELBOW,        540, 1530, 2500);
   check_servo_cal(J4_WRIST_ROLL,   500, 1440, 2370);
   check_servo_cal(J5_WRIST_PITCH,  640, 1580, 2470);
-  check_servo_cal(J6_GRIPPER,      580, 1570, 2500);
+  check_servo_cal(J6_GRIPPER,      500, 1380, 2300);
   CHECK(strcmp(servo_cal(J4_WRIST_ROLL)->name, "J4 WRIST ROLL") == 0, "J4 is wrist roll");
   CHECK(strcmp(servo_cal(J5_WRIST_PITCH)->name, "J5 WRIST PITCH") == 0, "J5 is wrist pitch");
   CHECK(servo_deg_to_us(0, 250.0f) == 2430, "out of range clamps");
+  CHECK(servo_deg_to_us(J6_GRIPPER, 60.0f) == 1087, "J6 60 deg safe max pulse");
+  CHECK(servo_deg_to_us(J6_GRIPPER, 250.0f) == 2300, "J6 clamps to its 180 deg anchor");
+  CHECK(servo_deg_to_us(J6_GRIPPER, -10.0f) == 500, "J6 clamps to its 0 deg anchor");
 
-  printf("== boot: no pulse until the first tick, then home\n");
+  printf("== installed homes and conservative limits\n");
+  check_cal_limits_home(J1_BASE,         0.0f, 180.0f,  85.0f, 1407);
+  check_cal_limits_home(J2_SHOULDER,    50.0f, 180.0f, 125.0f, 1823);
+  check_cal_limits_home(J3_ELBOW,       45.0f, 180.0f, 145.0f, 2123);
+  check_cal_limits_home(J4_WRIST_ROLL,   0.0f, 180.0f,  90.0f, 1440);
+  check_cal_limits_home(J5_WRIST_PITCH, 25.0f, 140.0f,  25.0f, 901);
+  check_cal_limits_home(J6_GRIPPER,      0.0f,  60.0f,  40.0f, 891);
+
+  printf("== motion clamps to the installed boundaries\n");
+  motion_init();
+  check_joint_clamp(J1_BASE,         0.0f, 180.0f);
+  check_joint_clamp(J2_SHOULDER,    90.0f, 180.0f);
+  check_joint_clamp(J3_ELBOW,       45.0f, 180.0f);
+  check_joint_clamp(J4_WRIST_ROLL,   0.0f, 180.0f);
+  check_joint_clamp(J5_WRIST_PITCH, 25.0f, 140.0f);
+  check_joint_clamp(J6_GRIPPER,      0.0f,  60.0f);
+
+  printf("== J2/J5 coupling uses the actual commanded pose, not the target\n");
+  motion_init();
+  motion_set_speed(SPEED_FAST);
+  app_events_drain();
+  run_motion_ms(BOOT_MS);
+  CHECK(cur(J2_SHOULDER) == 125.0f && cur(J5_WRIST_PITCH) == 25.0f, "coupling starts at the home pose");
+
+  /* J5 current below 65: J2 floor is 90, even when the J5 target is high. */
+  CHECK(set_pair_target(50.0f, 25.0f) == MOTION_CLAMPED && tgt(J2_SHOULDER) == 90.0f,
+        "J5 current 25: full J2 target 50 clamps to 90");
+  {
+    joint_vec_t t;
+    motion_get_current(&t);
+    t.deg[J2_SHOULDER] = 50.0f;
+    t.deg[J5_WRIST_PITCH] = 100.0f;
+    CHECK(motion_set_target(&t) == MOTION_CLAMPED && tgt(J2_SHOULDER) == 90.0f,
+          "J5 target 100 does not unlock J2 while J5 current is 25");
+  }
+  motion_hold();
+  CHECK(cur(J2_SHOULDER) == 125.0f && cur(J5_WRIST_PITCH) == 25.0f,
+        "command clamping does not move the arm");
+
+  /* J5 current exactly 65: J2 50 becomes legal. */
+  CHECK(set_pair_target(125.0f, 65.0f) == MOTION_OK, "J5 target 65 accepted");
+  run_motion_ms(3000);
+  CHECK(cur(J5_WRIST_PITCH) == 65.0f, "J5 reaches 65");
+  CHECK(set_pair_target(50.0f, 65.0f) == MOTION_OK && tgt(J2_SHOULDER) == 50.0f,
+        "J5 current 65 allows J2 50");
+  run_motion_ms(5000);
+  CHECK(cur(J2_SHOULDER) == 50.0f && cur(J5_WRIST_PITCH) == 65.0f, "J2 reaches 50 with J5 at 65");
+  CHECK(motion_set_joint_target(J2_SHOULDER, 40.0f) == MOTION_CLAMPED &&
+        tgt(J2_SHOULDER) == 50.0f, "J2 50 is the absolute floor while J5 is high");
+
+  /* J2 current below 90: J5 is blocked at 65; the shoulder is not lifted. */
+  CHECK(motion_set_joint_target(J5_WRIST_PITCH, 25.0f) == MOTION_CLAMPED &&
+        tgt(J5_WRIST_PITCH) == 65.0f, "J2 current 50: J5 target 25 clamps to 65");
+  run_motion_ms(3000);
+  CHECK(cur(J2_SHOULDER) == 50.0f && cur(J5_WRIST_PITCH) == 65.0f,
+        "blocked J5 leaves J2 at 50 (no automatic shoulder lift)");
+  CHECK(tgt(J2_SHOULDER) == 50.0f && tgt(J5_WRIST_PITCH) == 65.0f,
+        "blocked target is clamped, not left latent");
+
+  /* J2 current just below 90 still blocks J5 25. */
+  CHECK(set_pair_target(89.9f, 65.0f) == MOTION_OK, "J2 target 89.9 accepted with J5 at 65");
+  run_motion_ms(3000);
+  CHECK(cur(J2_SHOULDER) == 89.9f, "J2 reaches 89.9");
+  CHECK(motion_set_joint_target(J5_WRIST_PITCH, 25.0f) == MOTION_CLAMPED &&
+        tgt(J5_WRIST_PITCH) == 65.0f, "J2 current 89.9: J5 target 25 clamps to 65");
+  motion_hold();
+
+  /* J5 current just below 65 still blocks J2 50. Raise J2 to 90 first, because
+   * at J2 = 89.9 the J5 floor is already 65. */
+  CHECK(set_pair_target(90.0f, 65.0f) == MOTION_OK, "raise J2 to 90 with J5 at 65");
+  run_motion_ms(3000);
+  CHECK(cur(J2_SHOULDER) == 90.0f, "J2 reaches 90");
+  CHECK(set_pair_target(90.0f, 64.9f) == MOTION_OK, "J5 target 64.9 accepted with J2 at 90");
+  run_motion_ms(3000);
+  CHECK(cur(J2_SHOULDER) == 90.0f && cur(J5_WRIST_PITCH) == 64.9f, "pose is J2 90 / J5 64.9");
+  CHECK(motion_set_joint_target(J2_SHOULDER, 50.0f) == MOTION_CLAMPED &&
+        tgt(J2_SHOULDER) == 90.0f, "J5 current 64.9: J2 target 50 clamps to 90");
+  motion_hold();
+
+  CHECK(set_pair_target(125.0f, 65.0f) == MOTION_OK, "set concurrent start pose J2 125 / J5 65");
+  run_motion_ms(3000);
+  CHECK(cur(J2_SHOULDER) == 125.0f && cur(J5_WRIST_PITCH) == 65.0f, "concurrent start pose reached");
+
+  /* Single-joint requests clamp only the requested joint and look at both the
+   * current pose and the pending target of the other joint. Test both orders. */
+  CHECK(motion_set_joint_target(J5_WRIST_PITCH, 25.0f) == MOTION_OK &&
+        tgt(J5_WRIST_PITCH) == 25.0f, "J5 single 25 accepted while J2 pending is 125");
+  CHECK(motion_set_joint_target(J2_SHOULDER, 50.0f) == MOTION_CLAMPED &&
+        tgt(J2_SHOULDER) == 90.0f && tgt(J5_WRIST_PITCH) == 25.0f,
+        "J5 pending 25 blocks J2 50; unrequested J5 target unchanged");
+  motion_hold();
+  CHECK(motion_set_joint_target(J2_SHOULDER, 50.0f) == MOTION_OK &&
+        tgt(J2_SHOULDER) == 50.0f, "J2 single 50 accepted while J5 pending is 65");
+  CHECK(motion_set_joint_target(J5_WRIST_PITCH, 25.0f) == MOTION_CLAMPED &&
+        tgt(J5_WRIST_PITCH) == 65.0f && tgt(J2_SHOULDER) == 50.0f,
+        "J2 pending 50 blocks J5 25; unrequested J2 target unchanged");
+  motion_hold();
+
+  /* Both requested values are legal at the current pose, but the endpoint is not.
+   * The setter must clamp and report it; the tick must not change it later. */
+  CHECK(set_pair_target(50.0f, 25.0f) == MOTION_CLAMPED &&
+        tgt(J2_SHOULDER) == 90.0f && tgt(J5_WRIST_PITCH) == 25.0f,
+        "full target 50/25 clamps shoulder to 90 and returns CLAMPED");
+  int unsafe = 0;
+  for (uint32_t t = 0; t < 6000; t += 20) {
+    g_tick += 20; motion_tick();
+    if (cur(J2_SHOULDER) < 90.0f - 0.01f && cur(J5_WRIST_PITCH) < 65.0f - 0.01f) unsafe = 1;
+  }
+  CHECK(!unsafe, "simultaneous path never has J2<90 with J5<65");
+  CHECK(cur(J2_SHOULDER) == 90.0f && cur(J5_WRIST_PITCH) == 25.0f,
+        "blocked shoulder stops at 90 while the wrist reaches 25");
+  CHECK(tgt(J2_SHOULDER) == 90.0f && tgt(J5_WRIST_PITCH) == 25.0f,
+        "no stale J2 50 target survives the clamp");
+
+  /* Reverse transition: J5 25 is clamped now and must be reissued after J2 reaches 90. */
+  CHECK(set_pair_target(90.0f, 140.0f) == MOTION_OK, "raise J5 to 140");
+  run_motion_ms(4000);
+  CHECK(cur(J5_WRIST_PITCH) == 140.0f, "J5 reaches 140");
+  CHECK(set_pair_target(50.0f, 140.0f) == MOTION_OK, "lower J2 to 50 with J5 high");
+  run_motion_ms(4000);
+  CHECK(cur(J2_SHOULDER) == 50.0f && cur(J5_WRIST_PITCH) == 140.0f, "pose is J2 50 / J5 140");
+  CHECK(set_pair_target(90.0f, 25.0f) == MOTION_CLAMPED &&
+        tgt(J2_SHOULDER) == 90.0f && tgt(J5_WRIST_PITCH) == 65.0f,
+        "while J2 current 50, J5 target 25 clamps to 65");
+  run_motion_ms(5000);
+  CHECK(cur(J2_SHOULDER) == 90.0f && cur(J5_WRIST_PITCH) == 65.0f,
+        "J2 reaches 90; J5 stops at the clamped 65");
+  CHECK(tgt(J5_WRIST_PITCH) == 65.0f, "J5 25 is not resumed automatically after J2 reaches 90");
+  CHECK(motion_set_joint_target(J5_WRIST_PITCH, 25.0f) == MOTION_OK &&
+        tgt(J5_WRIST_PITCH) == 25.0f, "reissue after the pose allows is accepted");
+  run_motion_ms(3000);
+  CHECK(cur(J5_WRIST_PITCH) == 25.0f, "reissued J5 reaches 25");
+
+  /* Jog crossing: J2 down stops at 90 while J5 is low. */
+  CHECK(set_pair_target(125.0f, 25.0f) == MOTION_OK, "raise J2 to 125 for the jog test");
+  run_motion_ms(3000);
+  CHECK(cur(J2_SHOULDER) == 125.0f && cur(J5_WRIST_PITCH) == 25.0f, "jog start pose reached");
+  run_jog(J2_SHOULDER, -45.0f, 3000);
+  CHECK(cur(J2_SHOULDER) == 90.0f, "J2 jog stops at 90 while J5 current is 25");
+  CHECK(cur(J5_WRIST_PITCH) == 25.0f, "J5 stays at 25 during the shoulder jog");
+  CHECK(tgt(J2_SHOULDER) == 90.0f, "jog target is clamped at 90, not left below it");
+
+  /* Jog crossing: J5 down stops at 65 while J2 is low, without lifting J2. */
+  CHECK(set_pair_target(90.0f, 140.0f) == MOTION_OK, "raise J5 to 140");
+  run_motion_ms(4000);
+  CHECK(set_pair_target(50.0f, 140.0f) == MOTION_OK, "lower J2 to 50");
+  run_motion_ms(4000);
+  CHECK(cur(J2_SHOULDER) == 50.0f && cur(J5_WRIST_PITCH) == 140.0f, "jog start pose reached");
+  run_jog(J5_WRIST_PITCH, -45.0f, 3000);
+  CHECK(cur(J5_WRIST_PITCH) == 65.0f, "J5 jog stops at 65 while J2 current is 50");
+  CHECK(cur(J2_SHOULDER) == 50.0f && tgt(J2_SHOULDER) == 50.0f, "J5 jog does not lift J2");
+  CHECK(tgt(J5_WRIST_PITCH) == 65.0f, "jog target is clamped at 65, not left below it");
+
+  /* J2 jog may cross below 90 while J5 is high. */
+  CHECK(set_pair_target(125.0f, 70.0f) == MOTION_OK, "raise J2 to 125 and J5 to 70");
+  run_motion_ms(4000);
+  CHECK(cur(J2_SHOULDER) == 125.0f && cur(J5_WRIST_PITCH) == 70.0f, "jog start pose reached");
+  run_jog(J2_SHOULDER, -45.0f, 2500);
+  CHECK(cur(J2_SHOULDER) == 50.0f, "J2 jog reaches its 50 floor while J5 is high");
+  CHECK(cur(J5_WRIST_PITCH) == 70.0f, "J5 stays high during the shoulder jog");
+
+  motion_set_speed(SPEED_FINE);
+  app_events_drain();
+
+  printf("== boot: no pulse until the first tick, then home one joint at a time\n");
   motion_init(); pi_link_init(); lcd_init(); modes_init();
   CHECK(htim3.ccr[0] == 0, "no pulse before the first control tick");
   CHECK(safety_state() == SAFETY_OK, "no e-stop: safety ok at boot");
-  run_ms(100);
-  CHECK(htim3.ccr[0] == 1460, "first pulse = home pose (90 deg)");
+  run_ms(20);
+  CHECK(htim4.ccr[3] == 891 && htim3.ccr[0] == 0 && htim3.ccr[1] == 0 && htim4.ccr[0] == 0 &&
+        htim4.ccr[1] == 0 && htim4.ccr[2] == 0, "first tick: only the gripper gets its home pulse");
+  run_ms(MOTION_BOOT_STAGGER_MS);
+  CHECK(htim3.ccr[0] == 1407 && htim3.ccr[1] == 0, "one stagger later: J1 too, J2 still waits");
+  {
+    int max_new = 0;
+    for (uint32_t ms = 0; ms < BOOT_MS; ms += 20) {
+      int before = (htim3.ccr[0] != 0) + (htim3.ccr[1] != 0) + (htim4.ccr[0] != 0) + (htim4.ccr[1] != 0) +
+                   (htim4.ccr[2] != 0) + (htim4.ccr[3] != 0);
+      run_ms(20);
+      int after = (htim3.ccr[0] != 0) + (htim3.ccr[1] != 0) + (htim4.ccr[0] != 0) + (htim4.ccr[1] != 0) +
+                  (htim4.ccr[2] != 0) + (htim4.ccr[3] != 0);
+      if (after - before > max_new) max_new = after - before;
+    }
+    CHECK(max_new <= 1, "never two joints start in the same tick");
+  }
+  CHECK(htim3.ccr[0] == 1407, "J1 first pulse = home 85 deg (1407 us)");
+  CHECK(htim3.ccr[1] == 1823, "J2 first pulse = home 125 deg (1823 us)");
+  CHECK(htim4.ccr[0] == 2123, "J3 first pulse = home 145 deg (2123 us)");
+  CHECK(htim4.ccr[1] == 1440, "J4 first pulse = home 90 deg (1440 us)");
+  CHECK(htim4.ccr[2] == 901,  "J5 first pulse = home 25 deg (901 us)");
+  CHECK(htim4.ccr[3] == 891,  "J6 first pulse = home 40 deg (891 us)");
 
   printf("== voice mode: never moves on its own\n");
   CHECK(modes_current() == MODE_VOICE, "boots in voice mode");
   run_ms(500);
-  CHECK(cur(0) == 90.0f, "idle voice mode does not move");
+  CHECK(cur(0) == 85.0f, "idle voice mode does not move");
 
   printf("== mode switch from the lcd mode cards\n");
-  app_event_post(EVT_TOUCH_MODE_TAB, MODE_CARTESIAN, 0, 0, 0); run_ms(60);
-  CHECK(modes_current() == MODE_CARTESIAN, "touch card -> cartesian");
+  motion_set_speed(SPEED_FAST);                        /* Cartesian entry must restore FINE */
+  {
+    joint_vec_t before, after, voice_out;
+    cart_pose_t est;
+    motion_get_target(&before);
+    app_event_post(EVT_TOUCH_MODE_TAB, MODE_CARTESIAN, 0, 0, 0); run_ms(60);
+    CHECK(modes_current() == MODE_CARTESIAN, "touch card -> cartesian");
+    motion_get_target(&after);
+    int same = 1;
+    for (int j = 0; j < ARM_N_JOINTS; j++) if (after.deg[j] != before.deg[j]) same = 0;
+    CHECK(same, "entering cartesian sets no target and moves nothing");
+    CHECK(kin_fk_enabled() && !kin_ik_enabled(), "default build: FK on, global kin_ik() off");
+    CHECK(kin_ik_voice_enabled(), "default build: voice IK is on (its own guard)");
+    CHECK(kin_ik_cartesian_enabled(), "default build: Cartesian IK is on");
+    CHECK(strcmp(screen_line(0), "X: 251 mm") == 0, "cartesian is ready and describes the FK pose");
+    CHECK(motion_get_speed() == SPEED_FINE, "cartesian entry forces the safe FINE speed");
+    CHECK(kin_fk(&before, &est) == KIN_OK, "FK estimate available for the lcd");
+    voice_out = before;
+    CHECK(kin_ik(&est, &before, &voice_out) == KIN_NOT_READY,
+          "global kin_ik() stays fail-closed (modes use their own entry points)");
+
+    /* 5 mm up from home is outside the J5 limit: refuse, hold, keep the accepted pose. */
+    char z_line[LCD_COLS];
+    snprintf(z_line, sizeof z_line, "%s", screen_line(2));
+    motion_get_target(&before);
+    app_event_post(EVT_ENC_STEP, 0, 1, 0, 0); run_ms(500);
+    motion_get_target(&after);
+    same = 1;
+    for (int j = 0; j < ARM_N_JOINTS; j++) if (after.deg[j] != before.deg[j]) same = 0;
+    CHECK(same, "Z+ refusal holds the previous target (no old motion continues)");
+    CHECK(strcmp(screen_line(2), z_line) == 0, "Z+ refusal does not advance the accepted pose");
+
+    /* 5 mm down from home is accepted; J4 finishes at the IK reference, J6 is untouched. */
+    float z0 = est.z_mm;
+    app_event_post(EVT_ENC_STEP, 0, -1, 0, 0); run_ms(2000);
+    motion_get_target(&after);
+    CHECK(fabsf(after.deg[J4_WRIST_ROLL] - ARM_J4_ZERO_DEG) < 0.01f,
+          "the first accepted move rolls J4 to the IK reference");
+    CHECK(fabsf(cur(J4_WRIST_ROLL) - ARM_J4_ZERO_DEG) < 0.01f,
+          "J4 finishes the 2 deg roll inside the bench-tested range");
+    CHECK(after.deg[J3_ELBOW] > before.deg[J3_ELBOW] + 1.0f, "Z- reaches a new IK target");
+    CHECK(kin_fk(&after, &est) == KIN_OK && fabsf(est.z_mm - (z0 - 5.0f)) < 0.5f,
+          "encoder -1 -> 5 mm down");
+    CHECK(after.deg[J6_GRIPPER] == before.deg[J6_GRIPPER], "a Z move leaves the gripper alone");
+
+    /* The gripper is manual in Cartesian: only an explicit press toggles it. */
+    float j6 = tgt(J6_GRIPPER);
+    app_event_post(EVT_ENC_PRESS, 0, 0, 0, 0); run_ms(200);
+    CHECK(tgt(J6_GRIPPER) != j6, "encoder press still toggles the manual gripper");
+
+    /* Restore home before the rest of the suite (J1 is moved by the IK solution). */
+    joint_vec_t home;
+    for (int j = 0; j < ARM_N_JOINTS; j++) home.deg[j] = servo_cal(j)->home_deg;
+    CHECK(motion_set_target_exact(&home) == MOTION_OK, "cartesian test can return home");
+    run_ms(3000);
+    CHECK(fabsf(cur(J1_BASE) - 85.0f) < 0.01f, "home restored before manual-mode tests");
+  }
   app_event_post(EVT_TOUCH_MODE_TAB, MODE_JOINT_GROUP, 0, 0, 0); run_ms(60);
   CHECK(modes_current() == MODE_JOINT_GROUP, "touch card -> joint group");
 
   printf("== manual motion: no hold-to-enable any more\n");
   motion_set_joint_target(J1_BASE, 100.0f);
   run_ms(500);
-  CHECK(cur(0) > 94.5f && cur(0) < 95.5f, "fine speed 10 deg/s: ~5 deg in 0.5 s");
+  /* 0.25 s ramp to 10 deg/s (1.25 deg), then 0.25 s at 10 deg/s (2.5 deg): ~3.75 deg in 0.5 s */
+  CHECK(cur(0) > 88.25f && cur(0) < 89.25f, "fine speed 10 deg/s after a 0.25 s ramp: ~3.75 deg in 0.5 s");
+  run_ms(1500);
+  CHECK(cur(0) == 100.0f && motion_is_idle(), "ramps down and stops exactly on the target");
+
+  printf("== motion: synchronised joints, acceleration ramp, smooth reversal, hold stops at once\n");
+  {
+    joint_vec_t t;
+    motion_get_current(&t);
+    float j1_0 = t.deg[J1_BASE], j3_0 = t.deg[J3_ELBOW];
+    t.deg[J1_BASE] -= 20.0f;                         /* J1 20 deg, J3 5 deg in one move */
+    t.deg[J3_ELBOW] -= 5.0f;
+    CHECK(motion_set_target_exact(&t) == MOTION_OK, "two-joint move accepted");
+    int in_step = 1, first_ok = 0, t1 = -1, t3 = -1;
+    float prev = 0.0f, max_jerk = 0.0f;
+    for (int i = 0; i < 250; i++) {
+      run_ms(20);
+      float d1 = j1_0 - cur(J1_BASE), d3 = j3_0 - cur(J3_ELBOW);
+      if (i == 4) first_ok = d1 < 0.6f;                /* 100 ms: still ramping (full speed = 1 deg) */
+      if (d1 > 0.5f && d1 < 19.5f && fabsf(4.0f * d3 - d1) > 0.6f) in_step = 0;
+      if (t1 < 0 && d1 == 20.0f) t1 = i;
+      if (t3 < 0 && d3 == 5.0f) t3 = i;
+      float step = d1 - prev;
+      prev = d1;
+      (void)step;
+    }
+    CHECK(first_ok, "starts with a ramp, not at full speed");
+    CHECK(in_step, "J3 moves in step with J1 (a quarter of J1's move all the way)");
+    CHECK(t1 >= 0 && t3 >= 0 && abs(t1 - t3) <= 1, "both joints arrive together");
+
+    /* reversal: going +, the target jumps behind: speed changes sign gradually */
+    float p0 = cur(J1_BASE), last = p0, last_step = 0.0f;
+    motion_set_joint_target(J1_BASE, p0 + 15.0f);
+    run_ms(600);
+    motion_set_joint_target(J1_BASE, p0 - 5.0f);
+    last = cur(J1_BASE);
+    last_step = 0.2f;                                /* moving + at 10 deg/s = 0.2 deg per tick */
+    for (int i = 0; i < 200; i++) {
+      run_ms(20);
+      float s = cur(J1_BASE) - last;
+      if (fabsf(s - last_step) > max_jerk) max_jerk = fabsf(s - last_step);
+      last_step = s;
+      last = cur(J1_BASE);
+    }
+    CHECK(max_jerk < 0.02f, "reversal: the step per tick changes by at most accel * dt^2 (no jump)");
+    CHECK(cur(J1_BASE) == p0 - 5.0f, "and ends exactly on the new target");
+
+    motion_set_joint_target(J1_BASE, p0 + 10.0f);
+    run_ms(500);
+    motion_hold();
+    float at = cur(J1_BASE);
+    run_ms(200);
+    CHECK(cur(J1_BASE) == at, "motion_hold stops at once (no coasting)");
+    (void)prev;
+  }
 
   printf("== jog timeout: a stale jog stops by itself\n");
   motion_jog(J2_SHOULDER, 10.0f);                  /* sent once, never refreshed */
   float j2 = cur(1);
   run_ms(1000);
   CHECK(cur(1) - j2 < 2.5f, "jog not refreshed: stops after ~150 ms, not 10 deg");
+
+  printf("== jog release: the ramped joint stops where it is, another joint's move is kept\n");
+  {
+    motion_set_speed(SPEED_FAST);
+    float j1_goal = cur(J1_BASE) + 10.0f;
+    motion_set_joint_target(J1_BASE, j1_goal);
+    for (int i = 0; i < 25; i++) { motion_jog(J3_ELBOW, -45.0f); g_tick += 20; motion_tick(); }   /* 0.5 s FAST */
+    float moved = 0.0f;
+    motion_jog(J3_ELBOW, 0.0f);                      /* stick back to the centre */
+    float at = cur(J3_ELBOW);
+    for (int i = 0; i < 50; i++) {
+      g_tick += 20; motion_tick();
+      if (fabsf(cur(J3_ELBOW) - at) > moved) moved = fabsf(cur(J3_ELBOW) - at);
+    }
+    CHECK(moved == 0.0f, "jog release: the joint stops at once (it used to coast ~5 deg)");
+    CHECK(cur(J1_BASE) == j1_goal, "an absolute move on another joint is not cancelled");
+    motion_set_speed(SPEED_FINE);
+  }
+
+  printf("== braking: a fast joint whose new move is tiny (small share) stops within its ramp distance\n");
+  {
+    joint_vec_t t;
+    motion_set_speed(SPEED_FAST);
+    float j1_0 = cur(J1_BASE);
+    motion_set_joint_target(J1_BASE, j1_0 + 30.0f);
+    for (int i = 0; i < 15; i++) { g_tick += 20; motion_tick(); }   /* 0.3 s: J1 at full speed */
+    float at = cur(J1_BASE);
+    motion_get_current(&t);
+    t.deg[J4_WRIST_ROLL] += 40.0f;                   /* the big move: J1's share of it is 5 % */
+    CHECK(motion_set_target_exact(&t) == MOTION_OK, "new target: J1 stays, J4 +40");
+    float over = 0.0f;
+    for (int i = 0; i < 300; i++) {
+      g_tick += 20; motion_tick();
+      if (cur(J1_BASE) - at > over) over = cur(J1_BASE) - at;
+    }
+    CHECK(over < 6.0f, "J1 coasts at most its full-accel stop (~5.6 deg), not ~100 deg at 5 % accel");
+    CHECK(cur(J1_BASE) == at && cur(J4_WRIST_ROLL) == t.deg[J4_WRIST_ROLL], "both end on the new target");
+    t.deg[J4_WRIST_ROLL] -= 40.0f;
+    (void)motion_set_target_exact(&t);
+    for (int i = 0; i < 300; i++) { g_tick += 20; motion_tick(); }
+    motion_set_speed(SPEED_FINE);
+  }
+
+  printf("== coupled reversal: an accepted J2/J5 target is never rewritten by a coast\n");
+  {
+    joint_vec_t t, g;
+    motion_get_current(&t);
+    t.deg[J2_SHOULDER] = 120.0f;
+    t.deg[J5_WRIST_PITCH] = 70.0f;
+    CHECK(motion_set_target_exact(&t) == MOTION_OK, "setup: J2 120, J5 70 (wrist up)");
+    for (int i = 0; i < 400; i++) { g_tick += 20; motion_tick(); }
+    motion_set_speed(SPEED_FAST);
+    t.deg[J2_SHOULDER] = 60.0f;
+    CHECK(motion_set_target_exact(&t) == MOTION_OK, "J2 down to 60 (allowed: J5 70)");
+    for (int i = 0; i < 200 && cur(J2_SHOULDER) > 93.0f; i++) { g_tick += 20; motion_tick(); }
+    CHECK(cur(J2_SHOULDER) <= 93.0f && cur(J2_SHOULDER) > 90.0f, "J2 near 93, still moving down fast");
+    t.deg[J2_SHOULDER] = 100.0f;
+    t.deg[J5_WRIST_PITCH] = 25.0f;
+    CHECK(motion_set_target_exact(&t) == MOTION_OK, "exact J2 100 / J5 25 accepted (J2 still above 90)");
+    int kept = 1, safe = 1;
+    for (int i = 0; i < 400; i++) {
+      g_tick += 20; motion_tick();
+      motion_get_target(&g);
+      if (g.deg[J5_WRIST_PITCH] != 25.0f || g.deg[J2_SHOULDER] != 100.0f) kept = 0;
+      if (cur(J2_SHOULDER) < 90.0f && cur(J5_WRIST_PITCH) < 65.0f) safe = 0;
+    }
+    CHECK(kept, "the accepted target is never changed (J5 stays 25, not 65)");
+    CHECK(safe, "the coupling holds every tick");
+    CHECK(cur(J2_SHOULDER) == 100.0f && cur(J5_WRIST_PITCH) == 25.0f, "and the arm reaches the accepted target");
+    motion_set_speed(SPEED_FINE);
+  }
 
   printf("== fast speed toggle + arrival event\n");
   app_events_drain();
@@ -307,7 +957,8 @@ int main(void)
   CHECK(strcmp(screen_line(0), "S2 CONFIRM BOX") == 0, "OBJ red_box -> S2");
   CHECK(strcmp(screen_line(1), "182 -45 30 mm") == 0, "position shown for confirmation");
   say("yes");
-  CHECK(strcmp(screen_line(0), "S2 CONFIRM BOX") == 0, "yes with no ik yet: refuses to move, stays S2");
+  CHECK(strcmp(screen_line(0), "S2 CONFIRM BOX") == 0,
+        "yes: 182 -45 30 is out of the arm's reach at every pitch: refuses to move, stays S2");
   say("stop");
   CHECK(strcmp(screen_line(0), "S0 IDLE") == 0, "stop in a waiting state cancels -> S0");
 
@@ -323,16 +974,18 @@ int main(void)
 
   printf("== scripts: home, stop while moving, recovery from S10\n");
   motion_set_joint_target(J1_BASE, 60.0f); run_ms(20);   /* move away from home first */
-  run_ms(4000);
+  run_ms(6000);
   CHECK(cur(0) == 60.0f, "voice mode moves to a set target");
   say("home");
   CHECK(strcmp(screen_line(0), "S11 CONFIRM HOME") == 0, "home from S0 asks first");
   CHECK(cur(0) == 60.0f, "S11: nothing moves before yes");
   say("yes");
   CHECK(strcmp(screen_line(0), "S9 GOING HOME") == 0, "home + yes -> moving");
+  CHECK(lcd_status_shown() == LCD_STATUS_PROCESSING, "lcd: PROCESSING while going home");
   run_ms(500);
   say("stop");
   CHECK(strcmp(screen_line(0), "S10 STOPPED") == 0, "stop while moving -> S10");
+  CHECK(lcd_status_shown() == LCD_STATUS_STOPPED_EMPTY, "lcd: STOPPED, gripper empty");
   float at = cur(0);
   run_ms(1000);
   CHECK(cur(0) == at, "S10: arm holds");
@@ -344,10 +997,209 @@ int main(void)
   say("no");
   CHECK(strcmp(screen_line(0), "S10 STOPPED") == 0, "no -> back to S10, still holding");
   say("home"); say("yes");
-  run_ms(15000);   /* gripper 90->30 at 10 deg/s = 6 s, then 30 deg back home = 3 s */
-  CHECK(cur(0) == 90.0f, "home from S10 reaches home");
+  run_ms(15000);   /* Allow the configured gripper step and arm-home move to finish.
+                   * This checks completion, not physical open/close direction. */
+  CHECK(cur(0) == 85.0f, "home from S10 reaches home");
   CHECK(strcmp(screen_line(0), "S0 IDLE") == 0, "then back to S0");
+  CHECK(lcd_status_shown() == 0, "lcd: no pop-up in S0");
   CHECK(cur(5) == APP_GRIPPER_OPEN_DEG, "home from S10 opened the gripper");
+
+  printf("== gripper: setpoints and direction (J6 replacement, lower angle = closed)\n");
+  CHECK(APP_GRIPPER_CLOSED_DEG == servo_cal(J6_GRIPPER)->min_deg, "closed setpoint = J6 safe min (0)");
+  CHECK(APP_GRIPPER_OPEN_DEG == servo_cal(J6_GRIPPER)->max_deg, "open setpoint = J6 safe max (60)");
+  CHECK(APP_GRIPPER_OPEN_DEG > APP_GRIPPER_CLOSED_DEG, "increasing J6 opens");
+  CHECK(gripper_is_closed_at(0.0f) && gripper_is_closed_at(10.0f), "low angles read as closed");
+  CHECK(!gripper_is_closed_at(40.0f) && !gripper_is_closed_at(60.0f), "home 40 and 60 read as open");
+  {
+    float j6 = cur(J6_GRIPPER);
+    CHECK(!gripper_set_deg(120.0f), "a setpoint outside the J6 limits is reported as failed");
+    CHECK(tgt(J6_GRIPPER) == j6, "the clamped command is cancelled: J6 target stays where it was");
+    run_ms(2000);
+    CHECK(cur(J6_GRIPPER) == j6, "and J6 does not move toward the clamped end");
+  }
+  CHECK(gripper_command(true), "close accepted");
+  run_ms(8000);
+  CHECK(cur(J6_GRIPPER) == APP_GRIPPER_CLOSED_DEG, "close reaches 0");
+  CHECK(gripper_command(false), "open accepted");
+  run_ms(8000);
+  CHECK(cur(J6_GRIPPER) == APP_GRIPPER_OPEN_DEG, "open reaches 60");
+
+  printf("== voice HOME from J2 below 90: shoulder up first, then home\n");
+  CHECK(strcmp(screen_line(0), "S0 IDLE") == 0, "voice mode idle");
+  CHECK(set_pair_target(125.0f, 70.0f) == MOTION_OK, "wrist up to 70");
+  run_ms(8000);
+  CHECK(set_pair_target(50.0f, 70.0f) == MOTION_OK, "shoulder down to 50 (allowed: wrist >= 65)");
+  run_ms(15000);
+  CHECK(cur(J2_SHOULDER) == 50.0f && cur(J5_WRIST_PITCH) == 70.0f, "start pose J2 50 / J5 70");
+  {
+    float j6 = cur(J6_GRIPPER);
+    say("home");
+    CHECK(strcmp(screen_line(0), "S11 CONFIRM HOME") == 0, "home asks first");
+    say("yes");
+    CHECK(strcmp(screen_line(0), "S9 GOING HOME") == 0, "yes -> going home");
+    int unsafe_home = 0, done_early = 0;
+    for (uint32_t ms = 0; ms < 30000u && strcmp(screen_line(0), "S9 GOING HOME") == 0; ms += 20) {
+      run_ms(20);
+      if (cur(J2_SHOULDER) < 90.0f - 0.01f && cur(J5_WRIST_PITCH) < 65.0f - 0.01f) unsafe_home = 1;
+    }
+    if (cur(J5_WRIST_PITCH) != 25.0f) done_early = 1;
+    CHECK(!unsafe_home, "never J2 < 90 with J5 < 65 on the way");
+    CHECK(strcmp(screen_line(0), "S0 IDLE") == 0, "HOME finishes -> S0");
+    CHECK(!done_early, "finished only after the wrist reached its home 25 (no early finish at 65)");
+    CHECK(cur(J1_BASE) == 85.0f && cur(J2_SHOULDER) == 125.0f && cur(J3_ELBOW) == 145.0f &&
+          cur(J4_WRIST_ROLL) == 90.0f && cur(J5_WRIST_PITCH) == 25.0f, "every arm joint is at its home");
+    CHECK(cur(J6_GRIPPER) == j6, "home from S0 does not move the gripper");
+  }
+
+  printf("== lcd follows the knob: one selection, owned by the mode; FINE / FAST tag\n");
+  lcd_pass(100);
+  tap(100, 160);                                       /* home: Start */
+  tap(80, 60);                                         /* select: Single card */
+  lcd_pass(200);
+  CHECK(modes_current() == MODE_SINGLE_JOINT, "Single card -> single joint mode");
+  CHECK(mode_single_joint_selected() == 0, "starts on J1");
+  CHECK(lcd_drew_text(motion_get_speed() == SPEED_FAST ? "FAST" : "FINE"), "the page shows the speed tag on entry");
+  lcd_clear_log();
+  app_event_post(EVT_ENC_STEP, 0, 2, 0, 0);            /* knob: two clicks */
+  lcd_pass(40);
+  CHECK(mode_single_joint_selected() == 2, "knob +2 -> the joystick now moves J3");
+  CHECK(lcd_drew_asset(LCD_A_SINGLE_ARM(2)) && lcd_drew_asset(LCD_A_SINGLE_LABEL(2)), "the page redraws J3 at once");
+  lcd_clear_log();
+  tap(100, 70);                                        /* on-screen ">" */
+  CHECK(mode_single_joint_selected() == 3, "the > arrow moves the mode's selection too (J4)");
+  CHECK(lcd_drew_asset(LCD_A_SINGLE_ARM(3)), "and the page shows J4");
+  tap(30, 70);                                         /* on-screen "<" */
+  CHECK(mode_single_joint_selected() == 2, "the < arrow goes back to J3");
+  {
+    speed_level_t before = motion_get_speed();
+    lcd_clear_log();
+    app_event_post(EVT_JOY_PRESS, 0, 0, 0, 0);         /* joystick press = fine / fast */
+    lcd_pass(40);
+    CHECK(motion_get_speed() != before, "joystick press toggles the speed");
+    CHECK(lcd_drew_text(motion_get_speed() == SPEED_FAST ? "FAST" : "FINE"), "the tag shows the new speed");
+    app_event_post(EVT_JOY_PRESS, 0, 0, 0, 0);
+    lcd_pass(40);
+    CHECK(motion_get_speed() == before, "press again: back");
+  }
+  tap(40, 210);                                        /* Back -> select */
+  tap(230, 60);                                        /* Group card */
+  lcd_pass(200);
+  CHECK(modes_current() == MODE_JOINT_GROUP, "Group card -> joint group mode");
+  lcd_clear_log();
+  app_event_post(EVT_ENC_STEP, 0, 1, 0, 0);
+  lcd_pass(40);
+  CHECK(mode_joint_group_selected() == 1, "knob +1 -> group 2 (J3/J4)");
+  CHECK(lcd_drew_asset(LCD_A_GROUP_ARM(1)) && lcd_drew_asset(LCD_A_GROUP_LABEL(1)), "the page redraws group 2");
+  tap(130, 60);                                        /* on-screen ">" */
+  CHECK(mode_joint_group_selected() == 2, "the > arrow -> group 3 (J5/J6)");
+  tap(40, 210);                                        /* Back */
+  tap(230, 170);                                       /* Voice card: leave the joint modes */
+  lcd_pass(200);
+  CHECK(modes_current() == MODE_VOICE, "back to voice mode");
+
+  printf("== cartesian roll guard: far J4 blocks entry, align and re-enter recovers\n");
+  {
+    joint_vec_t before, after;
+    motion_set_joint_target(J4_WRIST_ROLL, 120.0f);
+    run_ms(4000);
+    CHECK(fabsf(cur(J4_WRIST_ROLL) - 120.0f) < 0.01f, "manual J4 setup reaches 120 deg");
+    motion_get_target(&before);
+    app_event_post(EVT_TOUCH_MODE_TAB, MODE_CARTESIAN, 0, 0, 0); run_ms(60);
+    CHECK(modes_current() == MODE_CARTESIAN, "cartesian entered with far J4");
+    char align[LCD_COLS];
+    snprintf(align, sizeof align, "ALIGN J4 %d", (int)ARM_J4_ZERO_DEG);
+    CHECK(strcmp(screen_line(0), align) == 0, "far J4 shows the model reference to align to");
+    motion_get_target(&after);
+    int same = 1;
+    for (int j = 0; j < ARM_N_JOINTS; j++) if (after.deg[j] != before.deg[j]) same = 0;
+    CHECK(same, "blocked entry sets no target");
+    tap(40, 210);                                      /* voice page Back -> select */
+    lcd_clear_log();
+    tap(80, 170);                                      /* Cartesian card -> the cartesian page */
+    CHECK(lcd_drew_text(align), "the cartesian page shows why it is blocked (ALIGN J4)");
+    lcd_clear_log();
+    lcd_pass(3500);
+    CHECK(lcd_drew_text("XYZ ESTIMATED, mm"), "after the message time the XYZ label comes back");
+    lcd_clear_log();
+    app_event_post(EVT_ENC_STEP, 0, -1, 0, 0);
+    lcd_pass(100);
+    CHECK(lcd_drew_text(align), "a knob turn while blocked shows it again");
+    motion_get_target(&before);
+    app_event_post(EVT_ENC_STEP, 0, -1, 0, 0);
+    app_event_post(EVT_ENC_PRESS, 0, 0, 0, 0);
+    run_ms(500);
+    motion_get_target(&after);
+    same = 1;
+    for (int j = 0; j < ARM_N_JOINTS; j++) if (after.deg[j] != before.deg[j]) same = 0;
+    CHECK(same, "knob and gripper do nothing while the roll guard blocks");
+    CHECK(fabsf(cur(J4_WRIST_ROLL) - 120.0f) < 0.01f, "the blocked mode does not auto-align J4");
+
+    /* Align in a manual mode, then re-enter. */
+    app_event_post(EVT_TOUCH_MODE_TAB, MODE_JOINT_GROUP, 0, 0, 0); run_ms(60);
+    motion_set_joint_target(J4_WRIST_ROLL, ARM_J4_ZERO_DEG);
+    run_ms(4000);
+    CHECK(fabsf(cur(J4_WRIST_ROLL) - ARM_J4_ZERO_DEG) < 0.01f, "manual align reaches the reference");
+    app_event_post(EVT_TOUCH_MODE_TAB, MODE_CARTESIAN, 0, 0, 0); run_ms(60);
+    CHECK(modes_current() == MODE_CARTESIAN, "cartesian re-entered after alignment");
+    CHECK(strcmp(screen_line(0), align) != 0, "aligned J4 clears the roll block");
+    CHECK(strncmp(screen_line(0), "X: ", 3) == 0, "aligned J4 makes Cartesian ready");
+  }
+
+  printf("== cartesian knob: a refused detent holds and rebases; turning back goes back from where the arm is\n");
+  {
+    joint_vec_t setup = { .deg = { 85.0f, 125.0f, 157.0f, 88.0f, 35.0f, 40.0f } };
+    joint_vec_t current, target;
+    cart_pose_t start_est, held_est, up_est, mid_est;
+
+    app_event_post(EVT_TOUCH_MODE_TAB, MODE_JOINT_GROUP, 0, 0, 0); run_ms(60);
+    CHECK(motion_set_target_exact(&setup) == MOTION_OK, "near-bench setup pose accepted");
+    run_ms(3000);
+    motion_get_current(&current);
+    CHECK(kin_fk(&current, &start_est) == KIN_OK, "setup pose FK");
+    app_event_post(EVT_TOUCH_MODE_TAB, MODE_CARTESIAN, 0, 0, 0); run_ms(60);
+    CHECK(modes_current() == MODE_CARTESIAN, "cartesian on the clear setup pose");
+    float j6 = tgt(J6_GRIPPER);
+
+    /* Queue two accepted -5 mm requests in one main-loop pass, before the arm moves. */
+    app_event_post(EVT_ENC_STEP, 0, -1, 0, 0);
+    app_event_post(EVT_ENC_STEP, 0, -1, 0, 0);
+    run_ms(20);
+    CHECK(fabsf(cur(J3_ELBOW) - setup.deg[J3_ELBOW]) < 0.01f, "two queued detents have not arrived");
+
+    /* An unreachable upward request is refused while the two accepted requests are still ahead:
+     * the arm holds where it is and the next detent starts from there. */
+    app_event_post(EVT_ENC_STEP, 0, 100, 0, 0);
+    run_ms(20);
+    motion_get_current(&current);
+    motion_get_target(&target);
+    int held = 1;
+    for (int j = 0; j < ARM_N_JOINTS; j++) if (target.deg[j] != current.deg[j]) held = 0;
+    CHECK(held, "the refused detent holds the arm where it is");
+    CHECK(kin_fk(&current, &held_est) == KIN_OK && held_est.z_mm > start_est.z_mm - 5.0f,
+          "held well above the queued -10 mm");
+
+    /* One detent up: from the held pose, Z +5 (it used to stay 5 mm below the start and keep descending). */
+    app_event_post(EVT_ENC_STEP, 0, 1, 0, 0);
+    run_ms(20);
+    motion_get_target(&target);
+    CHECK(kin_fk(&target, &up_est) == KIN_OK, "reverse detent target FK");
+    CHECK(fabsf(up_est.z_mm - (held_est.z_mm + 5.0f)) < 0.5f && up_est.z_mm > start_est.z_mm + 3.0f,
+          "after a refusal, one detent up goes up: Z +5 from the held pose");
+    run_ms(3000);
+
+    /* No refusal: two detents down, then one up before arrival goes up from where the arm is. */
+    app_event_post(EVT_ENC_STEP, 0, -1, 0, 0);
+    app_event_post(EVT_ENC_STEP, 0, -1, 0, 0);
+    run_ms(200);
+    motion_get_current(&current);
+    CHECK(kin_fk(&current, &mid_est) == KIN_OK, "mid-way FK");
+    app_event_post(EVT_ENC_STEP, 0, 1, 0, 0);
+    run_ms(20);
+    motion_get_target(&target);
+    CHECK(kin_fk(&target, &up_est) == KIN_OK && up_est.z_mm > mid_est.z_mm + 3.5f,
+          "turning back before arrival: the new target is above the arm, not 5 mm under the start");
+    CHECK(fabsf(tgt(J6_GRIPPER) - j6) < 0.001f, "the knob path does not touch the gripper");
+  }
 
   printf("== fatal fault during motion: freezes (last test, latches until reset)\n");
   motion_set_joint_target(J1_BASE, 120.0f);
@@ -356,7 +1208,7 @@ int main(void)
   at = cur(0);
   run_ms(40);
   CHECK(safety_state() == SAFETY_FATAL_FAULT, "fatal fault -> safety FAULT");
-  CHECK(cur(0) == at && at > 90.0f, "fault freezes mid-move");
+  CHECK(cur(0) == at && at > 85.0f && at < 120.0f, "fault freezes mid-move");
   CHECK(tgt(0) == at, "target reset to the current angle (nothing jumps later)");
   run_ms(1000);
   CHECK(cur(0) == at, "stays frozen");

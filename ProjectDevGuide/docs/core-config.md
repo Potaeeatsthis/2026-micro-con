@@ -119,7 +119,7 @@ stays in its reset state (an input nobody reads), which is harmless. ("Set all f
 Manager stays off: it would reconfigure every free pin on the board.) Manual modes (Single Joint, Joint
 Group, Cartesian) move whenever no fatal fault is latched, with no Enable button.
 
-**Joystick press (KY-023 SW) = Fine/Fast speed toggle in every manual mode**, accepted only while
+**Joystick press (KY-023 SW) = Fine/Fast speed toggle in every manual mode and in voice mode** (28 Oct 2026), accepted only while
 the stick is near its centre (so an accidental press while pushing the stick does nothing).
 The knob press (KY-040 SW) keeps the mode-specific actions from `robotic-arm-guide.md`.
 
@@ -164,6 +164,23 @@ never merged): the timers and pins above work on all six channels. Lessons for `
   (J1: 500 → 2430 µs over 180°), `APP_SPEED_FINE_DEG_S` 10 °/s gives 0.2° ≈ 2 µs per 20 ms frame,
   below the SG deadband, so an SG joint moves in jumps. The test ran at 60 °/s (≈ 13 µs per frame)
   and was smooth. Choose the fine speed with this in mind.
+
+**Motion profile (28 Oct 2026, `App/motion/motion.c`).** Each tick every joint has a velocity that
+changes by at most `speed / APP_RAMP_S` per second (`APP_RAMP_S` 0.25 s: FINE 10 deg/s is reached in
+0.25 s), and it brakes with the discrete stopping speed `sqrt(h^2 + 2 a |err|) - h` (`h = a dt / 2`) so it
+lands on the target with no residual step. Moves are synchronised: a joint's speed and acceleration are
+scaled by its share of the largest remaining error (min 5 %), so all joints start and arrive together.
+Braking (and reversing) always uses the full accel, so a fast joint given a small share of a new move
+stops within its normal ramp distance. Jogged joints are speed commands, outside the synchronisation.
+`motion_hold()`, the jog timeout, a jog release (stick back to 0: the ramped joint trails the jog target,
+so only clearing the speed kept it moving ~5 deg at FAST) and a fatal fault set the velocity to 0 at once.
+A coasting reversal never enters the J2/J5 coupled zone that the accepted endpoint avoids (the floor uses
+the current pose and the pending target), so an accepted exact target is never rewritten by the tick.
+PWM is still 50 Hz and the joint limits are unchanged.
+
+**Timing log.** `APP_TIMING_LOG 1` (local config) prints every 2 s on USART3 the slowest pass of
+`voice_step()`, `modes_step()` (Cartesian / voice IK runs here), `lcd_step()` and the whole loop, in
+microseconds. Measure with it before changing any update rate.
 
 ### 4.2 KY-040 — TIM1 encoder mode
 Combined channels: Encoder Mode, **Encoder Mode TI1 and TI2**, prescaler 0, period 65535,
@@ -429,7 +446,7 @@ Decided 20 Oct 2026: LCD = the 2.8″ ILI9341 board from Lab08 (with touch); KY-
 | 2 | Pi message format details; Pi sends object XYZ in the **robot base frame**? | `pi_link/` only — not the `.ioc` |
 | 3 | Installed servo calibration: safe min/max, joint zero and home (unit-to-joint mapping confirmed J1-J6 = units 1-6) | `motion/` only — not the `.ioc` |
 | 4 | Optional PG9 pull-up (removes the boot-time `fault: code 7` without a Pi) | `.ioc`, owner's choice |
-| 5 | **Manual modes without Hold-to-Enable.** Decided 27 Oct 2026 (Supanut): no Hold-to-Enable; manual modes move whenever safety allows. Single Joint / Joint Group keep the 150 ms jog timeout; Cartesian moves only while the stick is pushed, and an encoder turn / knob press moves Z / the gripper at once | **done 27 Oct 2026** on `dev` (`motion/`, `modes/`, `safety/`) |
+| 5 | **Manual modes without Hold-to-Enable.** Decided 27 Oct 2026 (Supanut): no Hold-to-Enable; manual modes move whenever safety allows. Single Joint / Joint Group keep the 150 ms jog timeout; Cartesian moves only while the stick is pushed, and an encoder turn moves Z (5 mm) or pitch (1 deg, selected by the LCD Z / PITCH button) at once; a knob press still toggles the gripper | **done 27 Oct 2026** on `dev` (`motion/`, `modes/`, `safety/`); pitch selector 28 Oct 2026 |
 | 6 | Remove the E-stop and MODE code paths (`EVT_ESTOP_*`, `EVT_BTN_MODE`, `SAFETY_ESTOP`) | **done 27 Oct 2026** on `dev`; the event numbers stay, marked unused |
 | 7 | Drop PE7 / PE10 / PE12 from the `.ioc` | **done 27 Oct 2026** (v1.4 regenerate) |
 | 8 | Drop the limit switches (PE8 / PB11 / PE0 / PE2) and the servo-rail sense (PC3, ADC1 rank 3) from the `.ioc` and the code (`safety/`, `input/`, `app_config.h`, restart latch). Decided 27 Oct 2026 (Supanut) | **done 27 Oct 2026** (v1.4 regenerate); `EVT_RAIL_*` / `EVT_LIMIT_HIT` numbers stay, marked unused |

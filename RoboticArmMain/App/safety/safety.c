@@ -1,9 +1,4 @@
-/* safety.c
- *
- * motion is allowed unless a fatal fault was raised (app_fault_raise(..., true)).
- * removed hardware (core-config.md v1.4, 27 Oct 2026): e-stop, hold-to-enable and MODE buttons
- * (PE7 / PE12 / PE10), servo-rail sense (PC3) and the limit switches (PE8 / PB11 / PE0 / PE2).
- */
+/* safety.c - motion is allowed unless a fatal fault was raised */
 #include "safety/safety.h"
 #include "common/app_fault.h"
 

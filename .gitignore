@@ -40,3 +40,6 @@ ProjectDevGuide/tools/pi/sim_*.jpg
 
 # AI-tool memory stays local; task notes go in ProjectDevGuide/docs/ (AGENTS.md)
 .claude/
+
+# servo-cal-keys.ps1 results (copy the final values into ProjectDevGuide/docs/servo-calibration.md)
+code/servo-calibration/results/

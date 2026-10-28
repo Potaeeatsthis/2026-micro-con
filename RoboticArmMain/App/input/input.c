@@ -1,29 +1,13 @@
-/* input.c
+/* input.c - joystick, knob and buttons
  *
- * button debounce: sampled in the 50 Hz control tick; a press counts after 2 equal
- * samples (20-40 ms). sampling in a timer isr means a press is never missed while the
- * main loop is busy with the CNN or the LCD. the EXTI lines on these pins are kept
- * (course requirement + quick edge stats) but the decision is made here.
+ * Buttons are sampled in the 50 Hz tick; a press counts after 2 equal samples, so it is never
+ * missed while the main loop is busy. The EXTI lines stay on (course requirement).
  *
- * directions measured on the bench 2026-10-24, KY-023 mounted with its pins pointing left:
- * right = PA3 high, up (away from the user) = PC0 low, so JOY_Y_SIGN = -1 makes right and up
- * both positive. KY-040 clockwise counts up, ENC_SIGN = +1. if the module is mounted
- * differently on the final panel, re-measure and change only these signs.
+ * input_joy_x() is the operator's right (+), input_joy_y() the operator's up / away (+), whatever
+ * way the KY-023 is mounted (JOY_PINS_AWAY 1 = pins away from the operator, 0 = pins left).
  *
- * APP_INPUT_TEST (app_config_local.h only, bench measurement, needs APP_USE_MODES 0 and
- * APP_USE_MOTION 0): logs at 10 Hz what the stm32 sees, from input_step():
- *   joy: raw = last single conversion, avg = 10-sample mean (what the getters use),
- *        min-max = single samples in the last 100 ms, out = dead-zone output x1000
- *   joy: 2s window min / mean / max / peak-to-peak of single samples, every 2 s
- *   enc: TIM1 counter, raw delta since the last line, direction, total (only when it moved)
- *   btn: debounced press / release of ENC, JOY
- *   evt: every event input posts (what the modes receive), ENC_STEP with a running sum
- * APP_INPUT_LOG_EVENTS (app_config_local.h only): just the evt: lines, allowed with modes and
- * motion on (bench test of the modes, see ProjectDevGuide/docs/controls-bench-test.md).
- * with the modes on it also prints what the lcd would show (mode, fine/fast, the mode's
- * describe() lines) whenever it changes, at most 4 times a second: "screen: ...". read-only
- * getters, so the modes' reactions are visible while the lcd driver is not connected.
- * the isr part is a min/max/sum next to the existing averaging loop (no extra loop).
+ * Bench logs (app_config_local.h): APP_INPUT_TEST prints raw joystick / knob / button values,
+ * APP_INPUT_LOG_EVENTS prints the posted events and what the LCD would show.
  */
 #include "input/input.h"
 #include "common/app_config.h"
@@ -37,14 +21,26 @@
 #include "tim.h"
 
 #define ADC_CH            2u
-#define ADC_SAMPLES       20u                    /* per channel in the whole buffer */
-#define ADC_HALF_SAMPLES  (ADC_SAMPLES / 2u)     /* 10 per channel per half = 10 ms */
+#define ADC_SAMPLES       20u
+#define ADC_HALF_SAMPLES  (ADC_SAMPLES / 2u)
 #define ADC_FULL_SCALE    4095u
 
 #define JOY_DEADZONE      0.08f                  /* fraction of full deflection */
-#define JOY_CENTER_TOL    0.15f                  /* "near centre" for the fine/fast press */
+#define JOY_CENTER_TOL    0.15f                  /* near centre, for the fine/fast press */
+#ifndef JOY_PINS_AWAY
+#define JOY_PINS_AWAY     1                     /* 1 = pins away from the operator, 0 = pins left */
+#endif
+#if JOY_PINS_AWAY
+#define JOY_X_CH          1
+#define JOY_X_SIGN        -1.0f
+#define JOY_Y_CH          0
+#define JOY_Y_SIGN        -1.0f
+#else
+#define JOY_X_CH          0                     /* PA3 */
 #define JOY_X_SIGN        1.0f
-#define JOY_Y_SIGN        -1.0f                 /* up reads low on PC0, see header */
+#define JOY_Y_CH          1                     /* PC0 */
+#define JOY_Y_SIGN        -1.0f                 /* up reads low on PC0 */
+#endif
 #define ENC_SIGN          1
 #define ENC_COUNTS_PER_DETENT 4
 
@@ -79,10 +75,11 @@ static const btn_hw_t BTN_HW[BTN_COUNT] = {
   { ENC_SW_GPIO_Port,   ENC_SW_Pin },
   { JOY_SW_GPIO_Port,   JOY_SW_Pin },
 };
-static volatile uint8_t  s_btn_hist[BTN_COUNT];   /* last samples, bit0 = newest, 1 = pressed */
+static volatile uint8_t  s_btn_hist[BTN_COUNT];   /* bit0 = newest, 1 = pressed */
 static volatile bool     s_btn_state[BTN_COUNT];
-static volatile uint8_t  s_btn_press_flags;       /* set in isr, cleared in input_step */
-static volatile uint8_t  s_btn_release_flags;     /* same, for debounced releases */
+static volatile uint8_t  s_btn_press_flags;
+static volatile uint8_t  s_btn_release_flags;
+static volatile uint32_t s_btn_press_ms[BTN_COUNT];
 static volatile uint32_t s_exti_edges;
 
 /* encoder */
@@ -90,7 +87,7 @@ static int16_t s_enc_last;
 static int32_t s_enc_accum;
 
 #if APP_INPUT_TEST
-/* isr -> main loop, joystick X/Y only. read and reset with interrupts off */
+/* isr -> main loop, read and reset with interrupts off */
 static volatile uint16_t s_t_last[2];
 static volatile uint16_t s_t_min[2] = { 0xFFFFu, 0xFFFFu };
 static volatile uint16_t s_t_max[2];
@@ -109,7 +106,7 @@ void input_init(void)
     LOG_ERR("input: adc dma start failed\r\n");
     app_fault_raise(FAULT_INIT, false);
   }
-  if (HAL_TIM_Base_Start(&htim2) != HAL_OK) app_fault_raise(FAULT_INIT, false);  /* 1 kHz trigger */
+  if (HAL_TIM_Base_Start(&htim2) != HAL_OK) app_fault_raise(FAULT_INIT, false);
   LOG("input: init\r\n");
 }
 
@@ -152,6 +149,7 @@ void input_tick(void)
     s_btn_hist[b] = h;
     if (h == 0x03u && !s_btn_state[b]) {
       s_btn_state[b] = true;
+      s_btn_press_ms[b] = HAL_GetTick();
       s_btn_press_flags |= (uint8_t)(1u << b);
     } else if (h == 0x00u && s_btn_state[b]) {
       s_btn_state[b] = false;
@@ -174,13 +172,15 @@ static float axis(uint16_t raw, uint16_t center, float sign)
   if (span < 1.0f) span = 1.0f;
   float v = ((float)raw - (float)center) / span;
   if (absf(v) < JOY_DEADZONE) return 0.0f;
-  /* rescale so the output starts at 0 just outside the dead zone */
   v = (v > 0.0f) ? (v - JOY_DEADZONE) / (1.0f - JOY_DEADZONE) : (v + JOY_DEADZONE) / (1.0f - JOY_DEADZONE);
   return clampf(v * sign, -1.0f, 1.0f);
 }
 
-float input_joy_x(void) { return axis(s_raw[0], s_center_x, JOY_X_SIGN); }
-float input_joy_y(void) { return axis(s_raw[1], s_center_y, JOY_Y_SIGN); }
+/* centres are per ADC channel (raw[0] PA3, raw[1] PC0), not per operator axis */
+static uint16_t center_of(int ch) { return (ch == 0) ? s_center_x : s_center_y; }
+
+float input_joy_x(void) { return axis(s_raw[JOY_X_CH], center_of(JOY_X_CH), JOY_X_SIGN); }
+float input_joy_y(void) { return axis(s_raw[JOY_Y_CH], center_of(JOY_Y_CH), JOY_Y_SIGN); }
 
 bool input_joy_centered(void)
 {
@@ -197,7 +197,6 @@ static void calibrate_center_once(void)
   if (s_center_done || ms_since(HAL_GetTick(), s_init_ms) < 300u) return;
   s_center_done = true;
   uint16_t x = s_raw[0], y = s_raw[1];
-  /* only trust the reading if the stick looks released */
   if (x > 1748u && x < 2348u && y > 1748u && y < 2348u) {
     s_center_x = x;
     s_center_y = y;
@@ -206,7 +205,7 @@ static void calibrate_center_once(void)
 }
 
 #if INPUT_EVT_LOG
-static int32_t s_t_detents;              /* sum of posted EVT_ENC_STEP v[0] since boot */
+static int32_t s_t_detents;
 static void test_evt(evt_type_t type, const char *name, int32_t v0, bool ok)
 {
   if (type == EVT_ENC_STEP) {
@@ -221,7 +220,6 @@ static void test_evt(evt_type_t type, const char *name, int32_t v0, bool ok)
 #if INPUT_SCREEN_LOG
 #define SCREEN_LOG_MS 250u
 
-/* one line with what the lcd would show; printed only when it changed */
 static void test_screen_log(void)
 {
   static uint32_t last_ms;
@@ -244,9 +242,10 @@ static void test_screen_log(void)
 }
 #endif
 
-static void post(evt_type_t type, const char *name, int32_t v0)
+/* tick_ms = the debounced edge time, so a late loop pass doesn't make an old press look new */
+static void post(evt_type_t type, const char *name, int32_t v0, uint32_t tick_ms)
 {
-  bool ok = app_event_post(type, 0, v0, 0, 0);
+  bool ok = app_event_post_at(type, 0, v0, 0, 0, tick_ms);
 #if INPUT_EVT_LOG
   test_evt(type, name, v0, ok);
 #else
@@ -263,12 +262,14 @@ void input_step(void)
   __disable_irq();
   uint8_t flags = s_btn_press_flags;
   uint8_t released = s_btn_release_flags;
+  uint32_t enc_ms = s_btn_press_ms[BTN_ENC_I];
+  uint32_t joy_ms = s_btn_press_ms[BTN_JOY_I];
   s_btn_press_flags = 0u;
   s_btn_release_flags = 0u;
   __set_PRIMASK(p);
 
-  if (flags & (1u << BTN_ENC_I))  post(EVT_ENC_PRESS, "ENC_PRESS", 0);
-  if ((flags & (1u << BTN_JOY_I)) && input_joy_centered()) post(EVT_JOY_PRESS, "JOY_PRESS", 0);
+  if (flags & (1u << BTN_ENC_I))  post(EVT_ENC_PRESS, "ENC_PRESS", 0, enc_ms);
+  if ((flags & (1u << BTN_JOY_I)) && input_joy_centered()) post(EVT_JOY_PRESS, "JOY_PRESS", 0, joy_ms);
 
   int16_t cnt = (int16_t)__HAL_TIM_GET_COUNTER(&htim1);
   int16_t enc_delta = (int16_t)(cnt - s_enc_last);
@@ -277,7 +278,7 @@ void input_step(void)
   int32_t detents = s_enc_accum / ENC_COUNTS_PER_DETENT;
   if (detents != 0) {
     s_enc_accum -= detents * ENC_COUNTS_PER_DETENT;
-    post(EVT_ENC_STEP, "ENC_STEP", detents * ENC_SIGN);
+    post(EVT_ENC_STEP, "ENC_STEP", detents * ENC_SIGN, HAL_GetTick());
   }
 #if INPUT_SCREEN_LOG
   test_screen_log();
@@ -303,8 +304,8 @@ static uint16_t s_w_min[2] = { 0xFFFFu, 0xFFFFu };
 static uint16_t s_w_max[2];
 static uint32_t s_w_sum[2];
 static uint32_t s_w_n;
-static int32_t  s_t_enc_total;           /* raw counts since boot, before ENC_SIGN */
-static int32_t  s_t_enc_printed;         /* s_t_enc_total at the last enc line */
+static int32_t  s_t_enc_total;
+static int32_t  s_t_enc_printed;
 
 static void test_step(uint8_t press, uint8_t release, int32_t enc_delta)
 {
@@ -323,7 +324,6 @@ static void test_step(uint8_t press, uint8_t release, int32_t enc_delta)
   if (ms_since(now, s_t_print_ms) < TEST_PRINT_MS) return;
   s_t_print_ms = now;
 
-  /* take the isr's 100 ms window and start a new one */
   uint16_t last[2], mn[2], mx[2];
   uint32_t sum[2], n;
   uint32_t pm = __get_PRIMASK();

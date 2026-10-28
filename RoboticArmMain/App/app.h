@@ -1,8 +1,6 @@
 /* app.h - the two calls main.c makes
- *
- * owner: core.
- *   main.c USER CODE 2:  app_init();
- *   main.c USER CODE 3:  app_loop();     (inside while(1): ONE pass, must return quickly)
+ *   USER CODE 2:  app_init();
+ *   USER CODE 3:  app_loop();   (one pass inside while(1), must return quickly)
  */
 #ifndef APP_H
 #define APP_H

@@ -1,10 +1,9 @@
-/* app_timing.h - cycle counter (DWT) for measuring how long code takes
+/* app_timing.h - DWT cycle counter for timing code
  *
- * owner: core.
  *     uint32_t t0 = timing_cycles();
  *     do_work();
  *     uint32_t us = timing_us_since(t0);
- * the counter wraps after ~19.9 s at 216 MHz, fine for anything shorter.
+ * wraps after ~19.9 s at 216 MHz.
  */
 #ifndef APP_TIMING_H
 #define APP_TIMING_H

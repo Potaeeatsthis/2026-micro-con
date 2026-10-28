@@ -1,35 +1,22 @@
-/* servo_cal.c - calibration table, one row per joint
+/* servo_cal.c - calibration table, one row per joint (edit this file when calibrating)
  *
- * owner: servo / motion member. this is the file you edit while calibrating.
+ * us_0 / us_90 / us_180 are the pulse anchors servo.c interpolates between; they are not limits.
+ * min / max / home are the installed values. Home is not the kinematic zero.
+ * J2's floor is 50 deg, but motion.c only lets it below 90 while J5 >= 65 (floor contact seen
+ * around 90-95 with J5 = 25). These are endpoint limits only, not a collision check for paths.
+ * J4 = wrist roll, J5 = wrist pitch.
  *
- * us_0 / us_90 / us_180 are measured pulse widths at 0 / 90 / 180 mechanical
- * degrees with the servo UNLOADED (bench test, one unit at a time). They are
- * the endpoints of the two straight-line conversions used by servo.c; they are
- * NOT installed safe limits and NOT a command range for the assembled arm.
- *
- * min_deg / max_deg / home_deg are still the old 0 / 180 / 90 PLACEHOLDERS:
- * NOT measured, NOT safe installed values, and not a joint zero. Do not move
- * the assembled arm from this table. TODO(servo): measure each joint's safe
- * installed range and home pose, then replace the placeholders.
- *
- * Physical labels are preserved: MG996R-1/-2/-3, SG92R-1, SG92R-3 and SG90.
- * SG92R-2 is retired; SG92R-3 keeps its name at joint 5 and J6 uses an SG90.
- * J4 is wrist roll and J5 is wrist pitch; this swap is by joint role only, so
- * the servo unit, channel, pulse calibration and home angle of each row stay
- * unchanged.
- *
- * STARTUP STILL SENDS HOME: motion_init() loads home_deg and the first allowed
- * PWM tick writes that pose. Keep every servo signal wire disconnected while
- * bringing up new motion or calibration code.
+ * Boot sends every joint home (one at a time, gripper first): keep the servo signal wires
+ * unplugged when bringing up new motion code.
  */
 #include "motion/servo.h"
 
 const servo_cal_t SERVO_CAL[ARM_N_JOINTS] = {
-  /* name              0deg  90deg 180deg  min    max    home  (min/max/home = NOT measured) */
-  { "J1 BASE",         500,  1460, 2430,   0.0f, 180.0f, 90.0f },  /* MG996R #1 */
-  { "J2 SHOULDER",     500,  1430, 2440,   0.0f, 180.0f, 90.0f },  /* MG996R #2 */
-  { "J3 ELBOW",        540,  1530, 2500,   0.0f, 180.0f, 90.0f },  /* MG996R #3 */
+  /* name              0deg  90deg 180deg  min    max    home */
+  { "J1 BASE",         500,  1460, 2430,   0.0f, 180.0f, 85.0f },  /* MG996R #1 */
+  { "J2 SHOULDER",     500,  1430, 2440,  50.0f, 180.0f, 125.0f }, /* MG996R #2, dynamic 90 while J5 low */
+  { "J3 ELBOW",        540,  1530, 2500,  45.0f, 180.0f, 145.0f }, /* MG996R #3 */
   { "J4 WRIST ROLL",   500,  1440, 2370,   0.0f, 180.0f, 90.0f },  /* SG92R #1 */
-  { "J5 WRIST PITCH",  640,  1580, 2470,   0.0f, 180.0f, 90.0f },  /* SG92R #3 (stable label) */
-  { "J6 GRIPPER",      580,  1570, 2500,   0.0f, 180.0f, 90.0f },  /* SG90 */
+  { "J5 WRIST PITCH",  640,  1580, 2470,  25.0f, 140.0f, 25.0f },  /* SG92R #3 (stable label) */
+  { "J6 GRIPPER",      500,  1380, 2300,   0.0f, 60.0f, 40.0f },   /* SG90 (maybe SG92R) */
 };

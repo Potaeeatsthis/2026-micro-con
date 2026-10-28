@@ -17,8 +17,7 @@
 #define KWS_AUDIO_RING   4096   /* samples per channel kept (256 ms), power of 2 */
 #define KWS_FEAT_RING    128    /* frames per channel kept (1.28 s), power of 2  */
 
-/* gain_db: digital gain applied before the features (0 = none). The INMP441s are
- * quieter than the training data; the status line shows whether gain is needed. */
+/* gain_db: digital gain before the features (the INMP441s are quieter than the training data) */
 void     kws_stream_init(float gain_db);
 
 /* from the SAI DMA callback: n new samples per channel (int16, same scale as the WAV files) */

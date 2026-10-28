@@ -1,48 +1,61 @@
-/* arm_geometry.h - arm dimensions and joint axes for ik / fk
+/* arm_geometry.h - arm model for FK / IK
  *
- * owner: ik / mechanical member.
+ * Robot frame: origin at the J1 axis on the floor, +X forward, +Y left, +Z up, mm.
+ * Values come from Robotic_Arm_Kinematics_Workbook.xlsx (CAD). CAD point -> robot frame:
+ *   p_robot = (-X_cad, Z_cad - 18.18, Y_cad + 34.5)
+ * TCP z = the measured 446 mm block top - 7.5. The servo zero / sign values are from the workbook,
+ * not measured (J5 is provisional).
  *
- * frame (defined in kinematics.h): robot-base, right-handed, +X forward,
- * +Y left, +Z up; CAD vectors map as (-X_cad, Z_cad, Y_cad).
- * points require subtracting the CAD base-bottom origin (0, -30.5, 18.18) mm
- * before that rotation. The floor is an unmeasured stand offset below that
- * plane: measured floor->J2 = 94 mm, CAD base-bottom->J2 = 90.22 mm, so the
- * floor-origin transform is not confirmed.
- * zero pose: straight up. positive joint axes at that pose (right-hand rule):
- *   J1 +Z base yaw, J2 +Y shoulder pitch, J3 +Y elbow pitch,
- *   J4 +Z wrist roll, J5 +Y wrist pitch. J6 (gripper) is not in positioning ik.
- * these are chosen mathematical signs, not measured servo or PWM directions.
- *
- * TODO(ik): measure on the real arm (guide section 22, open item 1):
- *   - link lengths between joint axes, in mm
- *   - the servo angle that corresponds to each joint's zero pose
- *   - the servo direction sign (the model axes above do not prove it)
- * all values below are PLACEHOLDERS so the code compiles; ik refuses to run
- * until ARM_GEOMETRY_MEASURED is 1.
+ * Guards: ARM_FK_ENABLED (LCD X/Y/Z), ARM_CARTESIAN_IK_ENABLED, ARM_VOICE_IK_ENABLED, and
+ * ARM_GEOMETRY_MEASURED for the global kin_ik() (off, nothing uses it). The IK bench build
+ * turns all normal IK callers off.
  */
 #ifndef APP_ARM_GEOMETRY_H
 #define APP_ARM_GEOMETRY_H
 
-#define ARM_GEOMETRY_MEASURED 0
+#ifndef ARM_FK_ENABLED
+#define ARM_FK_ENABLED 1
+#endif
+#ifndef ARM_CARTESIAN_IK_ENABLED
+#define ARM_CARTESIAN_IK_ENABLED 1       /* don't change without the owner */
+#endif
+#ifndef ARM_VOICE_IK_ENABLED
+#define ARM_VOICE_IK_ENABLED 1           /* don't change without the owner */
+#endif
+#ifndef ARM_GEOMETRY_MEASURED
+#define ARM_GEOMETRY_MEASURED 0          /* don't change without the owner */
+#endif
 
-#define ARM_BASE_HEIGHT_MM   0.0f   /* table to shoulder axis */
-#define ARM_UPPER_ARM_MM     0.0f   /* shoulder axis to elbow axis */
-#define ARM_FOREARM_MM       0.0f   /* elbow axis to J5 wrist pitch axis */
-#define ARM_TOOL_MM          0.0f   /* J5 wrist pitch axis to gripper tip */
+/* shoulder axis point S */
+#define ARM_SHOULDER_X_MM    23.15f
+#define ARM_SHOULDER_Y_MM    15.25f
+#define ARM_SHOULDER_Z_MM    94.22f
 
-/* servo angle (deg) at which each joint is at its kinematic zero; sign = +1 or -1.
- * placeholders: +1 does not mean the installed servo turns the model-positive way.
- * J4 is wrist roll, proximal to the J5 wrist pitch axis. The planar model below
- * ignores J4 roll: assume J4 stays at its reference angle. If roll is non-zero,
- * it rotates the pitch axis with it, so the tool is not limited to the planar
- * pitch plane; add the roll term before commanding a non-zero J4 angle. */
-#define ARM_J1_ZERO_DEG 90.0f
-#define ARM_J2_ZERO_DEG 90.0f
-#define ARM_J3_ZERO_DEG 90.0f
-#define ARM_J5_ZERO_DEG 90.0f
-#define ARM_J1_SIGN     1.0f
-#define ARM_J2_SIGN     1.0f
-#define ARM_J3_SIGN     1.0f
-#define ARM_J5_SIGN     1.0f
+/* upper arm S -> E at zero pose */
+#define ARM_UPPER_X_MM       (-0.01f)
+#define ARM_UPPER_Y_MM       0.0f
+#define ARM_UPPER_Z_MM       113.12f
+
+/* forearm E -> W at zero pose (W = wrist centre) */
+#define ARM_FOREARM_X_MM     0.0f
+#define ARM_FOREARM_Y_MM     0.0f
+#define ARM_FOREARM_Z_MM     126.40f
+
+/* tool W -> TCP at zero pose */
+#define ARM_TOOL_X_MM        (-12.99f)
+#define ARM_TOOL_Y_MM        (-5.73f)
+#define ARM_TOOL_Z_MM        104.76f
+
+/* servo angle at each joint's zero, and its sign (workbook values, not measured) */
+#define ARM_J1_ZERO_DEG      85.0f
+#define ARM_J2_ZERO_DEG      145.0f
+#define ARM_J3_ZERO_DEG      88.0f
+#define ARM_J4_ZERO_DEG      88.0f
+#define ARM_J5_ZERO_DEG      96.0f
+#define ARM_J1_SIGN          1.0f
+#define ARM_J2_SIGN          (-1.0f)
+#define ARM_J3_SIGN          1.0f
+#define ARM_J4_SIGN          1.0f
+#define ARM_J5_SIGN          (-1.0f)
 
 #endif /* APP_ARM_GEOMETRY_H */

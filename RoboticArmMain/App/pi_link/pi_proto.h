@@ -1,19 +1,9 @@
-/* pi_proto.h - pi text protocol v1: line assembly and line parsing, no HAL
+/* pi_proto.h - pi text protocol: line assembly and parsing (pure, host-tested)
  *
- * owner: pi member.
- * pure functions only (no uart, no clock, no events), so the host tests can run them on a pc.
- * pi_link.c owns the uart, the pending request and the timeout; it feeds bytes in here and
- * acts on the parsed result.
- *
- * protocol v1 (guide section 12), one ASCII line per message, '\n' terminated, '\r' ignored,
- * fields separated by spaces:
- *   Pi -> STM32:  OBJ <name> <x> <y> <z>     integer mm, robot-base frame, top-face centre
- *   Pi -> STM32:  NOTFOUND <name>
- * names: blue_box, green_box, red_box, black_box, hand (object_id_t order).
- * boxes: top-face centre. hand: palm centre, may move, so ask again before each use.
- *
- * new message: one row in PI_KEYWORDS (pi_proto.c), one value in pi_msg_type_t, one handler
- * row in RX_HANDLERS (pi_link.c), and the guide's protocol table.
+ * One ASCII line per message, '\n' terminated, '\r' ignored, fields split by spaces:
+ *   OBJ <name> <x> <y> <z>   integer mm, robot frame
+ *   NOTFOUND <name>
+ * New message: PI_KEYWORDS (pi_proto.c), pi_msg_type_t, RX_HANDLERS (pi_link.c), the guide table.
  */
 #ifndef APP_PI_PROTO_H
 #define APP_PI_PROTO_H
@@ -47,19 +37,19 @@ typedef struct {
   int32_t       xyz[3];
 } pi_msg_t;
 
-/* splits line in place (writes '\0' between fields). out is cleared first */
+/* splits the line in place. out is cleared first */
 pi_err_t    pi_parse_line(char *line, pi_msg_t *out);
 const char *pi_err_str(pi_err_t err);
 
 const char *pi_object_name(object_id_t obj);       /* "red_box", "none" if out of range */
 object_id_t pi_object_from_name(const char *name);  /* OBJ_NONE if unknown */
 
-/* line assembler: feed one received byte at a time */
+/* line assembler, one byte at a time */
 typedef struct {
   char     buf[PI_LINE_MAX + 1u];
   uint32_t len;             /* chars in buf */
-  uint32_t total;           /* chars seen in the current line, also past PI_LINE_MAX */
-  bool     ended;           /* last feed ended a line: the next feed starts a new one */
+  uint32_t total;           /* also counts past PI_LINE_MAX */
+  bool     ended;
 } pi_line_t;
 
 typedef enum {
@@ -69,7 +59,7 @@ typedef enum {
 } pi_line_result_t;
 
 void             pi_line_reset(pi_line_t *l);
-/* the result refers to the line that just ended; l->buf / l->total stay valid until the next feed */
+/* l->buf / l->total stay valid until the next feed */
 pi_line_result_t pi_line_feed(pi_line_t *l, char c);
 
 #endif /* APP_PI_PROTO_H */

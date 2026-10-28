@@ -1,13 +1,7 @@
-/* safety.h - fatal-fault gate for motion
+/* safety.h - fatal-fault gate for motion (always compiled)
  *
- * owner: core (Supanut). always compiled (no feature flag).
- *
- * motion asks safety_motion_allowed() every 20 ms tick; if the answer becomes "no",
- * motion freezes its targets in the same tick.
- *
- * the arm has no e-stop, no hold-to-enable button, no servo-rail sense and no limit switches
- * (core-config.md v1.4): nothing cuts servo power in hardware. the only stop condition here is
- * a fatal fault; joint limits are enforced in motion/ (servo_cal).
+ * motion checks safety_motion_allowed() every tick and freezes if it says no. There is no e-stop
+ * or limit switch in hardware; joint limits are in motion/.
  */
 #ifndef APP_SAFETY_H
 #define APP_SAFETY_H

@@ -36,14 +36,15 @@ Usage
   python pi_vision_uart.py --learn                   # learn colours at this venue (needs a screen)
   python pi_vision_uart.py --show                    # camera + UART to STM32
   python pi_vision_uart.py --print-cam --no-uart     # print camera-frame XYZ for calibration
+  python pi_vision_uart.py --add-point 150 50 15     # one calibration point (robot X Y Z mm of the block top)
   python pi_vision_uart.py --solve-calib points.csv  # build calib_T.npy from measured points
 
-Calibration (camera -> robot base)
-  Put a block at 6-8 spread-out spots (some raised on a known-height box).
-  For each spot, write the --print-cam XYZ and the ruler-measured XYZ of the
-  block's TOP-FACE CENTRE from the robot base origin, one line per spot (mm):
-      xc,yc,zc,xb,yb,zb
-  Then run --solve-calib points.csv. For 2 cm blocks aim for RMS error < 5 mm.
+Calibration (camera -> robot base), with the arm
+  For 6-8 spots spread over the work area (+ 2-3 on the station): send the gripper by IK to X Y Z (Z = the
+  block's TOP height), put ONE block exactly under the gripper tip, park the arm out of view, then
+  --add-point X Y Z: it measures the block's top-face centre in the camera (median of ~3 s) and appends
+      xc,yc,zc,xb,yb,zb      (mm: camera xyz, robot xyz)
+  to points.csv. Then --solve-calib points.csv. For 2 cm blocks aim for RMS error < 5 mm.
 """
 
 import argparse
@@ -236,17 +237,87 @@ def solve_rigid_transform(A: np.ndarray, B: np.ndarray) -> np.ndarray:
 
 
 def run_solve_calib(csv_path: str):
-    pts = np.loadtxt(csv_path, delimiter=",", comments="#") / 1000.0  # mm -> m
-    if pts.ndim != 2 or pts.shape[0] < 4 or pts.shape[1] != 6:
+    pts = np.loadtxt(csv_path, delimiter=",", comments="#", ndmin=2) / 1000.0  # mm -> m
+    if pts.shape[0] < 4 or pts.shape[1] != 6:
         sys.exit("Need >= 4 rows of xc,yc,zc,xb,yb,zb (mm)")
     A, B = pts[:, :3], pts[:, 3:]
     T = solve_rigid_transform(A, B)
     pred = (T[:3, :3] @ A.T).T + T[:3, 3]
     err_mm = np.linalg.norm(pred - B, axis=1) * 1000
+    rms = float(np.sqrt(np.mean(err_mm ** 2)))
     np.save(CALIB_FILE, T)
     print(f"Saved {CALIB_FILE}\n{np.array2string(T, precision=4)}")
-    print("Per-point error (mm):", np.round(err_mm, 1))
-    print(f"RMS error: {np.sqrt(np.mean(err_mm ** 2)):.1f} mm")
+    print(f"{len(err_mm)} points (6-8 spread over the work area is best):")
+    bad_from = max(5.0, 2.0 * float(np.median(err_mm)))
+    for i, (b, e) in enumerate(zip(B * 1000.0, err_mm), 1):
+        mark = ("   <- much worse than the others: placed or commanded wrong? delete it and solve again"
+                if e > bad_from and len(err_mm) > 4 else "")
+        print(f"  point {i}: robot {b[0]:6.0f} {b[1]:6.0f} {b[2]:5.0f} mm   error {e:5.1f} mm{mark}")
+    verdict = ("good (< 5 mm)" if rms < 5 else "usable, but try to improve (aim < 5 mm)" if rms < 10
+               else "too big: check the points and redo the bad ones")
+    print(f"RMS error: {rms:.1f} mm  -> {verdict}")
+    # where the camera is, in robot coordinates: check these with a tape measure
+    pos = T[:3, 3] * 1000.0
+    look = T[:3, :3] @ np.array([0.0, 0.0, 1.0])  # the camera's viewing direction
+    down = float(np.degrees(np.arcsin(np.clip(-look[2], -1.0, 1.0))))
+    heading = float(np.degrees(np.arctan2(look[1], look[0])))
+    print(f"Camera at X {pos[0]:.0f}  Y {pos[1]:.0f}  Z {pos[2]:.0f} mm (robot frame), looks {down:.0f} deg downward,"
+          f" towards {heading:.0f} deg (0 = robot +X forward, 90 = +Y left). Check this with a tape measure.")
+    span = (B.max(axis=0) - B.min(axis=0)) * 1000.0
+    if span[2] < 20:
+        print("Note: all points are at about the same height. Add 2-3 on the station top for a better fit.")
+    if min(span[0], span[1]) < 80:
+        print(f"Note: the points cover only {span[0]:.0f} x {span[1]:.0f} mm. Spread them over the whole work area.")
+
+
+def run_add_point(cam, det, robot_mm, path="points.csv", frames=40):
+    """One calibration point: ONE block in view whose top-face centre is at robot_mm (the arm put it there).
+    Measures its camera XYZ as the median over many frames and appends "xc,yc,zc,xb,yb,zb" (mm) to path."""
+    samples, counts, est, surfaces, names = [], [], 0, [], []
+    for i in range(frames + 25):
+        color, depth = cam.grab()
+        if color is None:
+            continue
+        blocks = det.detect(color, depth, force_plane=(i == 0))
+        if i < 5:  # let exposure and the table plane settle
+            continue
+        counts.append(len(blocks))
+        if len(blocks) != 1:
+            continue
+        b = blocks[0]
+        samples.append(b["xyz_cam_m"] * 1000.0)
+        est += not b["depth_ok"]
+        surfaces.append(b.get("surface", "table"))
+        names.append(b["name"] or "?")
+        if len(samples) >= frames:
+            break
+    if len(samples) < 10:
+        sys.exit(f"Saw exactly ONE block in only {len(samples)} frames (blocks per frame, last ones: "
+                 f"{counts[-10:]}). Remove other blocks, park the arm out of view, and check with --snapshot.")
+    S = np.array(samples)
+    med = np.median(S, axis=0)
+    jitter = float(np.sqrt(np.mean(np.sum((S - med) ** 2, axis=1))))  # RMS distance from the median
+    new = not os.path.exists(path)
+    with open(path, "a") as f:
+        if new:
+            f.write("# camera xc,yc,zc (mm), robot xb,yb,zb (mm), one line per pi_vision_uart.py --add-point\n")
+        f.write(",".join(f"{v:.1f}" for v in (*med, *robot_mm)) + "\n")
+    with open(path) as f:
+        n = sum(1 for line in f if line.strip() and not line.startswith("#"))
+    surface = max(set(surfaces), key=surfaces.count)
+    name = max(set(names), key=names.count)
+    x, y, z = robot_mm
+    print(f"Point {n} saved: camera {med[0]:.1f} {med[1]:.1f} {med[2]:.1f} mm -> robot {x:.0f} {y:.0f} {z:.0f} mm"
+          f" (jitter {jitter:.1f} mm, {len(S)} frames, {name} block on the {surface})")
+    if jitter > 5:
+        print("  WARNING: jitter above 5 mm: the position is not steady. Delete this line and measure again.")
+    if est > len(S) / 2:
+        print("  WARNING: no depth on this block (estimated position). Use a red, green or blue block, not black.")
+    if surface == "station" and z < STATION_SIZE_MM[2]:
+        print(f"  WARNING: the block is on the station, so Z should be about {STATION_SIZE_MM[2]:.0f} + block height.")
+    if surface == "table" and z > 40:
+        print("  WARNING: the block is on the table, but Z is high. Z = the block's top height above the table.")
+    print(f"Now {n} point(s) in {path}. Aim for 6-8 spread out, then: python pi_vision_uart.py --solve-calib {path}")
 
 
 # ------------------------------------------------------------------ camera --
@@ -1172,6 +1243,8 @@ def main():
     ap.add_argument("--snapshot", action="store_true", help="save blocks.jpg with detections (no screen needed)")
     ap.add_argument("--print-cam", action="store_true", help="print camera XYZ (mm) for calibration")
     ap.add_argument("--solve-calib", metavar="CSV", help="solve calib_T.npy from point pairs")
+    ap.add_argument("--add-point", type=float, nargs=3, metavar=("X", "Y", "Z"),
+                    help="calibration point: ONE block whose top centre is at robot X Y Z mm -> points.csv")
     ap.add_argument("--no-uart", action="store_true", help="camera only, no STM32 connected")
     ap.add_argument("--station-size", type=float, nargs=3, metavar=("L", "W", "H"), default=None,
                     help="station length, width, height in mm (default %.0f %.0f %.0f)" % tuple(STATION_SIZE_MM))
@@ -1196,9 +1269,11 @@ def main():
     cam = BlockCamera(fps=args.fps, laser=args.laser)
     det = BlockDetector(cam.intr, cam.depth_scale, load_refs())
 
-    if args.learn or args.learn_color or args.snapshot:
+    if args.learn or args.learn_color or args.snapshot or args.add_point:
         try:
-            if args.learn:
+            if args.add_point:
+                run_add_point(cam, det, args.add_point)
+            elif args.learn:
                 run_learn(cam, det, T)
             elif args.learn_color:
                 run_learn_color(cam, det, args.learn_color.lower())

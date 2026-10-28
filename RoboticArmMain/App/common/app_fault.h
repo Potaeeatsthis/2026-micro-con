@@ -1,10 +1,7 @@
 /* app_fault.h - one place to report errors
  *
- * owner: core.
- * safe from any context. a fatal fault freezes all motion (safety checks it every tick)
- * and turns on the red LED (LD3) until reset. non-fatal faults are counted and logged.
- *
- * adding a code: append it (never renumber) and say who raises it.
+ * Safe from any context. A fatal fault freezes motion and lights LD3 until reset; the others are
+ * counted and logged. New code: append it, never renumber.
  */
 #ifndef APP_FAULT_H
 #define APP_FAULT_H

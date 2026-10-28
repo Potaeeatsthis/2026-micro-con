@@ -1,17 +1,7 @@
-/* input.h - KY-023 joystick adc, KY-040 encoder, encoder / joystick buttons
+/* input.h - KY-023 joystick (ADC1 + DMA, TIM2 1 kHz), KY-040 knob (TIM1 encoder), and their buttons
  *
- * owner: input member.
- * outputs:
- *   - events (EVT_ENC_STEP, EVT_ENC_PRESS, EVT_JOY_PRESS) for one-shot actions
- *   - getters (input_joy_x/y) for continuous values, read by the active mode every loop
- * the arm has no MODE, hold-to-enable or e-stop button (core-config.md v1.3); the mode is
- * chosen on the lcd. this module never moves anything: modes read the getters / events and set motion targets.
- * buttons: debounced press and release are tracked; only presses become events.
- * APP_INPUT_TEST (local config only): 10 Hz bench log of raw / averaged / dead-zone joystick
- * values, encoder counts and button press/release, see input.c.
- *
- * hardware: ADC1 ranks IN3 (PA3 joy X), IN10 (PC0 joy Y), triggered
- * by TIM2 at 1 kHz, DMA circular. TIM1 encoder mode on PE9/PE11, 4 counts per detent.
+ * One-shot actions come as events (EVT_ENC_STEP, EVT_ENC_PRESS, EVT_JOY_PRESS); the joystick is
+ * read with input_joy_x/y every loop. This module never moves anything.
  */
 #ifndef APP_INPUT_H
 #define APP_INPUT_H
@@ -23,13 +13,13 @@ void     input_init(void);                 /* starts TIM2, ADC1 DMA, TIM1 encode
 void     input_tick(void);                 /* TIM6 isr: samples + debounces the buttons */
 void     input_step(void);                 /* main loop: posts button and encoder events */
 void     input_on_adc(int half);           /* ADC dma isr: 0 = first half ready, 1 = second */
-void     input_on_exti(uint16_t gpio_pin); /* EXTI isr: ENC_SW / JOY_SW edges (stats only) */
+void     input_on_exti(uint16_t gpio_pin); /* EXTI isr: button edges (stats only) */
 
 float    input_joy_x(void);                /* -1..+1 after dead zone, 0 = centred */
 float    input_joy_y(void);
 bool     input_joy_centered(void);
 
-/* raw values for the calibration screen / debugging */
+/* raw values for debugging */
 uint16_t input_raw_x(void);
 uint16_t input_raw_y(void);
 

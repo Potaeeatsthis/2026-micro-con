@@ -1,11 +1,7 @@
-/* app_log.h - debug printf on USART3 (ST-Link virtual COM port, 921600 8N1)
+/* app_log.h - debug printf on USART3 (ST-Link COM port, 921600 8N1)
  *
- * owner: core.
- * rules:
- *   - never log from an interrupt handler or a HAL callback (printf blocks ~11 us per char)
- *   - no %f: newlib-nano has no float printf unless the project enables it.
- *     print floats as scaled integers, e.g. LOG("v=%ld mV\r\n", (long)(v * 1000.0f))
- *   - prefix each line with your module name, e.g. "motion: ..."
+ * Never log from an interrupt (printf blocks ~11 us per char). No %f: print scaled integers.
+ * Start each line with the module name, e.g. "motion: ...".
  */
 #ifndef APP_LOG_H
 #define APP_LOG_H

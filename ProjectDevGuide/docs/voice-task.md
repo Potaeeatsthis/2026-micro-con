@@ -22,7 +22,7 @@ they wait for a valid word or `stop` for as long as the user needs (decided 25 O
 | S7 CONFIRM PLACE | shows the destination | `yes` → S8 PLACING (for `hand` / `station`: first `FIND hand` / `FIND station`, waits with only `stop`; reply → S8, `NOTFOUND` → asks again, Pi timeout → S4); `no` → back to S4 or S10 (where it came from) | back to S4 or S10 |
 | S8 RUN QUEUE | moving through the queue | only `stop` | → S10 |
 | S8 PLACING | moving: above, down, open, up (hand: opens `HAND_RELEASE_MM` above the palm, never at it; station: opens `STATION_RELEASE_MM` above the drop spot on its top) | only `stop` | → S10 |
-| S9 GOING HOME | moving | only `stop` | → S10 |
+| S9 GOING HOME | moving (from J2 < 90 deg: shoulder up to 90 first, then home; done only when every joint is at home) | only `stop` | → S10 |
 | S10 STOPPED | holds still; a closed gripper stays closed | `place` / `drop` → S7; `home` → S11 (opens the gripper first) | nothing |
 | S11 CONFIRM HOME | "go home?" | `yes` → S9; `no` → back to S0 or S10 | back to S0 or S10 |
 
@@ -95,14 +95,49 @@ the live palm position: FIND hand, NOTFOUND, timeout, stop, release height; full
 every state are still to do. The two fixes
 made after the run (gripper state per step, log order) were build-checked only.
 
-## 5. Still open
+## 5. IK and the LCD (28 Oct 2026)
 
-- IK/FK (`TODO(ik)`): until it exists, a real (non-dry) `yes` in S2 shows `IK NOT READY` and stays in S2.
-- `base` pose (`DEST_CALIBRATED 0`), and "place here" lowers a fixed 50 mm instead of to the table.
+- **IK on for voice**: `kin_ik_voice()`, own guard `ARM_VOICE_IK_ENABLED 1` (`arm_geometry.h`, `kinematics.md`).
+  A real `yes` in S2 now grasps. Grasp / place search the pitch 180 -> 110; every pose is solved before step 1,
+  with a raise step (wrist / shoulder up first) where the J2/J5 coupling needs it, and a 30 mm approach when
+  50 mm does not fit (`kinematics.md`). After closing, the box is lifted 20 mm higher than the approach
+  (`HOLD_EXTRA_MM`, 28 Oct 2026: carried clear of the table and station); the station release is 25 mm
+  (held block centre above the top; 12 let the fingers bump the station);
+  a box no pitch reaches (e.g. 182 -45 30) shows the IK status and stays in S2, nothing moves. A target motion
+  would clamp is a failed step (`MOVE FAILED` -> S10). The grasp point is the box top minus `GRASP_BELOW_TOP_MM`.
+  Camera positions come from `calib_T.npy` ([`camera-calibration.md`](camera-calibration.md)); J1 is ~14 deg
+  short to the right (not fixed): keep boxes in the middle / left (Y > -100).
+- **LCD**: tap the Voice card. The VOICE page shows "Pick Color" = the colour said in S1, a tick on each colour
+  the Pi found (`OBJ` sets it, `NOTFOUND` clears it), and a pop-up:
+
+  | State | Pop-up |
+  |---|---|
+  | S3 grasping, S8 jog queue / placing | PROCESSING |
+  | S9 going home after a place | COMPLETE |
+  | S9 going home (asked with `home`) | PROCESSING |
+  | S10 stopped | STOPPED holding / STOPPED empty |
+  | waiting states (S0, S1, S2, S4, S6, S7, S11) | none |
+
+  Right of the Back button (where Proceed was) two small lines: the task state and its detail in white (e.g.
+  `S2 CONFIRM BOX  260 20 15 mm`: check the position before saying `yes`), and the latest message in yellow
+  for a few seconds (`OUT OF REACH`, `JOINT LIMIT`, `BOX NOT FOUND`, `PI NOT RESPONDING` ...).
+  Top right of the voice page (in the header): the **jog step slider**, 0.00-2.00 cm in 0.05 cm steps (default
+  2.00 cm = the old 20 mm). Tap or drag; the next jog words (`forward` ...) use it (`EVT_TOUCH_STEP_CM`, 0.1 mm).
+  Right of the slider: **FINE / FAST** (white / yellow), the speed every voice move uses (joystick press toggles).
+  In S6 the **jog queue pop-up** covers the camera panel only: `[forward 1.23, right 1.11]` (cm, in the order
+  spoken) with `say YES / UNDO / NO`. It is not an overlay, so the slider and Back keep working under it.
+  A tap hides the pop-up (the task goes on; use `stop` to stop). The old touch flow (Proceed -> confirm ->
+  DESTINATION / CUSTOM pages) is off (`VOICE_TOUCH_FLOW 0` in `lcd.c`): words drive the task.
+
+## 6. Still open
+
+- ~~`base` pose~~ set 28 Oct 2026: X 220, Y 120, opens at Z 12 (held block centre). "place here" still lowers a
+  fixed 50 mm instead of to the table.
   `station` is no longer a fixed pose (27 Oct 2026): `yes` sends `FIND station` and places at the Pi's drop spot
-  ([`station-detection.md`](station-detection.md)). `STATION_RELEASE_MM` (20 mm placeholder: the held block's
-  height under the gripper + clearance) is to be measured on the real gripper.
-- Jog directions in the robot-base frame and the queue travel limit (300 mm placeholder).
-- Camera → robot-base calibration (`calib_T.npy`) before any real move.
+  ([`station-detection.md`](station-detection.md)). `STATION_RELEASE_MM` = 12 mm (held block centre above the
+  station top: half the 15 mm block + ~4.5 mm, 28 Oct 2026).
+- ~~Jog directions~~ 28 Oct 2026: forward = +X, left = +Y, for someone behind the arm. Queue travel limit
+  (300 mm placeholder) still to check.
+- ~~Camera → robot-base calibration~~ done 28 Oct 2026 (`camera-calibration.md`, RMS 8.9 mm; J1 short to the right).
 - `HAND_RELEASE_MM` (how far above the palm the gripper opens) and a safety-owner OK before the arm ever moves
   towards a person's hand. There is no hardware e-stop planned.
