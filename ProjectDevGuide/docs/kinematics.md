@@ -33,6 +33,16 @@ script, so the gripper does not turn between steps. The poses are solved in orde
 previous solution, so the J2/J5 check is the one motion will see. If no pitch fits, the LCD shows the
 IK status and nothing moves (the gripper does not open). The jog queue keeps the pitch it is holding.
 
+**Endpoint orientation only.** The pitch holds AT each waypoint (above, grasp, lift). Between waypoints
+motion moves every joint on its own at its speed limit (no Cartesian interpolation, joints do not arrive
+together), so the tool path is not straight and the pitch changes during the move. The descent onto the
+box is therefore **not** guaranteed vertical or orientation-preserving.
+
+**Grasp height.** The Pi reports the **centre of the box's top face**; the TCP is the centre of the
+**held** box (TCP z = block top - 15 / 2). Voice grasps at the top minus `GRASP_BELOW_TOP_MM` (7.5 mm,
+the documented 15 mm block; check on the real gripper). `HAND_RELEASE_MM` / `STATION_RELEASE_MM` are
+also TCP heights (held box centre) above the palm / station top.
+
 With the candidate geometry and the installed limits the reachable band is narrow. Reachable Z (mm) at
 Y = 0, from home (host scan, test only):
 
@@ -44,8 +54,8 @@ Y = 0, from home (host scan, test only):
 | 260 | - | 2..52 | -16..96 | -22..136 | 72..172 |
 | 280 | - | - | 16..80 | 0..122 | -4..162 |
 
-A grasp needs the box Z **and** Z + `APPROACH_MM` (50) at one pitch: e.g. a box at 240, 0, 30 uses
-pitch 160; the pi protocol example 182, -45, 30 is refused at every pitch. From home, Cartesian can move
+A grasp needs the grasp Z **and** grasp Z + `APPROACH_MM` (50) at one pitch: e.g. a box whose top is at
+240, 0, 30 (grasp Z 22.5) uses pitch 160; the pi protocol example 182, -45, 30 is refused at every pitch. From home, Cartesian can move
 down but not up (J5 is at its 25 deg minimum).
 
 **Clamped / refused targets.** IK callers now use `motion_set_target_exact()`: all or nothing. If motion
@@ -89,6 +99,8 @@ Procedure:
    Have the servo power switch in reach.
 2. Power on. Motion sends home one joint at a time. The screen shows the target, the IK angles,
    `NOW` (commanded), `EST` (FK of now), `MAX MOVE` and `KNOB PRESS = GO`. Check the IK angles above.
+   A press made before `KNOB PRESS = GO` appears is dropped, and one within 0.5 s after it
+   (`IK_BENCH_ARM_MS`) is ignored: GO always needs a fresh press.
 3. Knob press: the arm moves at fine speed. **Any press (knob, or stick press with the stick centred)
    stops it** (`STOPPED`); the servo power switch is the hard stop.
 4. Arrived (`MEASURE. PRESS = HOME`): `EST` and `ERR` are the FK estimate of the reached pose and its
@@ -226,8 +238,8 @@ Limits and coupling:
 ## Tests
 
 `test_ik_bench.c` runs the bench screen with the guard at 0 (`kin_ik()` refused, `kin_ik_bench()` solves,
-go / stop / home, exact target). `test_app.c` is also built with `-DARM_GEOMETRY_MEASURED=1 -DAPP_TEST_IK=1`
-for the IK callers (pitch search picks 160 for a box at 240, 0, 30; 182, -45, 30 is refused before
+a press queued on the last start-up tick or right after arming is not GO, go / stop / home, exact target). `test_app.c` is also built with `-DARM_GEOMETRY_MEASURED=1 -DAPP_TEST_IK=1`
+for the IK callers (pitch search picks 160 for a box top at 240, 0, 30; 182, -45, 30 is refused before
 anything moves; Cartesian keeps its last good pose at a limit).
 
 `ProjectDevGuide/tests/host/test_kinematics.c` is compiled twice by `run.sh`:
