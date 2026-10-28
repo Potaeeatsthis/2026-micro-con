@@ -36,7 +36,8 @@
 
 typedef enum {
   MOTION_OK = 0,
-  MOTION_CLAMPED,       /* accepted, but at least one joint was limited to its min/max */
+  MOTION_CLAMPED,       /* accepted, but at least one joint was limited to its min/max
+                         * (motion_set_target_exact: NOT accepted, nothing changed) */
   MOTION_REFUSED        /* not accepted (bad joint index, outputs not started) */
 } motion_result_t;
 
@@ -44,6 +45,9 @@ void            motion_init(void);
 void            motion_tick(void);                 /* TIM6 isr, after input_tick() */
 
 motion_result_t motion_set_target(const joint_vec_t *target);
+/* all or nothing (IK callers): if any joint would be clamped, the target is NOT changed and
+ * MOTION_CLAMPED is returned, so the arm never starts toward a pose other than the one asked for */
+motion_result_t motion_set_target_exact(const joint_vec_t *target);
 motion_result_t motion_set_joint_target(int joint, float deg);
 void            motion_jog(int joint, float deg_per_s);
 void            motion_hold(void);                 /* target = current commanded angle, all joints */

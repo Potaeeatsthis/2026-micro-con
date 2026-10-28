@@ -161,7 +161,8 @@ void motion_tick(void)
 }
 
 /* ---------------------------------------------------------------- main-loop side */
-motion_result_t motion_set_target(const joint_vec_t *target)
+/* exact = all or nothing: a target that would be clamped is not stored at all */
+static motion_result_t set_target(const joint_vec_t *target, bool exact)
 {
   if (target == NULL) return MOTION_REFUSED;
 
@@ -178,6 +179,10 @@ motion_result_t motion_set_target(const joint_vec_t *target)
     t.deg[J2_SHOULDER] = J2_MIN_DEG;
     clamped = true;
   }
+  if (exact && clamped) {                           /* same check, nothing changes: no tick can step toward it */
+    irq_restore(p);
+    return MOTION_CLAMPED;
+  }
 
   s_tgt = t;
   for (int j = 0; j < ARM_N_JOINTS; j++) s_jog_v[j] = 0.0f;
@@ -185,6 +190,9 @@ motion_result_t motion_set_target(const joint_vec_t *target)
   irq_restore(p);
   return clamped ? MOTION_CLAMPED : MOTION_OK;
 }
+
+motion_result_t motion_set_target(const joint_vec_t *target)       { return set_target(target, false); }
+motion_result_t motion_set_target_exact(const joint_vec_t *target) { return set_target(target, true); }
 
 motion_result_t motion_set_joint_target(int joint, float deg)
 {
