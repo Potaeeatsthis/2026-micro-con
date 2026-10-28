@@ -14,6 +14,7 @@
  */
 #include "kinematics/kinematics.h"
 #include "kinematics/arm_geometry.h"
+#include "common/app_config.h"
 #include "motion/motion.h"
 #include "motion/servo.h"
 #include <math.h>
@@ -26,8 +27,16 @@
 #define KIN_R_TOL_MM        1e-4f
 #define KIN_APPROACH_EPS    1e-4f
 
+/* the IK solver is compiled when IK is activated, or for the bench test only (kin_ik_bench). the bench
+ * build does NOT activate kin_ik(): cartesian and voice keep getting KIN_NOT_READY */
+#if ARM_GEOMETRY_MEASURED || APP_USE_IK_BENCH_TEST
+#define KIN_IK_SOLVER 1
+#else
+#define KIN_IK_SOLVER 0
+#endif
+
 /* FK-only helpers under ARM_FK_ENABLED, shared ones under either guard, IK-only ones under
- * ARM_GEOMETRY_MEASURED, so no build leaves an unused function */
+ * KIN_IK_SOLVER, so no build leaves an unused function */
 #if ARM_FK_ENABLED
 typedef struct { float m[3][3]; } kin_mat3_t;
 typedef struct { float x, y, z; } kin_vec3_t;
@@ -80,7 +89,7 @@ static kin_vec3_t kin_vec_add(kin_vec3_t a, kin_vec3_t b)
 
 #endif /* ARM_FK_ENABLED */
 
-#if ARM_FK_ENABLED || ARM_GEOMETRY_MEASURED
+#if ARM_FK_ENABLED || KIN_IK_SOLVER
 static bool kin_joints_finite(const joint_vec_t *j)
 {
   for (int i = 0; i < ARM_N_JOINTS; i++) {
@@ -89,9 +98,9 @@ static bool kin_joints_finite(const joint_vec_t *j)
   return true;
 }
 
-#endif /* ARM_FK_ENABLED || ARM_GEOMETRY_MEASURED */
+#endif /* ARM_FK_ENABLED || KIN_IK_SOLVER */
 
-#if ARM_GEOMETRY_MEASURED
+#if KIN_IK_SOLVER
 static bool kin_pose_finite(const cart_pose_t *p)
 {
   return isfinite((double)p->x_mm) && isfinite((double)p->y_mm) &&
@@ -152,21 +161,16 @@ static float kin_candidate_distance(const float cand[5], const joint_vec_t *seed
   }
   return d;
 }
-#endif /* ARM_GEOMETRY_MEASURED */
+#endif /* KIN_IK_SOLVER */
 
 void kin_init(void)
 {
   /* All geometry is compile-time; nothing to precompute. */
 }
 
-kin_status_t kin_ik(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out)
+#if KIN_IK_SOLVER
+static kin_status_t ik_solve(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out)
 {
-#if !ARM_GEOMETRY_MEASURED
-  (void)pose;
-  (void)seed;
-  (void)out;
-  return KIN_NOT_READY;
-#else
   if (pose == NULL || seed == NULL || out == NULL) return KIN_OUT_OF_REACH;
 
   joint_vec_t seed_local = *seed;
@@ -258,8 +262,27 @@ kin_status_t kin_ik(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_
   result.deg[J6_GRIPPER] = seed_local.deg[J6_GRIPPER];
   *out = result;
   return KIN_OK;
+}
+#endif /* KIN_IK_SOLVER */
+
+kin_status_t kin_ik(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out)
+{
+#if !ARM_GEOMETRY_MEASURED
+  (void)pose;
+  (void)seed;
+  (void)out;
+  return KIN_NOT_READY;
+#else
+  return ik_solve(pose, seed, out);
 #endif
 }
+
+#if APP_USE_IK_BENCH_TEST
+kin_status_t kin_ik_bench(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out)
+{
+  return ik_solve(pose, seed, out);
+}
+#endif
 
 kin_status_t kin_fk(const joint_vec_t *joints, cart_pose_t *out)
 {

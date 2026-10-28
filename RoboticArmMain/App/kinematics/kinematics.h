@@ -43,6 +43,7 @@
 #define APP_KINEMATICS_H
 
 #include "common/app_types.h"
+#include "common/app_config.h"
 #include <stdbool.h>
 
 typedef enum {
@@ -65,6 +66,13 @@ kin_status_t kin_ik(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_
 kin_status_t kin_fk(const joint_vec_t *joints, cart_pose_t *out);
 
 const char  *kin_status_name(kin_status_t s);
+
+#if APP_USE_IK_BENCH_TEST
+/* bench test only (App/ik_bench_test/, local config): the same solver as kin_ik() but without the
+ * ARM_GEOMETRY_MEASURED guard. kin_ik() itself stays KIN_NOT_READY in that build. never call it from
+ * a mode: it does not exist in a normal build */
+kin_status_t kin_ik_bench(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out);
+#endif
 
 bool         kin_fk_enabled(void);   /* ARM_FK_ENABLED: estimated X/Y/Z available */
 bool         kin_ik_enabled(void);   /* ARM_GEOMETRY_MEASURED: IK may produce targets */

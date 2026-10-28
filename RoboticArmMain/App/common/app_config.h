@@ -54,6 +54,9 @@
 #ifndef APP_USE_SERVO_CAL_TEST
 #define APP_USE_SERVO_CAL_TEST  0   /* servo limit / home test screen (App/servo_cal_test/), MOVES the arm */
 #endif
+#ifndef APP_USE_IK_BENCH_TEST
+#define APP_USE_IK_BENCH_TEST   0   /* one supervised IK move (App/ik_bench_test/), MOVES the arm. kin_ik() stays off */
+#endif
 
 /* ---------------------------------------------------------------- timing */
 #ifndef APP_CONTROL_HZ
@@ -102,6 +105,10 @@
 /* ---------------------------------------------------------------- sanity checks */
 #if APP_USE_SERVO_CAL_TEST && (!APP_USE_MOTION || APP_USE_MODES || APP_USE_LCD || !APP_USE_INPUT)
 #error "APP_USE_SERVO_CAL_TEST needs APP_USE_MOTION 1, APP_USE_MODES 0, APP_USE_LCD 0 and APP_USE_INPUT 1"
+#endif
+#if APP_USE_IK_BENCH_TEST && (!APP_USE_MOTION || APP_USE_MODES || APP_USE_LCD || !APP_USE_INPUT || \
+                              !APP_USE_KINEMATICS || APP_USE_SERVO_CAL_TEST)
+#error "APP_USE_IK_BENCH_TEST needs APP_USE_MOTION 1, APP_USE_MODES 0, APP_USE_LCD 0, APP_USE_INPUT 1, APP_USE_KINEMATICS 1 and APP_USE_SERVO_CAL_TEST 0"
 #endif
 #if APP_USE_MODES && !APP_USE_MOTION
 #error "APP_USE_MODES needs APP_USE_MOTION (modes only set motion targets)"
