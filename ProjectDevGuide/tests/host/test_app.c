@@ -395,6 +395,7 @@ static int voice_hand_dry_run(void)
     log_release();
     CHECK(moved, "the queued step moves 10 mm forward (+X)");
     CHECK(strcmp(screen_line(0), "S4 HOLDING") == 0, "queue done -> S4 holding");
+    CHECK(lcd_voice_queue()[0] == '\0', "queue pop-up hidden after the queue ran");
     tap(304, 20);                                      /* right end: back to the 2.00 cm default */
     CHECK(lcd_drew_text("JOG STEP 2.00 cm"), "slider right end = 2.00 cm");
   }
@@ -1055,11 +1056,12 @@ int main(void)
     CHECK(strncmp(screen_line(0), "X: ", 3) == 0, "aligned J4 makes Cartesian ready");
   }
 
-  printf("== cartesian rebase: queued accepted requests cannot be resumed after a refusal\n");
+  printf("== cartesian refusal: no hold; the arm finishes the accepted target, the next detent continues from it\n");
   {
     joint_vec_t setup = { .deg = { 85.0f, 125.0f, 157.0f, 88.0f, 35.0f, 40.0f } };
     joint_vec_t current, target;
-    cart_pose_t start_est, held_est, up_est;
+    cart_pose_t start_est, done_est, up_est;
+    joint_vec_t accepted;
 
     app_event_post(EVT_TOUCH_MODE_TAB, MODE_JOINT_GROUP, 0, 0, 0); run_ms(60);
     CHECK(motion_set_target_exact(&setup) == MOTION_OK, "near-bench setup pose accepted");

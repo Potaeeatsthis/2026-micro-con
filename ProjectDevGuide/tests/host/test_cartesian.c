@@ -136,28 +136,64 @@ int main(void)
   motion_get_target(&tgt);
   CHECK(same_joints(&before, &tgt), "the queued target still holds while the arm moves");
 
-  printf("== refusal: hold current, then XY retry rebases on the held pose\n");
-  e.type = EVT_ENC_STEP; e.arg = 0; e.v[0] = -1; e.v[1] = 0; e.v[2] = 0;
-  MODE_CARTESIAN_OPS.on_event(&e);
-  MODE_CARTESIAN_OPS.on_event(&e);                     /* two accepted requests ahead of the arm */
-  target_fk(&ahead);
-  e.v[0] = 100;                                        /* 500 mm: unreachable */
-  MODE_CARTESIAN_OPS.on_event(&e);
-  CHECK(strcmp(g_msg, "OUT OF REACH") == 0, "the extreme request is refused");
-  motion_get_current(&cur);
-  current_fk(&held);
-  motion_get_target(&tgt);
-  CHECK(same_joints(&cur, &tgt), "refusal holds the target at the current pose");
-  CHECK(fabsf(held.z_mm - ahead.z_mm) > 5.0f, "the cancelled request was ahead of the held pose");
+  printf("== refusal: no hold, the last accepted target stays and the next request continues from it\n");
+  {
+    joint_vec_t accepted;
+    e.type = EVT_ENC_STEP; e.arg = 0; e.v[0] = -1; e.v[1] = 0; e.v[2] = 0;
+    MODE_CARTESIAN_OPS.on_event(&e);
+    MODE_CARTESIAN_OPS.on_event(&e);                   /* two accepted requests ahead of the arm */
+    target_fk(&ahead);
+    motion_get_target(&accepted);
+    e.v[0] = 100;                                      /* 500 mm: unreachable */
+    MODE_CARTESIAN_OPS.on_event(&e);
+    CHECK(strcmp(g_msg, "OUT OF REACH") == 0, "the extreme request is refused");
+    motion_get_target(&tgt);
+    CHECK(same_joints(&accepted, &tgt), "refusal keeps the last accepted target (no hold, no jerk)");
+    g_joy_x = 0.0f; g_joy_y = 0.5f;                    /* half up = +X */
+    control_tick();                                    /* the arm still trails the target: nothing new */
+    motion_get_target(&tgt);
+    CHECK(same_joints(&accepted, &tgt), "while the joints trail the target, the stick adds nothing");
+    g_joy_y = 0.0f;
+    run_motion_ms(3000);                               /* the arm finishes the accepted target */
+    current_fk(&held);
+    CHECK(fabsf(held.z_mm - ahead.z_mm) < 0.5f, "the arm reaches the last accepted pose (Z -10)");
+    g_joy_y = 0.5f;
+    control_tick();
+    target_fk(&retry);
+    CHECK(fabsf(retry.z_mm - ahead.z_mm) < 0.5f && retry.x_mm > ahead.x_mm + 0.02f,
+          "the next request continues +X from the accepted pose");
+    g_joy_y = 0.0f;
+    CHECK(tgt.deg[J6_GRIPPER] == setup.deg[J6_GRIPPER], "no automatic gripper command on approach");
+  }
 
-  g_joy_x = 0.0f; g_joy_y = 0.5f;                      /* half up = +X */
-  control_tick();                                      /* retry: must start from the held pose */
-  target_fk(&retry);
-  CHECK(fabsf(retry.z_mm - held.z_mm) < 0.5f,
-        "XY retry keeps Z at the held pose, not the cancelled request");
-  CHECK(retry.z_mm > ahead.z_mm + 5.0f, "XY retry did not resume the cancelled request");
-  CHECK(fabsf(retry.x_mm - (held.x_mm + 0.2f)) < 0.2f, "XY retry increments X from the held pose");
-  CHECK(tgt.deg[J6_GRIPPER] == setup.deg[J6_GRIPPER], "no automatic gripper command on approach");
+  printf("== smooth joystick: the target never runs far ahead, no joint asked to go faster than its limit\n");
+  {
+    float worst_lead = 0.0f, worst_step = 0.0f;
+    joint_vec_t prev;
+    run_motion_ms(1000);
+    control_tick();                                    /* stick centred: only refreshes the step's clock */
+    motion_get_target(&prev);
+    g_joy_x = 0.0f; g_joy_y = 1.0f;                    /* full forward, FINE: 20 mm/s requested */
+    for (int i = 0; i < 25; i++) {                     /* 0.5 s */
+      control_tick();
+      motion_get_current(&cur);
+      motion_get_target(&tgt);
+      for (int j = 0; j < J6_GRIPPER; j++) {
+        float lead = fabsf(tgt.deg[j] - cur.deg[j]), st = fabsf(tgt.deg[j] - prev.deg[j]);
+        if (lead > worst_lead) worst_lead = lead;
+        if (st > worst_step) worst_step = st;
+      }
+      prev = tgt;
+    }
+    g_joy_y = 0.0f;
+    CHECK(worst_step <= 10.0f * 0.02f + 0.01f, "each request moves no joint more than 10 deg/s * 20 ms");
+    CHECK(worst_lead <= 10.0f * 0.15f + 10.0f * 0.02f + 0.01f, "the target leads the joints by <= ~1.7 deg");
+    cart_pose_t at_release, stopped;
+    current_fk(&at_release);
+    run_motion_ms(1000);
+    current_fk(&stopped);
+    CHECK(fabsf(stopped.x_mm - at_release.x_mm) < 3.0f, "after the stick is let go the arm stops within 3 mm");
+  }
 
   printf("== blocked (J4 far from the reference): a control attempt shows why, nothing moves\n");
   {

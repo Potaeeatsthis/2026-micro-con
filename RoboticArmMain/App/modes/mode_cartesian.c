@@ -2,16 +2,24 @@
  *
  * owner: TODO(team) (works together with the ik member)
  * the target pose is only accepted if ik solves it AND motion takes the solution unchanged;
- * otherwise the arm holds, the last accepted pose stays and the lcd shows the reason
- * (OUT OF REACH / JOINT LIMIT / IK NOT READY / MOTION REFUSED).
+ * otherwise nothing new is requested, the last accepted pose stays (the arm finishes it) and the lcd
+ * shows the reason (OUT OF REACH / JOINT LIMIT / IK NOT READY / MOTION REFUSED).
  * Cartesian-only IK is activated by ARM_CARTESIAN_IK_ENABLED (voice has its own, ARM_VOICE_IK_ENABLED).
  * Entering the mode never commands motion. IK fixes J4 at ARM_J4_ZERO_DEG, so the first accepted
  * move from the installed home (J4 90) rolls J4 to the reference (88, the supervised bench move).
  * If J4 is further than CART_MAX_ROLL_DEG from the reference, the mode stays blocked and shows
  * ALIGN J4 <reference>; align it in a manual mode and re-enter. The mode forces SPEED_FINE on entry
- * (the operator can still toggle FAST). s_pose is the last accepted REQUESTED pose, not the current
- * target; an IK or exact-motion failure holds motion, leaves s_pose for the UI, and rebases the next
- * control increment on the held FK pose so a reverse input cannot resume a cancelled target.
+ * (the operator can still toggle FAST). s_pose is the last accepted REQUESTED pose = the motion target.
+ *
+ * smooth joystick (28 Oct 2026, it felt slow and jerky):
+ *   - each XY increment is scaled so no joint has to move faster than the motion speed limit
+ *     (trial IK: the biggest joint change vs speed * dt); a fixed mm/s used to outrun the joints
+ *   - no new increment while the joints trail the target by more than CART_LEAD_S of motion: the
+ *     requested pose can never run far ahead, so the arm stops soon after the stick is let go
+ *   - a refused request (IK or exact motion) is just not taken: no hold, the arm smoothly finishes the
+ *     last accepted target (at most CART_LEAD_S of motion away) and the next request continues from it.
+ *     before, each refusal held the arm and the next request started from the held pose: near a limit
+ *     that gave move -> refuse -> stop -> retry stutter. motion.c ramps the speed (APP_RAMP_S).
  */
 #include "modes/mode_ops.h"
 #include "modes/gripper.h"
@@ -31,36 +39,34 @@
 #define XY_FAST_MM_S 60.0f
 #define Z_STEP_MM    5.0f      /* per encoder detent */
 #define CART_MAX_ROLL_DEG 2.1f /* home J4 90 vs reference 88: bench-tested 2 deg + 0.1 margin */
+#define CART_LEAD_S  0.15f     /* the target may lead the commanded joints by this much motion at most */
 
 static cart_pose_t s_pose;      /* last accepted requested pose, not the current target */
 static bool        s_ready;     /* guard, roll and fk all passed on enter */
 static bool        s_roll_blocked; /* enter blocked only because J4 is far from the IK reference */
-static bool        s_rebase_needed; /* a failure held the arm; next request starts from held current */
 static bool        s_gripper_closed;
 static uint32_t    s_last_ms;
 static kin_status_t s_last_status = KIN_NOT_READY;
 
-/* After a failure holds motion, s_pose can still describe a request that was ahead of the arm.
- * The next control increment must start where the arm actually held, not from that cancelled
- * target, or a reverse input can move the wrong way. UI keeps s_pose; control uses this helper. */
-static bool control_origin(cart_pose_t *out)
+#if APP_USE_INPUT
+static float joint_speed_deg_s(void)
 {
-  if (!s_rebase_needed) {
-    *out = s_pose;
-    return true;
-  }
-  joint_vec_t now;
-  motion_get_current(&now);
-  kin_status_t st = kin_fk(&now, out);
-  if (st != KIN_OK) {
-    s_last_status = st;
-    s_ready = false;                 /* block until the mode is re-entered */
-    lcd_show_message(kin_status_name(st), 3000u);
-    return false;
-  }
-  return true;
+  return (motion_get_speed() == SPEED_FAST) ? APP_SPEED_FAST_DEG_S : APP_SPEED_FINE_DEG_S;
 }
 
+/* the biggest arm-joint difference (deg) between two joint vectors (J6 gripper not included) */
+static float max_joint_diff(const joint_vec_t *a, const joint_vec_t *b)
+{
+  float m = 0.0f;
+  for (int j = 0; j < J6_GRIPPER; j++) {
+    float d = absf(a->deg[j] - b->deg[j]);
+    if (d > m) m = d;
+  }
+  return m;
+}
+#endif
+
+/* takes the request or not: on a refusal nothing changes (the arm finishes the last accepted target) */
 static bool try_pose(const cart_pose_t *p)
 {
   joint_vec_t now, sol;
@@ -68,23 +74,18 @@ static bool try_pose(const cart_pose_t *p)
   kin_status_t st = kin_ik_cartesian(p, &now, &sol);
   s_last_status = st;
   if (st != KIN_OK) {
-    s_rebase_needed = true;
-    motion_hold();     /* stop an earlier pending target; s_pose stays the last accepted request */
     lcd_show_message(kin_status_name(st), 1500u);
     return false;
   }
   sol.deg[J6_GRIPPER] = now.deg[J6_GRIPPER];
-  /* all or nothing: a clamped / refused target would leave s_pose describing a pose the arm is not
-   * going to, so it is a failure. the arm stops where it is and s_pose keeps the last accepted pose */
+  /* all or nothing: a target motion would clamp is not taken (s_pose would describe a pose the arm is
+   * not going to); motion keeps the last accepted target */
   motion_result_t r = motion_set_target_exact(&sol);
   if (r != MOTION_OK) {
-    s_rebase_needed = true;
     s_last_status = (r == MOTION_CLAMPED) ? KIN_JOINT_LIMIT : KIN_NOT_READY;
-    motion_hold();
     lcd_show_message(r == MOTION_CLAMPED ? "JOINT LIMIT" : "MOTION REFUSED", 1500u);
     return false;
   }
-  s_rebase_needed = false;          /* only a successful new request clears the rebase */
   return true;
 }
 
@@ -99,7 +100,6 @@ static void enter(void)
   const bool roll_ok = absf(now.deg[J4_WRIST_ROLL] - ARM_J4_ZERO_DEG) <= CART_MAX_ROLL_DEG;
   s_roll_blocked = enabled && !roll_ok;
   s_ready = enabled && roll_ok && (fk == KIN_OK);        /* FK/roll alone do not unlock moves */
-  s_rebase_needed = false;                              /* s_pose is the FK of the current pose here */
   s_gripper_closed = gripper_is_closed_at(now.deg[J6_GRIPPER]);   /* lower angle = closed */
   s_last_ms = HAL_GetTick();
   if (!s_ready) {
@@ -136,8 +136,7 @@ static void on_event(const app_event_t *e)
   }
   switch ((evt_type_t)e->type) {
     case EVT_ENC_STEP: {
-      cart_pose_t p;
-      if (!control_origin(&p)) break;
+      cart_pose_t p = s_pose;
       p.z_mm += (float)e->v[0] * Z_STEP_MM;
       if (try_pose(&p)) s_pose = p;
       break;
@@ -168,12 +167,27 @@ static void step(void)
   float jx = input_joy_x(), jy = input_joy_y();
   if (jx == 0.0f && jy == 0.0f) return;
   float v = (motion_get_speed() == SPEED_FAST) ? XY_FAST_MM_S : XY_FINE_MM_S;
-  cart_pose_t p;
-  if (!control_origin(&p)) return;
+  joint_vec_t cur_j, tgt, sol;
+  motion_get_current(&cur_j);
+  motion_get_target(&tgt);
+  /* the joints trail the target by more than CART_LEAD_S of motion: let them catch up first */
+  if (max_joint_diff(&tgt, &cur_j) > joint_speed_deg_s() * CART_LEAD_S) return;
   /* operator behind the arm (28 Oct 2026): stick up = forward (+X), stick right = the arm's right (-Y).
    * input_joy_x/y are already the operator's right / up (input.c handles the module mounting) */
-  p.x_mm += jy * v * dt;
-  p.y_mm -= jx * v * dt;
+  float dx = jy * v * dt, dy = -jx * v * dt;
+  cart_pose_t p = s_pose;
+  p.x_mm += dx;
+  p.y_mm += dy;
+  /* scale the step to what the joints can do in dt (near some poses 20 mm/s needs > 20 deg/s) */
+  if (kin_ik_cartesian(&p, &cur_j, &sol) == KIN_OK) {
+    float d = max_joint_diff(&sol, &tgt), budget = joint_speed_deg_s() * dt;
+    if (d > budget && d > 1e-6f) {
+      float k = budget / d;
+      p = s_pose;
+      p.x_mm += dx * k;
+      p.y_mm += dy * k;
+    }
+  }
   if (try_pose(&p)) s_pose = p;
 #endif
 }
