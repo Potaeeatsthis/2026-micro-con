@@ -18,8 +18,86 @@ overridden only for a host test with `-DARM_GEOMETRY_MEASURED=1`; firmware stays
 until the owner explicitly changes the default. `ARM_GEOMETRY_MEASURED` is an activation guard,
 not a claim that the arm is measured.
 
-Before activating IK: resolve the placeholder voice grasp/place pitch values, handle rejected or
-clamped motion results correctly in the IK callers, then validate selected, physically clear poses.
+Before activating IK: ~~resolve the placeholder voice grasp/place pitch values~~ and ~~handle
+rejected or clamped motion results in the IK callers~~ (both done 28 Oct 2026, see below), then
+validate selected, physically clear poses on the board (IK bench test below).
+
+## IK callers (28 Oct 2026, IK guard still 0)
+
+**Pitch.** `pitch_deg` is the tool approach in the arm's vertical plane: **0 = gripper pointing up,
+180 = straight down**, smaller = tilted toward the reach. Home is about 148. Voice used 0 (up) for every
+grasp and place, so IK refused every table target. Now grasp and place **search the pitch**:
+180 first, then 10 deg less at a time down to 120 (`GRASP_PITCH_*` in `mode_voice.c`). The first pitch
+for which **every pose of the script** solves (above, grasp / release, lift) is used for the whole
+script, so the gripper does not turn between steps. The poses are solved in order, each from the
+previous solution, so the J2/J5 check is the one motion will see. If no pitch fits, the LCD shows the
+IK status and nothing moves (the gripper does not open). The jog queue keeps the pitch it is holding.
+
+With the candidate geometry and the installed limits the reachable band is narrow. Reachable Z (mm) at
+Y = 0, from home (host scan, test only):
+
+| X | p180 | p170 | p160 | p150 | p140 |
+|---|---|---|---|---|---|
+| 200 | -50..52 | 76..84 | 108..114 | 134..146 | 158..178 |
+| 220 | -32..40 | -44..78 | 76..112 | 112..146 | 140..180 |
+| 240 | -6..22 | -26..68 | -34..106 | 76..142 | 114..178 |
+| 260 | - | 2..52 | -16..96 | -22..136 | 72..172 |
+| 280 | - | - | 16..80 | 0..122 | -4..162 |
+
+A grasp needs the box Z **and** Z + `APPROACH_MM` (50) at one pitch: e.g. a box at 240, 0, 30 uses
+pitch 160; the pi protocol example 182, -45, 30 is refused at every pitch. From home, Cartesian can move
+down but not up (J5 is at its 25 deg minimum).
+
+**Clamped / refused targets.** IK callers now use `motion_set_target_exact()`: all or nothing. If motion
+would clamp any joint (table limit or J2/J5 coupling), the target is **not** changed, so the arm never
+starts toward a different pose than planned.
+
+| Caller | On `MOTION_CLAMPED` / `MOTION_REFUSED` |
+|---|---|
+| Cartesian | `motion_hold()`, the pose stays the last good one, LCD `JOINT LIMIT` / `MOTION REFUSED` |
+| Voice script step | `motion_hold()`, LCD `JOINT LIMIT`, the step fails -> `MOVE FAILED` -> S10 (stop safely) |
+| Voice home / raise | same (`HOME BLOCKED` for home) |
+
+## IK bench test (one supervised move, IK guard still 0)
+
+`App/ik_bench_test/` (`APP_USE_IK_BENCH_TEST`, off by default, never on `master`) solves **one** fixed
+target with `kin_ik_bench()` (the same solver without the guard) and moves there only on a knob press.
+`kin_ik()` still returns `KIN_NOT_READY` in that build, so nothing else can use IK.
+
+Default target **X 250, Y 13, Z 120 mm, pitch 150** (27 mm below home). IK gives
+J1..J5 = 85.8, 125.9, 157.5, 88.0, 34.6 deg; the biggest change from home is J3, 12.5 deg. The gripper
+never moves. A solution that moves any joint more than 30 deg (`IK_BENCH_MAX_DELTA_DEG`) is refused.
+
+`app_config_local.h` for the bench:
+
+```c
+#define APP_USE_IK_BENCH_TEST  1
+#define APP_USE_SERVO_CAL_TEST 0
+#define APP_USE_MOTION         1
+#define APP_USE_MODES          0
+#define APP_USE_LCD            0
+#define APP_USE_INPUT          1
+#define APP_USE_KINEMATICS     1
+#define APP_USE_VOICE          0
+#define APP_USE_PI             0
+#define APP_SPEED_FINE_DEG_S   5.0f   /* slower than the normal 10 deg/s */
+```
+
+Procedure:
+
+1. Clear the space around the arm (about 30 mm below the home tool point and the path to it).
+   Have the servo power switch in reach.
+2. Power on. Motion sends home one joint at a time. The screen shows the target, the IK angles,
+   `NOW` (commanded), `EST` (FK of now), `MAX MOVE` and `KNOB PRESS = GO`. Check the IK angles above.
+3. Knob press: the arm moves at fine speed. **Any press (knob, or stick press with the stick centred)
+   stops it** (`STOPPED`); the servo power switch is the hard stop.
+4. Arrived (`MEASURE. PRESS = HOME`): `EST` and `ERR` are the FK estimate of the reached pose and its
+   difference from the target, also printed on USART3. Measure the real tool point (robot frame: origin
+   on the floor under the J1 axis, +X forward, +Y left, +Z up) and write down the difference.
+5. Knob press: back home, then ready again.
+
+Pass: the move is smooth, no joint hits a limit, and the measured tool point is close to the target.
+A large error means the candidate zeros / signs (`arm_geometry.h`) need a fix before IK is activated.
 
 **Board check (FK only):** at J1..J5 = 85, 145, 88, 88, 96 deg (the candidate zeros) the LCD should
 show about **10, 9, 438** (X/Y/Z, whole mm; FK gives 10.15, 9.52, 438.50). The values must follow slow
@@ -146,6 +224,11 @@ Limits and coupling:
   `KIN_JOINT_LIMIT`.
 
 ## Tests
+
+`test_ik_bench.c` runs the bench screen with the guard at 0 (`kin_ik()` refused, `kin_ik_bench()` solves,
+go / stop / home, exact target). `test_app.c` is also built with `-DARM_GEOMETRY_MEASURED=1 -DAPP_TEST_IK=1`
+for the IK callers (pitch search picks 160 for a box at 240, 0, 30; 182, -45, 30 is refused before
+anything moves; Cartesian keeps its last good pose at a limit).
 
 `ProjectDevGuide/tests/host/test_kinematics.c` is compiled twice by `run.sh`:
 

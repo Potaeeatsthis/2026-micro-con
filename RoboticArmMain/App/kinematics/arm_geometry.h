@@ -34,8 +34,9 @@
  *   ARM_GEOMETRY_MEASURED 0  the IK activation guard (not a measurement claim): kin_ik() returns
  *                            KIN_NOT_READY, so Cartesian and voice pose moves stay blocked. Host tests may
  *                            override it with -DARM_GEOMETRY_MEASURED=1; firmware stays 0 until the owner
- *                            explicitly activates IK (placeholder voice pitches and clamped-motion handling
- *                            must be resolved first, see ProjectDevGuide/docs/kinematics.md).
+ *                            explicitly activates IK. voice pitch search and clamped-motion handling are done
+ *                            (28 Oct 2026); next is the supervised bench move (App/ik_bench_test/, which does
+ *                            NOT change this guard), see ProjectDevGuide/docs/kinematics.md.
  */
 #ifndef APP_ARM_GEOMETRY_H
 #define APP_ARM_GEOMETRY_H
