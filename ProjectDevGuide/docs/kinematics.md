@@ -6,23 +6,56 @@ runs in an ISR.
 
 ## Activation state
 
-FK and IK have separate guards in `arm_geometry.h` (28 Oct 2026):
+FK and the two IK entry points have separate guards in `arm_geometry.h` (28 Oct 2026):
 
 | Guard | Default | Effect |
 |---|---|---|
 | `ARM_FK_ENABLED` | **1** | `kin_fk()` works. The manual-mode LCD pages show X/Y/Z labelled **"XYZ ESTIMATED, mm"**: FK of the *commanded* angles (no joint sensors) with candidate zeros, so an estimate, not a measurement. FK never commands motion. |
-| `ARM_GEOMETRY_MEASURED` | **0** | The IK activation guard. `kin_ik()` returns `KIN_NOT_READY` immediately, before any input check, so Voice cannot start an IK move. Cartesian mode stays blocked (shows `IK DISABLED`; knob, joystick and gripper do nothing) because it requires `kin_ik_enabled()`, not just a working FK. |
+| `ARM_CARTESIAN_IK_ENABLED` | **1** | Cartesian mode may call `kin_ik_cartesian()`. The owner authorised this after the supervised bench move. The mode is ready, the joystick/knob move it, and the gripper is manual. It does **not** unlock voice. |
+| `ARM_GEOMETRY_MEASURED` | **0** | The global/voice IK activation guard. `kin_ik()` returns `KIN_NOT_READY` immediately, before any input check, so Voice cannot start an IK move. |
 
-`kin_fk_enabled()` / `kin_ik_enabled()` report the two guards at run time. The IK guard can be
-overridden only for a host test with `-DARM_GEOMETRY_MEASURED=1`; firmware stays IK-fail-closed
-until the owner explicitly changes the default. `ARM_GEOMETRY_MEASURED` is an activation guard,
-not a claim that the arm is measured.
+`kin_fk_enabled()` / `kin_ik_enabled()` / `kin_ik_cartesian_enabled()` report the guards at run
+time. The global guard can be overridden only for a host test with `-DARM_GEOMETRY_MEASURED=1`;
+firmware keeps global/voice IK fail-closed until the owner explicitly changes the default.
+`ARM_GEOMETRY_MEASURED` is an activation guard, not a claim that the arm is measured.
 
-Before activating IK: ~~resolve the placeholder voice grasp/place pitch values~~ and ~~handle
-rejected or clamped motion results in the IK callers~~ (both done 28 Oct 2026, see below), then
-validate selected, physically clear poses on the board (IK bench test below).
+The IK bench build (`APP_USE_IK_BENCH_TEST`) is special: it compiles the solver for
+`kin_ik_bench()` only. `kin_ik()` and `kin_ik_cartesian()` both refuse in that build, even if
+`ARM_CARTESIAN_IK_ENABLED` is 1, so the bench screen cannot activate a normal caller.
 
-## IK callers (28 Oct 2026, IK guard still 0)
+Cartesian was activated after the supervised bench move. Global/voice IK is still pending:
+voice pose moves stay blocked until the owner activates global IK and the board check is repeated
+with the servo signal wires disconnected first.
+
+## IK callers (28 Oct 2026: Cartesian on, global/voice off)
+
+**Cartesian vs voice.** Cartesian mode calls `kin_ik_cartesian()`; Voice still calls `kin_ik()` and
+therefore stays blocked. The two functions share the same solver and status rules; only the activation
+guard differs.
+
+**Cartesian entry and roll.** The mode never sets a target or moves the arm on entry. It forces
+`SPEED_FINE` (the operator can still toggle FAST), reads the current pose with FK, and keeps that FK
+pitch for every Cartesian move. IK fixes J4 at `ARM_J4_ZERO_DEG` (88 deg), so the first **accepted**
+move from the installed home (J4 90) rolls J4 by the bench-tested 2 deg; the other joints make the
+small endpoint corrections needed to keep the requested X/Y/Z/pitch. Between moves, motion is
+joint-interpolated, not a straight Cartesian line. This is not a full orientation command:
+`cart_pose_t` carries only the projected pitch. If J4 is more than 2.1 deg from the reference at entry
+(`CART_MAX_ROLL_DEG`: the tested 2 deg plus 0.1 deg margin), the mode stays blocked and shows
+`ALIGN J4 <reference>`. Align J4 in a manual mode and re-enter; there is no automatic alignment.
+
+**Cartesian controls.** The joystick moves X/Y at 20 mm/s in FINE and 60 mm/s in FAST (mode entry
+resets to FINE). One encoder detent moves Z by 5 mm. The encoder press toggles the gripper; J6 can be
+commanded to 0 deg (closed) and there is no deadman. Centring the stick issues no new request, but it
+does **not** cancel an already queued target: the arm continues to the last accepted target. Exit calls
+`motion_hold()`. There is no automatic collision checker and no software stop or emergency-stop
+guarantee; switch the servo supply off for a hard stop. Keep the workspace clear and be ready to leave
+the mode.
+
+**Failure handling.** IK or exact-motion failure calls `motion_hold()`, so an older pending target
+cannot keep moving the arm. `s_pose` stays the last **accepted requested** pose for the LCD, but both
+the encoder and XY control increments after a failure rebase on the FK of the held **current** pose.
+Otherwise a reverse input could resume a cancelled target that was still ahead of the arm. If that
+held-pose FK fails, the mode blocks and shows the FK status until it is re-entered.
 
 **Pitch.** `pitch_deg` is the tool approach in the arm's vertical plane: **0 = gripper pointing up,
 180 = straight down**, smaller = tilted toward the reach. Home is about 148. Voice used 0 (up) for every
@@ -64,15 +97,17 @@ starts toward a different pose than planned.
 
 | Caller | On `MOTION_CLAMPED` / `MOTION_REFUSED` |
 |---|---|
-| Cartesian | `motion_hold()`, the pose stays the last good one, LCD `JOINT LIMIT` / `MOTION REFUSED` |
+| Cartesian | `motion_hold()`, the pose stays the last accepted request, LCD `JOINT LIMIT` / `MOTION REFUSED` |
 | Voice script step | `motion_hold()`, LCD `JOINT LIMIT`, the step fails -> `MOVE FAILED` -> S10 (stop safely) |
 | Voice home / raise | same (`HOME BLOCKED` for home) |
 
-## IK bench test (one supervised move, IK guard still 0)
+## IK bench test (one supervised move, global/voice guard still 0)
 
 `App/ik_bench_test/` (`APP_USE_IK_BENCH_TEST`, off by default, never on `master`) solves **one** fixed
 target with `kin_ik_bench()` (the same solver without the guard) and moves there only on a knob press.
-`kin_ik()` still returns `KIN_NOT_READY` in that build, so nothing else can use IK.
+`kin_ik()` still returns `KIN_NOT_READY` in that build. The Cartesian IK API is also disabled there
+(`kin_ik_cartesian_enabled()` false, `kin_ik_cartesian()` refuses), so the bench screen is the only
+solver caller.
 
 Default target **X 250, Y 13, Z 120 mm, pitch 150** (27 mm below home). IK gives
 J1..J5 = 85.8, 125.9, 157.5, 88.0, 34.6 deg; the biggest change from home is J3, 12.5 deg. The gripper
@@ -111,11 +146,13 @@ Procedure:
 5. Knob press: back home, then ready again.
 
 Pass: the move is smooth, no joint hits a limit, and the measured tool point is close to the target.
-A large error means the candidate zeros / signs (`arm_geometry.h`) need a fix before IK is activated.
+A large error means the candidate zeros / signs (`arm_geometry.h`) need a fix before global/voice
+IK is activated.
 
 **Board check (FK only):** at J1..J5 = 85, 145, 88, 88, 96 deg (the candidate zeros) the LCD should
 show about **10, 9, 438** (X/Y/Z, whole mm; FK gives 10.15, 9.52, 438.50). The values must follow slow
-manual moves, and Cartesian / voice IK moves must stay blocked.
+manual moves. Voice IK moves must stay blocked; Cartesian is active in normal firmware and must obey
+the entry roll guard above.
 
 ## Geometry source and provenance
 
@@ -147,6 +184,11 @@ is explicitly provisional in the workbook. These are not hardware proof.
 ```c
 kin_status_t kin_fk(const joint_vec_t *joints, cart_pose_t *out);
 kin_status_t kin_ik(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out);
+kin_status_t kin_ik_cartesian(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out);
+
+bool kin_fk_enabled(void);
+bool kin_ik_enabled(void);              /* global/voice guard */
+bool kin_ik_cartesian_enabled(void);    /* Cartesian guard; false in a bench build */
 ```
 
 `joint_vec_t.deg[]` is **servo degrees 0..180**, not model angles. FK converts with
@@ -154,15 +196,15 @@ kin_status_t kin_ik(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_
 servo software limits, so the CAD test vectors can be checked outside the installed
 ranges. IK enforces the installed limits.
 
-Outputs are written only on `KIN_OK`. Every failure preserves `out`. Null arguments
-are handled after the activation guard.
+Outputs are written only on `KIN_OK`. Every failure preserves `out`. Each IK entry
+point checks its own activation guard before looking at the inputs.
 
 | Status | Meaning |
 |---|---|
 | `KIN_OK` | output written |
 | `KIN_OUT_OF_REACH` | null/non-finite/invalid input, or no geometric solution |
 | `KIN_JOINT_LIMIT` | a geometric solution exists, but a servo limit, the J2/J5 coupling, or seed J6 fails |
-| `KIN_NOT_READY` | geometry disabled, or FK cannot express a pitch from the approach projection |
+| `KIN_NOT_READY` | the caller's guard is off (global/voice or Cartesian, including any bench build), or FK cannot express a pitch from the approach projection |
 
 ## FK
 
@@ -186,7 +228,9 @@ FK returns `KIN_NOT_READY` and leaves `out` unchanged.
 
 ## IK
 
-Workbook planar closed form with roll fixed at `q4 = 0` (servo J4 reference 88 deg):
+Cartesian mode uses `kin_ik_cartesian()`; Voice still uses `kin_ik()` and stays fail-closed. Both
+share the same solver. The solver is the workbook planar closed form with roll fixed at `q4 = 0`
+(servo J4 reference 88 deg):
 
 ```text
 y_t = S.y + t.y
@@ -239,18 +283,34 @@ Limits and coupling:
 
 ## Tests
 
-`test_ik_bench.c` runs the bench screen with the guard at 0 (`kin_ik()` refused, `kin_ik_bench()` solves,
-through the real `input.c` path: a knob held across start-up, a press queued on the last start-up tick,
-and a press 100 ms after READY that is handled only after the window are all not GO; a new press is.
-Go / stop / home, exact target). `test_app.c` is also built with `-DARM_GEOMETRY_MEASURED=1 -DAPP_TEST_IK=1`
-for the IK callers (pitch search picks 160 for a box top at 240, 0, 30; 182, -45, 30 is refused before
-anything moves; Cartesian keeps its last good pose at a limit).
+`test_ik_bench.c` runs the bench screen with the global guard at 0 (`kin_ik()` refused, `kin_ik_bench()`
+solves). It also checks that the bench build keeps the Cartesian API off even though
+`ARM_CARTESIAN_IK_ENABLED` is 1, and that a refusal preserves `out`. The rest of the bench test uses the
+real `input.c` path: a knob held across start-up, a press queued on the last start-up tick, and a press
+100 ms after READY that is handled only after the window are all not GO; a new press is. Go / stop /
+home, exact target.
 
-`ProjectDevGuide/tests/host/test_kinematics.c` is compiled twice by `run.sh`:
+The default `test_app.c` build checks that Cartesian is ready while voice/global `kin_ik()` still
+refuses; entering Cartesian sets no target/motion and forces FINE; Z -5 mm at home is accepted and
+finishes J4 at the reference; Z +5 mm is refused, holds the previous target and does not advance the
+accepted pose; a Z move leaves J6 alone and an explicit encoder press still toggles the gripper. It
+also seeds J4 at 120 deg, checks the `ALIGN J4 <reference>` block with no knob/gripper target change,
+then aligns J4 and re-enters. `test_app.c` is also built with `-DARM_GEOMETRY_MEASURED=1 -DAPP_TEST_IK=1`
+for the full IK callers (pitch search picks 160 for a box top at 240, 0, 30; 182, -45, 30 is refused
+before anything moves; Cartesian keeps its last accepted pose at a limit).
+
+`test_cartesian.c` is built with `APP_USE_INPUT=1` and calls the real `MODE_CARTESIAN_OPS` with a fake
+joystick. It checks that X+ / Y+ change only the expected axis in one 20 ms step, that centring issues
+no new request, that a refusal holds the current pose and the next XY retry rebases on it (not on the
+cancelled request), that voice `kin_ik()` stays blocked, and that entry/XY never command the gripper.
+
+`ProjectDevGuide/tests/host/test_kinematics.c` is compiled three times by `run.sh`:
 
 ```text
-default                  IK guard 0: IK NOT_READY, unchanged outputs; FK on: reference pose -> TCP0
--DARM_GEOMETRY_MEASURED=1 -lm: the math, limits and error paths
+default                                  Cartesian on, global/voice off: Cartesian round trip, kin_ik NOT_READY
+-DARM_CARTESIAN_IK_ENABLED=0             both normal IK APIs NOT_READY, unchanged outputs; FK still on
+-DARM_GEOMETRY_MEASURED=1 -DARM_CARTESIAN_IK_ENABLED=0 -lm
+                                         the math, limits and error paths
 ```
 
 The math build checks the nine workbook `Test_Vectors` FK cases, full-roll FK
@@ -262,10 +322,16 @@ Run from the repo root:
 
 ```text
 sh ProjectDevGuide/tests/host/run.sh
+python3 ProjectDevGuide/tests/host/test_kinematic_reference.py
+python3 ProjectDevGuide/tests/host/test_kinematics_workbook.py
 python ProjectDevGuide/ci/build_firmware.py
 python ProjectDevGuide/ci/check_rules.py
 ```
 
-No board or servo test is performed by these host checks. Turning the guard on is
-a separate owner decision and must be followed by a hardware test with the servo
-signal wires disconnected first.
+No board or servo test is performed by these host checks. Cartesian is already active; turning the
+global/voice guard on is a separate owner decision and must be followed by a hardware test with the
+servo signal wires disconnected first.
+
+For the first supervised Cartesian move, start at the unchanged installed home, clear the workspace,
+keep the servo power switch in reach, and begin with a single encoder click Z -5 mm (the verified
+home move). The firmware home pose is not changed by this activation.

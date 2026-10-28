@@ -34,8 +34,9 @@ The bench tools are separate from the HAL firmware:
   passes J2 < 90 with J5 < 65 and ends exactly at home. With the staging removed the HOME test fails.
 
 Still open before powered automatic operation: build with the ARM toolchain, check the PWM with the servo
-signal wires disconnected, then supported, controlled hardware tests. Not covered yet (IK not ready, so not
-reachable today): Cartesian moves and voice pose steps still accept `MOTION_CLAMPED` IK targets.
+signal wires disconnected, then supported, controlled hardware tests. The IK callers use
+`motion_set_target_exact()`: a clamped or refused target is held, not moved to. Cartesian is active;
+voice pose steps remain blocked by the global IK guard.
 
 The firmware table in `App/motion/servo_cal.c` now holds the confirmed installed
 home poses and conservative per-joint safe limits (27 Oct 2026; J6's home was
