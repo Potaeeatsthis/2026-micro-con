@@ -176,6 +176,19 @@ servo,label,measured_deg,pulse_us
 
 Copy or save this output before resetting or powering off the board.
 
+## Arrow-key front end (Windows)
+
+[`servo-cal-keys.ps1`](servo-cal-keys.ps1) drives this console from the keyboard: arrow keys send `pulse`
+commands in 10 us steps (the console's own limit), Enter sends `record` / `reference`, and the five steps
+(90 deg, 0 deg, 180 deg, low and high limit) end with `limits` and `table`. It asks for the servo's own name
+(e.g. `SG92R-4`), so a new unit can use any slot (`-Slot`, default 4). Results go to `results/` (not in git).
+
+```text
+powershell -ExecutionPolicy Bypass -File servo-cal-keys.ps1 -Port COM7
+```
+
+Tested on an Arduino Nano (same ATmega328 as the Uno; upload with `--fqbn arduino:avr:nano`).
+
 ## Host test
 
 The host test compiles this exact `.ino` file with the real Uno backend header

@@ -9,6 +9,7 @@ This folder holds the material around it:
 | `docs/core-config.md` | pins, clocks, timers, DMA, interrupts, memory, CubeMX checklist, CubeIDE setup, CI | anyone touching hardware or the `.ioc` |
 | `docs/servo-calibration.md` | canonical unloaded servo measurements, confirmed unit-to-joint/pin map, STM32 bench test, signal check, installed-calibration checklist | anyone calibrating or touching motion |
 | `docs/station-detection.md` | how the Pi finds the station and its drop spot (depth only), tests, rules for changing the detector | whoever works on the Pi vision or the station target |
+| `docs/camera-calibration.md` | camera -> robot calibration (`calib_T.npy`): measuring points with the arm, solving, checking, troubleshooting, 28 Oct result (J1 issue) | whoever calibrates the camera or debugs a missed grab |
 | `docs/voice-task.md` | voice task states S0–S11, which words each state accepts, dry-run bench test with the Pi | whoever works on voice mode, IK or the Pi link |
 | `docs/integration/` | how to open, build and run the project in CubeIDE; templates of our USER CODE in generated files | everyone (section 1), the `.ioc` owner (the rest) |
 | `docs/module_template/` | starting files for a new feature module | whoever adds a module |
