@@ -76,7 +76,9 @@ int main(void)
     cart_pose_t p = { 250.0f, 13.0f, 120.0f, 150.0f };
     joint_vec_t out = home;
     CHECK(ARM_GEOMETRY_MEASURED == 0 && !kin_ik_enabled(), "global/voice activation guard unchanged (0)");
-    CHECK(kin_ik(&p, &home, &out) == KIN_NOT_READY, "kin_ik() still refuses: voice stays blocked");
+    CHECK(kin_ik(&p, &home, &out) == KIN_NOT_READY, "kin_ik() still refuses");
+    CHECK(ARM_VOICE_IK_ENABLED == 1 && !kin_ik_voice_enabled(), "bench build: voice API off even with its flag at 1");
+    CHECK(kin_ik_voice(&p, &home, &out) == KIN_NOT_READY, "bench voice API refuses");
     CHECK(ARM_CARTESIAN_IK_ENABLED == 1, "the Cartesian flag is at its normal default in this build");
     CHECK(!kin_ik_cartesian_enabled(), "bench build: Cartesian API stays off even with the flag at 1");
     joint_vec_t cart_out = home;

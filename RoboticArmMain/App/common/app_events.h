@@ -47,7 +47,7 @@ typedef enum {
   EVT_TOUCH_MODE_TAB = 90,  /* arg = arm_mode_t */
   EVT_TOUCH_STOP,           /* software stop button (convenience, not safety) */
   EVT_TOUCH_UNDO,           /* jog queue undo */
-  EVT_TOUCH_STEP_CM,        /* jog step slider: v[0] = step in mm */
+  EVT_TOUCH_STEP_CM,        /* jog step slider (voice page): v[0] = step in 0.1 mm, 0..200 (0.00..2.00 cm) */
   EVT_TOUCH_CONFIRM,        /* "safe restart" confirm button */
   EVT_TOUCH_SELECT,         /* lcd < / > on the single-joint or group page: v[0] = +1 next, -1 previous */
 

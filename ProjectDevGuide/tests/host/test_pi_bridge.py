@@ -192,6 +192,29 @@ def hand_src(hand):
     return s
 
 
+def station_src(age_s, station_max_age_s):
+    """A CameraSource without camera: only what lookup("station") uses; the station was seen age_s ago."""
+    import threading
+    s = pb.CameraSource.__new__(pb.CameraSource)
+    s.calib = pb.Calibration("/nonexistent/calib_T.npy", camera_frame_ok=True)
+    s.calib.check()
+    s.max_age_s, s.min_conf, s.station_max_age_s = 1.0, 40, station_max_age_s
+    s.lock = threading.Lock()
+    s.station = {"drop_cam_mm": np.array([10.0, 20.0, 300.0]), "conf": 95, "t": time.monotonic() - age_s,
+                 "n_blocks": 0}
+    return s
+
+
+class StationLookup(unittest.TestCase):
+    def test_station_hidden_by_the_arm_is_still_found(self):
+        # 5 s since the last sighting (the arm is over it): still answered with the default 30 s
+        self.assertIsNotNone(station_src(5.0, 30.0).lookup("station"))
+
+    def test_station_too_old_is_notfound(self):
+        self.assertIsNone(station_src(40.0, 30.0).lookup("station"))
+        self.assertIsNone(station_src(5.0, 1.0).lookup("station"))
+
+
 class HandLookup(unittest.TestCase):
     def test_hand_off_is_notfound(self):
         s = hand_src(None)

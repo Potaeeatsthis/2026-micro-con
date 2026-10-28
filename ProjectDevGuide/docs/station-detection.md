@@ -94,6 +94,12 @@ and prints a `station:` line and why each rejected part was not the station. `--
 release height itself, as for `hand`. Blocks lying on the station are answered by the normal `FIND red_box`
 (their z is the station top + block height). The status line ends with `station c.. drop x y z (n blocks)`.
 
+**Station age (28 Oct 2026, board test):** while the arm holds a block above the table to place it, the arm
+hides the station from the camera, and with the 1 s age every `FIND station` was a `NOTFOUND` although the
+station had been seen at 90 %+ a moment before. The station is now answered from the last good sighting up
+to `--station-max-age` seconds (default 30); blocks keep the 1 s `--max-age`. Limit: a block placed while the
+station was hidden is only taken into account for the next drop spot once the camera sees the top again.
+
 `best_per_color` still keeps **one block per colour**: with a red block on the table and one on the station,
 `FIND red_box` answers the more confident one. Changing that needs a protocol decision (e.g. `red_box@station`).
 
@@ -146,7 +152,7 @@ when the depth looks poor (service stopped, `python ir_check.py`).
 |---|---|
 | `App/common/app_types.h` | `OBJ_STATION` after `OBJ_HAND` (not a box, outside `OBJ_BOX_COUNT`; `OBJ_COUNT` is now 6) |
 | `App/pi_link/pi_proto.c` | name `"station"` in `OBJ_NAMES` |
-| `App/modes/mode_voice.c` | `station` + `yes` sends `FIND station` (like `hand`) instead of the fixed `DEST_STATION` pose; the reply's drop spot is placed with the gripper opening `STATION_RELEASE_MM` (20 mm placeholder) above it; `NOTFOUND` shows `STATION NOT FOUND` and asks again |
+| `App/modes/mode_voice.c` | `station` + `yes` sends `FIND station` (like `hand`) instead of the fixed `DEST_STATION` pose; the reply's drop spot is placed with the gripper opening `STATION_RELEASE_MM` (25 mm since 28 Oct 2026: held block centre above the top; 12 bumped the station) above it; `NOTFOUND` shows `STATION NOT FOUND` and asks again |
 | `ProjectDevGuide/tests/host/` | `OBJ station` / `NOTFOUND station` parsing; dry run walks `station` end to end (FIND, NOTFOUND, a hand reply ignored, place above the drop spot, never down to it) |
 
 Bench check without voice: `APP_INPUT_TEST 1` + `APP_INPUT_TEST_CYCLE 1` in `app_config_local.h` now also sends

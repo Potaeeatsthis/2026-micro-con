@@ -6,32 +6,32 @@ runs in an ISR.
 
 ## Activation state
 
-FK and the two IK entry points have separate guards in `arm_geometry.h` (28 Oct 2026):
+FK and the three IK entry points have separate guards in `arm_geometry.h` (28 Oct 2026):
 
 | Guard | Default | Effect |
 |---|---|---|
 | `ARM_FK_ENABLED` | **1** | `kin_fk()` works. The manual-mode LCD pages show X/Y/Z labelled **"XYZ ESTIMATED, mm"**: FK of the *commanded* angles (no joint sensors) with candidate zeros, so an estimate, not a measurement. FK never commands motion. |
 | `ARM_CARTESIAN_IK_ENABLED` | **1** | Cartesian mode may call `kin_ik_cartesian()`. The owner authorised this after the supervised bench move. The mode is ready, the joystick/knob move it, and the gripper is manual. It does **not** unlock voice. |
-| `ARM_GEOMETRY_MEASURED` | **0** | The global/voice IK activation guard. `kin_ik()` returns `KIN_NOT_READY` immediately, before any input check, so Voice cannot start an IK move. |
+| `ARM_VOICE_IK_ENABLED` | **1** | Voice mode may call `kin_ik_voice()`. The owner (Supanut) authorised this on 28 Oct 2026 after the camera calibration (`camera-calibration.md`, RMS 8.9 mm). J1 is still ~14 deg short to the right (not fixed): avoid Y < -100. Voice moves only after "yes". |
+| `ARM_GEOMETRY_MEASURED` | **0** | The global IK guard. `kin_ik()` returns `KIN_NOT_READY` immediately, before any input check. No mode calls it any more (Cartesian and voice have their own entry points); host tests use `-DARM_GEOMETRY_MEASURED=1` for the full math checks. |
 
-`kin_fk_enabled()` / `kin_ik_enabled()` / `kin_ik_cartesian_enabled()` report the guards at run
-time. The global guard can be overridden only for a host test with `-DARM_GEOMETRY_MEASURED=1`;
-firmware keeps global/voice IK fail-closed until the owner explicitly changes the default.
+`kin_fk_enabled()` / `kin_ik_enabled()` / `kin_ik_cartesian_enabled()` / `kin_ik_voice_enabled()` report
+the guards at run time. The global guard can be overridden only for a host test with
+`-DARM_GEOMETRY_MEASURED=1`; firmware keeps the global `kin_ik()` fail-closed.
 `ARM_GEOMETRY_MEASURED` is an activation guard, not a claim that the arm is measured.
 
 The IK bench build (`APP_USE_IK_BENCH_TEST`) is special: it compiles the solver for
-`kin_ik_bench()` only. `kin_ik()` and `kin_ik_cartesian()` both refuse in that build, even if
-`ARM_CARTESIAN_IK_ENABLED` is 1, so the bench screen cannot activate a normal caller.
+`kin_ik_bench()` only. `kin_ik()`, `kin_ik_cartesian()` and `kin_ik_voice()` all refuse in that build,
+even if their flags are 1, so the bench screen cannot activate a normal caller.
 
-Cartesian was activated after the supervised bench move. Global/voice IK is still pending:
-voice pose moves stay blocked until the owner activates global IK and the board check is repeated
-with the servo signal wires disconnected first.
+Cartesian was activated after the supervised bench move, voice after the camera calibration
+(28 Oct 2026). The first real voice grasp is done supervised, servo power switch in reach.
 
-## IK callers (28 Oct 2026: Cartesian on, global/voice off)
+## IK callers (28 Oct 2026: Cartesian and voice on, global off)
 
-**Cartesian vs voice.** Cartesian mode calls `kin_ik_cartesian()`; Voice still calls `kin_ik()` and
-therefore stays blocked. The two functions share the same solver and status rules; only the activation
-guard differs.
+**Cartesian vs voice.** Cartesian mode calls `kin_ik_cartesian()`, voice calls `kin_ik_voice()`
+(28 Oct 2026; before that voice called the global `kin_ik()` and stayed blocked). All IK entry points
+share the same solver and status rules; only the activation guard differs.
 
 **Cartesian entry and roll.** The mode never sets a target or moves the arm on entry. It forces
 `SPEED_FINE` (the operator can still toggle FAST), reads the current pose with FK, and keeps that FK
@@ -65,11 +65,23 @@ held-pose FK fails, the mode blocks and shows the FK status until it is re-enter
 **Pitch.** `pitch_deg` is the tool approach in the arm's vertical plane: **0 = gripper pointing up,
 180 = straight down**, smaller = tilted toward the reach. Home is about 148. Voice used 0 (up) for every
 grasp and place, so IK refused every table target. Now grasp and place **search the pitch**:
-180 first, then 10 deg less at a time down to 120 (`GRASP_PITCH_*` in `mode_voice.c`). The first pitch
+180 first, then 10 deg less at a time down to 110 (`GRASP_PITCH_*` in `mode_voice.c`; 120 until the
+28 Oct board test). The first pitch
 for which **every pose of the script** solves (above, grasp / release, lift) is used for the whole
 script. The same pitch is requested at each waypoint; pitch may change during travel. The poses are solved in order, each from the
 previous solution, so the J2/J5 check is the one motion will see. If no pitch fits, the LCD shows the
 IK status and nothing moves (the gripper does not open). The jog queue keeps the pitch it is holding.
+
+**Raise steps and the short approach (28 Oct 2026, after the first real voice grasps were mostly
+`OUT OF REACH` / `JOINT LIMIT`).** Many far / low poses need the shoulder below 90 deg, which the J2/J5
+coupling only allows once the wrist is at 65 deg or more; the arm sits at home with the wrist at 25. The
+planner (`script_plan` in `mode_voice.c`) now solves each pose from the previous one and, when the coupling
+refuses it, retries from the **coupling-safe pose** (J2 >= 90, J5 >= 65, the rest unchanged); if that works it
+puts a raise step (`STEP_HOME_RAISE`) in front of the pose: the arm first lifts the wrist (or the shoulder),
+then moves. Every raise target still goes through `motion_set_target_exact()`. If no pitch fits with the
+50 mm approach, grasp / place try a 30 mm approach (`APPROACH_MIN_MM`, still above a 15 mm block). Host
+reach for a block on the table (top Z 15), from home: 75 of 169 grid points before, 111 after (radius about
+200-350 mm; nearer than ~200 mm the elbow J3 hits its 180 deg limit); station height (top Z 60): 77 -> 97.
 
 **Endpoint orientation only.** The pitch holds AT each waypoint (above, grasp, lift). Between waypoints
 motion moves every joint on its own at its speed limit (no Cartesian interpolation, joints do not arrive
@@ -77,8 +89,8 @@ together), so the tool path is not straight and the pitch changes during the mov
 box is therefore **not** guaranteed vertical or orientation-preserving.
 
 **Grasp height.** The Pi reports the **centre of the box's top face**; the TCP is the centre of the
-**held** box (TCP z = block top - 15 / 2). Voice grasps at the top minus `GRASP_BELOW_TOP_MM` (7.5 mm,
-the documented 15 mm block; check on the real gripper). `HAND_RELEASE_MM` / `STATION_RELEASE_MM` are
+**held** box (TCP z = block top - 15 / 2). Voice grasps at the top minus `GRASP_BELOW_TOP_MM`: 10.5 mm = half the 15 mm block (7.5) + 3 mm deeper,
+because the gripper sometimes missed a block on the table in the 28 Oct 2026 board test. `HAND_RELEASE_MM` / `STATION_RELEASE_MM` are
 also TCP heights (held box centre) above the palm / station top.
 
 With the candidate geometry and the installed limits the reachable band is narrow. Reachable Z (mm) at
@@ -295,26 +307,28 @@ real `input.c` path: a knob held across start-up, a press queued on the last sta
 100 ms after READY that is handled only after the window are all not GO; a new press is. Go / stop /
 home, exact target.
 
-The default `test_app.c` build checks that Cartesian is ready while voice/global `kin_ik()` still
-refuses; entering Cartesian sets no target/motion and forces FINE; Z -5 mm at home is accepted and
+The default `test_app.c` build checks that Cartesian and voice IK are on while the global `kin_ik()`
+still refuses; entering Cartesian sets no target/motion and forces FINE; Z -5 mm at home is accepted and
 finishes J4 at the reference; Z +5 mm is refused, holds the previous target and does not advance the
 accepted pose; a Z move leaves J6 alone and an explicit encoder press still toggles the gripper. It
 also seeds J4 at 120 deg, checks the `ALIGN J4 <reference>` block with no knob/gripper target change,
-then aligns J4 and re-enters. `test_app.c` is also built with `-DARM_GEOMETRY_MEASURED=1 -DAPP_TEST_IK=1`
+then aligns J4 and re-enters. `test_app.c` is also built with `-DAPP_TEST_IK=1` (firmware guards)
 for the full IK callers (pitch search picks 160 for a box top at 240, 0, 30; 182, -45, 30 is refused
 before anything moves; Cartesian keeps its last accepted pose at a limit).
 
 `test_cartesian.c` is built with `APP_USE_INPUT=1` and calls the real `MODE_CARTESIAN_OPS` with a fake
 joystick. It checks that X+ / Y+ change only the expected axis in one 20 ms step, that centring issues
 no new request, that a refusal holds the current pose and the next XY retry rebases on it (not on the
-cancelled request), that voice `kin_ik()` stays blocked, and that entry/XY never command the gripper.
+cancelled request), that the global `kin_ik()` stays blocked, and that entry/XY never command the gripper.
 
 `ProjectDevGuide/tests/host/test_kinematics.c` is compiled three times by `run.sh`:
 
 ```text
-default                                  Cartesian on, global/voice off: Cartesian round trip, kin_ik NOT_READY
--DARM_CARTESIAN_IK_ENABLED=0             both normal IK APIs NOT_READY, unchanged outputs; FK still on
--DARM_GEOMETRY_MEASURED=1 -DARM_CARTESIAN_IK_ENABLED=0 -lm
+default                                  Cartesian + voice on, global off: Cartesian and voice round trip,
+                                         kin_ik NOT_READY
+-DARM_CARTESIAN_IK_ENABLED=0 -DARM_VOICE_IK_ENABLED=0
+                                         every normal IK API NOT_READY, unchanged outputs; FK still on
+-DARM_GEOMETRY_MEASURED=1 -DARM_CARTESIAN_IK_ENABLED=0 -DARM_VOICE_IK_ENABLED=0 -lm
                                          the math, limits and error paths
 ```
 

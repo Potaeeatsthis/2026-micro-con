@@ -21,7 +21,8 @@
  *                     coupling, or the seed J6 range fails. out is unchanged.
  *   KIN_NOT_READY     IK: the caller's activation guard is off (kin_ik:
  *                     ARM_GEOMETRY_MEASURED 0; kin_ik_cartesian:
- *                     ARM_CARTESIAN_IK_ENABLED 0, or any APP_USE_IK_BENCH_TEST
+ *                     ARM_CARTESIAN_IK_ENABLED 0; kin_ik_voice:
+ *                     ARM_VOICE_IK_ENABLED 0; or any APP_USE_IK_BENCH_TEST
  *                     build, which keeps normal IK callers off).
  *                     FK: disabled (ARM_FK_ENABLED 0), or it cannot express
  *                     pitch from a degenerate approach projection.
@@ -60,7 +61,8 @@ void         kin_init(void);
 
 /* pose -> joints. seed = current joints, used to pick the closest elbow branch.
  * out is written only when KIN_OK. out->deg[J6_GRIPPER] is copied from seed.
- * Voice keeps using this function; it stays gated by ARM_GEOMETRY_MEASURED. */
+ * Global entry point, gated by ARM_GEOMETRY_MEASURED (0): no mode calls it; the modes use
+ * kin_ik_cartesian() / kin_ik_voice(), which have their own guards. */
 kin_status_t kin_ik(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out);
 
 /* Cartesian mode only: the same solver and status rules as kin_ik(), gated by
@@ -68,6 +70,10 @@ kin_status_t kin_ik(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_
  * (APP_USE_IK_BENCH_TEST) always returns KIN_NOT_READY. The solver fixes J4 at
  * ARM_J4_ZERO_DEG; caller decides whether the seed roll is close enough. */
 kin_status_t kin_ik_cartesian(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out);
+
+/* Voice mode only: the same solver and status rules, gated by ARM_VOICE_IK_ENABLED. A bench build
+ * (APP_USE_IK_BENCH_TEST) always returns KIN_NOT_READY. */
+kin_status_t kin_ik_voice(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out);
 
 /* joints -> pose (used to start cartesian mode from where the arm is now).
  * all six input angles must be finite; FK does not enforce servo software
@@ -85,7 +91,8 @@ kin_status_t kin_ik_bench(const cart_pose_t *pose, const joint_vec_t *seed, join
 #endif
 
 bool         kin_fk_enabled(void);             /* ARM_FK_ENABLED: estimated X/Y/Z available */
-bool         kin_ik_enabled(void);             /* ARM_GEOMETRY_MEASURED: voice/global IK may produce targets */
+bool         kin_ik_enabled(void);             /* ARM_GEOMETRY_MEASURED: global kin_ik() may produce targets */
+bool         kin_ik_voice_enabled(void);       /* voice may produce targets; false in a bench build */
 bool         kin_ik_cartesian_enabled(void);   /* Cartesian may produce targets; false in a bench build */
 
 #endif /* APP_KINEMATICS_H */

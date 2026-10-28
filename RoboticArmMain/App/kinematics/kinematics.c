@@ -28,9 +28,11 @@
 #define KIN_R_TOL_MM        1e-4f
 #define KIN_APPROACH_EPS    1e-4f
 
-/* The solver is compiled when global IK, normal Cartesian IK, or the bench needs it. The bench build
- * deliberately does NOT enable kin_ik() or kin_ik_cartesian(): only kin_ik_bench() may use the solver. */
-#if ARM_GEOMETRY_MEASURED || (ARM_CARTESIAN_IK_ENABLED && !APP_USE_IK_BENCH_TEST) || APP_USE_IK_BENCH_TEST
+/* The solver is compiled when global IK, Cartesian IK, voice IK or the bench needs it. The bench build
+ * deliberately does NOT enable kin_ik(), kin_ik_cartesian() or kin_ik_voice(): only kin_ik_bench() may. */
+#define KIN_VOICE_ON (ARM_VOICE_IK_ENABLED && !APP_USE_IK_BENCH_TEST)
+#if ARM_GEOMETRY_MEASURED || (ARM_CARTESIAN_IK_ENABLED && !APP_USE_IK_BENCH_TEST) || KIN_VOICE_ON || \
+    APP_USE_IK_BENCH_TEST
 #define KIN_IK_SOLVER 1
 #else
 #define KIN_IK_SOLVER 0
@@ -290,6 +292,18 @@ kin_status_t kin_ik_cartesian(const cart_pose_t *pose, const joint_vec_t *seed, 
 #endif
 }
 
+kin_status_t kin_ik_voice(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out)
+{
+#if !KIN_VOICE_ON
+  (void)pose;
+  (void)seed;
+  (void)out;
+  return KIN_NOT_READY;
+#else
+  return ik_solve(pose, seed, out);
+#endif
+}
+
 #if APP_USE_IK_BENCH_TEST
 kin_status_t kin_ik_bench(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out)
 {
@@ -351,6 +365,8 @@ kin_status_t kin_fk(const joint_vec_t *joints, cart_pose_t *out)
 
 bool kin_fk_enabled(void) { return ARM_FK_ENABLED != 0; }
 bool kin_ik_enabled(void) { return ARM_GEOMETRY_MEASURED != 0; }
+bool kin_ik_voice_enabled(void) { return KIN_VOICE_ON != 0; }
+
 bool kin_ik_cartesian_enabled(void)
 {
 #if ARM_CARTESIAN_IK_ENABLED && !APP_USE_IK_BENCH_TEST

@@ -2,10 +2,10 @@
  *
  * owner: IK / mechanical member.
  * Three builds of the same file:
- *   default                       ARM_GEOMETRY_MEASURED=0, ARM_CARTESIAN_IK_ENABLED=1:
- *                                 voice/global IK fail-closed, Cartesian IK available, FK available
- *   -DARM_CARTESIAN_IK_ENABLED=0  both normal IK APIs fail-closed, FK available
- *   -DARM_GEOMETRY_MEASURED=1 -DARM_CARTESIAN_IK_ENABLED=0
+ *   default                       ARM_GEOMETRY_MEASURED=0, ARM_CARTESIAN_IK_ENABLED=1, ARM_VOICE_IK_ENABLED=1:
+ *                                 global kin_ik fail-closed, Cartesian and voice IK available, FK available
+ *   -DARM_CARTESIAN_IK_ENABLED=0 -DARM_VOICE_IK_ENABLED=0  every normal IK API fail-closed, FK available
+ *   -DARM_GEOMETRY_MEASURED=1 -DARM_CARTESIAN_IK_ENABLED=0 -DARM_VOICE_IK_ENABLED=0
  *                                 the workbook CAD FK/IK math, linked with -lm
  * No HAL, no motion hardware. Run: sh ProjectDevGuide/tests/host/run.sh
  */
@@ -93,7 +93,7 @@ int main(void)
         "default IK checks the guard before null inputs");
   CHECK(joint_is_sentinel(&out), "default IK null call leaves out unchanged");
 
-  CHECK(kin_fk_enabled() && !kin_ik_enabled(), "default: FK available, voice/global IK not activated");
+  CHECK(kin_fk_enabled() && !kin_ik_enabled(), "default: FK available, global kin_ik not activated");
 #if ARM_CARTESIAN_IK_ENABLED
   CHECK(kin_ik_cartesian_enabled(), "default: Cartesian IK is activated");
 #else
@@ -118,7 +118,7 @@ int main(void)
   CHECK(kin_fk(&ref, &ref_pose) == KIN_OK, "reference FK for the IK target");
   set_sentinel_joint(&out);
   CHECK(kin_ik(&ref_pose, &ref, &out) == KIN_NOT_READY && joint_is_sentinel(&out),
-        "voice/global IK of the FK result is still refused by default");
+        "global kin_ik of the FK result is still refused by default");
 
 #if ARM_CARTESIAN_IK_ENABLED
   {
@@ -143,6 +143,24 @@ int main(void)
     CHECK(kin_ik_cartesian(&ref_pose, &ref, &cart_out) == KIN_NOT_READY,
           "Cartesian IK is fail-closed when its guard is 0");
     CHECK(joint_is_sentinel(&cart_out), "Cartesian guard refusal leaves out unchanged");
+  }
+#endif
+
+#if ARM_VOICE_IK_ENABLED
+  {
+    joint_vec_t v_out;
+    CHECK(kin_ik_voice_enabled(), "default: voice IK is activated (its own guard)");
+    set_sentinel_joint(&v_out);
+    CHECK(kin_ik_voice(&ref_pose, &ref, &v_out) == KIN_OK, "voice IK solves the FK reference pose");
+    for (int i = 0; i < 5; i++) CHECK_NEAR(v_out.deg[i], ref.deg[i], 0.1f, "voice round-trip joint angle");
+  }
+#else
+  {
+    joint_vec_t v_out;
+    CHECK(!kin_ik_voice_enabled(), "voice IK guard is 0: voice is disabled");
+    set_sentinel_joint(&v_out);
+    CHECK(kin_ik_voice(&ref_pose, &ref, &v_out) == KIN_NOT_READY && joint_is_sentinel(&v_out),
+          "voice IK is fail-closed when its guard is 0");
   }
 #endif
 

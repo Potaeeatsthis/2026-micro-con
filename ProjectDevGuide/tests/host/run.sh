@@ -42,7 +42,7 @@ gcc -std=gnu11 -O1 -g -Wall -Wextra -Wshadow -Wno-unused-parameter \
 # same app test with IK activated (test only): the IK callers (voice pitch search, refusals, cartesian)
 gcc -std=gnu11 -O1 -g -Wall -Wextra -Wshadow -Wno-unused-parameter \
   -DAPP_USE_INPUT=0 -DAPP_USE_VOICE=1 -DAPP_USE_PI=1 -DAPP_USE_LCD=1 -DAPP_USE_MODES=1 \
-  -DARM_GEOMETRY_MEASURED=1 -DAPP_TEST_IK=1 \
+  -DAPP_TEST_IK=1 \
   -I"$HERE/fake" -I"$A" -o "$T/test_app_ik" "$HERE/test_app.c" \
   "$A/common/app_events.c" "$A/common/app_fault.c" "$A/safety/safety.c" \
   "$A/motion/motion.c" "$A/motion/servo.c" "$A/motion/servo_cal.c" "$A/kinematics/kinematics.c" \
@@ -61,16 +61,16 @@ gcc -std=gnu11 -O1 -g -Wall -Wextra -Werror -Wshadow -Wno-unused-parameter \
   "$A/modes/mode_cartesian.c" "$A/modes/gripper.c" "$A/modes/mode_joint_group.c" "$A/modes/mode_manual.c" \
   "$A/common/app_events.c" "$A/common/app_fault.c" "$A/safety/safety.c" \
   "$A/motion/motion.c" "$A/motion/servo.c" "$A/motion/servo_cal.c" "$A/kinematics/kinematics.c" -lm
-# kinematics: the default build has FK on, voice IK off and Cartesian IK on; the cart-off build
-# disables both normal IK APIs; the global build enables the math for the test only with Cartesian off.
+# kinematics: the default build has FK on, Cartesian and voice IK on, global kin_ik off; the off build
+# disables every normal IK API; the global build enables the math for the test only with the others off.
 gcc -std=gnu11 -O1 -g -Wall -Wextra -Werror -Wshadow -Wno-unused-parameter \
   -I"$A" -o "$T/test_kinematics_failclosed" "$HERE/test_kinematics.c" \
   "$A/kinematics/kinematics.c" "$A/motion/servo_cal.c" -lm
 gcc -std=gnu11 -O1 -g -Wall -Wextra -Werror -Wshadow -Wno-unused-parameter \
-  -DARM_CARTESIAN_IK_ENABLED=0 -I"$A" -o "$T/test_kinematics_cart_off" "$HERE/test_kinematics.c" \
+  -DARM_CARTESIAN_IK_ENABLED=0 -DARM_VOICE_IK_ENABLED=0 -I"$A" -o "$T/test_kinematics_cart_off" "$HERE/test_kinematics.c" \
   "$A/kinematics/kinematics.c" "$A/motion/servo_cal.c" -lm
 gcc -std=gnu11 -O1 -g -Wall -Wextra -Werror -Wshadow -Wno-unused-parameter \
-  -DARM_GEOMETRY_MEASURED=1 -DARM_CARTESIAN_IK_ENABLED=0 -I"$A" -o "$T/test_kinematics" \
+  -DARM_GEOMETRY_MEASURED=1 -DARM_CARTESIAN_IK_ENABLED=0 -DARM_VOICE_IK_ENABLED=0 -I"$A" -o "$T/test_kinematics" \
   "$HERE/test_kinematics.c" "$A/kinematics/kinematics.c" "$A/motion/servo_cal.c" -lm
 # keep the test's own exit code (a pipe into grep would hide a failure)
 rc=0

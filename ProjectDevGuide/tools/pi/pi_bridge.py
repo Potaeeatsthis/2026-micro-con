@@ -14,6 +14,10 @@ Protocol v1 (ProjectDevGuide/docs/core-config.md, study/robotic-arm-guide.md sec
     station = the free DROP SPOT on the station top (pi_vision_uart.py det.station["drop_cam_m"]): the top's
               centre if free, else the nearest free grid point; NOTFOUND if no station or no free spot.
               Blocks lying on the station are answered by the normal FIND <colour>_box.
+              The station is answered from the last good sighting up to --station-max-age s (default 30,
+              28 Oct 2026): when the arm holds a block over it to place, the arm hides the station from
+              the camera, so the 1 s block age made every FIND station a NOTFOUND. The station does not
+              move during a task; a block placed while it was hidden is only seen once it is visible again.
 Nothing else is ever sent. A line that is not a valid FIND is logged and ignored.
 
 Camera: BlockCamera / BlockDetector / load_refs() / best_per_color() from ~/arm/pi_vision_uart.py
@@ -193,7 +197,7 @@ class Calibration:
 class CameraSource:
     """Latest detection per colour from pi_vision_uart.py, updated in a background thread."""
 
-    def __init__(self, arm_dir, max_age_s, min_conf, camera_frame, hand=None, station=True):
+    def __init__(self, arm_dir, max_age_s, min_conf, camera_frame, hand=None, station=True, station_max_age_s=30.0):
         arm_dir = os.path.expanduser(arm_dir)
         sys.path.insert(0, arm_dir)
         os.chdir(arm_dir)  # the pipeline loads color_refs.json from the cwd
@@ -203,12 +207,13 @@ class CameraSource:
         if missing:
             sys.exit(f"{pv.__file__} no longer has {', '.join(missing)}: pi_bridge.py uses them, update it")
         self.pv, self.np, self.max_age_s, self.min_conf = pv, np, max_age_s, min_conf
+        self.station_max_age_s = station_max_age_s
         self.calib = Calibration(os.path.join(arm_dir, pv.CALIB_FILE), camera_frame)
         self.calib.check()
         if self.calib.frame is None:
             sys.exit(f"{os.path.join(arm_dir, pv.CALIB_FILE)} not found: calibrate first "
                      "(SETUP_PI.md section 9), or use --camera-frame until then")
-        say(f"camera: max age {max_age_s} s, min conf {min_conf}")
+        say(f"camera: max age {max_age_s} s (station {station_max_age_s} s), min conf {min_conf}")
         self.cam = pv.BlockCamera(fps=None, laser="auto")
         self.det = pv.BlockDetector(self.cam.intr, self.cam.depth_scale, pv.load_refs())
         if not station:
@@ -280,7 +285,9 @@ class CameraSource:
                 and r["score"] >= self.hand_min_score)
 
     def _station_ok(self, r):
-        return (r is not None and r["drop_cam_mm"] is not None and time.monotonic() - r["t"] <= self.max_age_s
+        # the arm hides the station while it holds a block over it: use the last good sighting for longer
+        max_age = getattr(self, "station_max_age_s", self.max_age_s)
+        return (r is not None and r["drop_cam_mm"] is not None and time.monotonic() - r["t"] <= max_age
                 and r["conf"] >= self.min_conf)
 
     def lookup(self, name):
@@ -436,6 +443,8 @@ def main():
     ap.add_argument("--duration", type=float, default=0, help="quit after this many seconds (0 = never)")
     ap.add_argument("--no-hand", action="store_true", help="no hand detection (FIND hand gets NOTFOUND)")
     ap.add_argument("--no-station", action="store_true", help="no station detection (FIND station gets NOTFOUND)")
+    ap.add_argument("--station-max-age", type=float, default=30.0,
+                    help="oldest station sighting used (s); the arm hides the station while placing")
     ap.add_argument("--hand-hz", type=float, default=5.0, help="hand detections per second")
     ap.add_argument("--hand-min-score", type=int, default=50, help="lowest hand score (0-100) used")
     ap.add_argument("--hand-python", default="~/hand-env/bin/python", help="Python with MediaPipe for the hand worker")
@@ -459,7 +468,7 @@ def main():
     hand = None if args.no_hand else {"python": args.hand_python, "model": hand_model, "hz": args.hand_hz,
                                       "min_score": args.hand_min_score}
     src = CameraSource(args.arm_dir, args.max_age, args.min_conf, args.camera_frame, hand,
-                       station=not args.no_station)
+                       station=not args.no_station, station_max_age_s=args.station_max_age)
     ser = serial.Serial(args.port, args.baud, bytesize=8, parity="N", stopbits=1, timeout=0.05)
     ser.reset_input_buffer()
     split = LineSplitter()

@@ -98,7 +98,7 @@ int main(void)
   motion_get_current(&cur);
   CHECK(fabsf(cur.deg[J3_ELBOW] - setup.deg[J3_ELBOW]) < 0.01f, "setup pose reached");
   MODE_CARTESIAN_OPS.enter();
-  CHECK(kin_ik_cartesian_enabled() && !kin_ik_enabled(), "Cartesian on, voice/global off");
+  CHECK(kin_ik_cartesian_enabled() && !kin_ik_enabled(), "Cartesian on, global kin_ik off");
   motion_get_target(&tgt);
   CHECK(tgt.deg[J6_GRIPPER] == setup.deg[J6_GRIPPER], "entry leaves the gripper alone");
   target_fk(&p0);
@@ -106,7 +106,7 @@ int main(void)
     joint_vec_t seed = setup, out;
     cart_pose_t target = p0;
     target.x_mm += 1.0f;
-    CHECK(kin_ik(&target, &seed, &out) == KIN_NOT_READY, "voice/global kin_ik() still refuses");
+    CHECK(kin_ik(&target, &seed, &out) == KIN_NOT_READY, "global kin_ik() still refuses");
   }
 
   printf("== XY: one 20 ms step moves only the commanded axis\n");

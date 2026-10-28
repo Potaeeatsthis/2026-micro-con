@@ -214,9 +214,9 @@ static void log_release(void)
 #endif
 
 #if APP_TEST_IK
-/* third build (run.sh, -DARM_GEOMETRY_MEASURED=1 -DAPP_TEST_IK=1): the IK callers with IK activated, which
- * firmware does not do yet. voice grasp searches one pitch for the whole script; a target no pitch
- * reaches is refused before anything moves; cartesian keeps its last good pose at a joint limit. */
+/* third build (run.sh, -DAPP_TEST_IK=1): the IK callers with the firmware IK guards (voice IK on since
+ * 28 Oct 2026). voice grasp searches one pitch for the whole script; a target no pitch reaches is
+ * refused before anything moves; cartesian keeps its last good pose at a joint limit. */
 static int same_pose(const joint_vec_t *a, const joint_vec_t *b)
 {
   for (int j = 0; j < ARM_N_JOINTS; j++) if (fabsf(a->deg[j] - b->deg[j]) > 0.001f) return 0;
@@ -231,7 +231,7 @@ static int ik_callers(void)
   run_ms(BOOT_MS);
 
   printf("== ik build (test only): voice refuses a box no pitch reaches, before anything moves\n");
-  CHECK(kin_ik_enabled(), "this build activates global/voice IK (host test only; firmware keeps it 0)");
+  CHECK(kin_ik_voice_enabled() && !kin_ik_enabled(), "firmware guards: voice IK on, global kin_ik() off");
   say("pick"); say("red box"); pi_link_on_tx_done();
   pi_rx("OBJ red_box 182 -45 30\n");
   CHECK(strcmp(screen_line(0), "S2 CONFIRM BOX") == 0, "OBJ -> S2");
@@ -239,28 +239,34 @@ static int ik_callers(void)
   say("yes");
   run_ms(500);
   motion_get_target(&t1);
-  CHECK(strcmp(screen_line(0), "S2 CONFIRM BOX") == 0, "182 -45 30: no pitch 180..120 solves it, stays S2");
+  CHECK(strcmp(screen_line(0), "S2 CONFIRM BOX") == 0, "182 -45 30: no pitch 180..110 solves it, stays S2");
   CHECK(same_pose(&t0, &t1), "nothing moved, the gripper did not open");
   say("stop");
 
-  printf("== ik build: voice grasp uses the first pitch (180 -> 120) that solves every pose\n");
+  printf("== ik build: voice grasp uses the first pitch (180 -> 110) that solves every pose\n");
   say("pick"); say("red box"); pi_link_on_tx_done();
   pi_rx("OBJ red_box 240 0 30\n");
+  CHECK(lcd_voice_pick() == LCD_BOX_RED, "lcd: Pick Color shows the colour asked for (red)");
+  CHECK(lcd_voice_detected(LCD_BOX_RED), "lcd: the pi found it, red gets its tick");
+  CHECK(lcd_status_shown() == 0, "lcd: no pop-up while waiting for yes");
   log_capture();
   CHECK(g_log != NULL, "log capture works (tmpfile)");
   say("yes");
   int grasping = strcmp(screen_line(0), "S3 GRASPING") == 0;
-  run_ms(15000);
+  int proc = lcd_status_shown() == LCD_STATUS_PROCESSING;
+  for (int i = 0; i < 2000 && strcmp(screen_line(0), "S4 HOLDING") != 0; i++) run_ms(20);
   int p160 = log_has("voice-mode: pitch 160 deg");
   int p_other = log_has("voice-mode: pitch 180 deg") || log_has("voice-mode: pitch 170 deg");
   log_release();
   CHECK(grasping, "yes -> S3 grasping");
+  CHECK(proc, "lcd: PROCESSING pop-up while grasping");
   CHECK(p160 && !p_other, "180 and 170 do not fit above + box, 160 does: one pitch for the script");
   CHECK(strcmp(screen_line(0), "S4 HOLDING") == 0, "grasp finished -> S4 holding");
+  CHECK(lcd_status_shown() == 0, "lcd: the pop-up goes when it holds the box (S4 waits for a word)");
   motion_get_current(&now);
   CHECK(kin_fk(&now, &est) == KIN_OK && fabsf(est.x_mm - 240.0f) < 0.5f && fabsf(est.y_mm) < 0.5f &&
-        fabsf(est.z_mm - 72.5f) < 0.5f && fabsf(est.pitch_deg - 160.0f) < 0.5f,
-        "ends above the grasp point (top 30 - 7.5 + 50 = 72.5) at pitch 160");
+        fabsf(est.z_mm - 89.5f) < 0.5f && fabsf(est.pitch_deg - 160.0f) < 0.5f,
+        "holds the box 70 mm above the grasp point (top 30 - 10.5 + 50 + 20 = 89.5) at pitch 160");
 
   printf("== ik build: cartesian keeps its last good pose at a joint limit\n");
   modes_request(MODE_CARTESIAN); run_ms(100);
@@ -282,6 +288,60 @@ static int ik_callers(void)
   CHECK(strcmp(screen_line(2), z_line) == 0, "refused: the pose stays the last good one");
   CHECK(same_pose(&t0, &t1), "and the arm does not move");
 
+  printf("== ik build: voice \"base\" places at the fixed spot 220 120 (opens at z 12), then home\n");
+  {
+    float best = 1e9f;
+    app_event_post(EVT_TOUCH_MODE_TAB, MODE_VOICE, 0, 0, 0); run_ms(100);
+    CHECK(modes_current() == MODE_VOICE && strcmp(screen_line(0), "S4 HOLDING") == 0, "back in voice, still holding");
+    say("base");
+    CHECK(strcmp(screen_line(0), "S7 CONFIRM PLACE") == 0, "base -> S7 asks");
+    say("yes");
+    CHECK(strcmp(screen_line(0), "S8 PLACING") == 0, "yes -> S8 placing");
+    for (int i = 0; i < 1500 && strcmp(screen_line(0), "S0 IDLE") != 0; i++) {
+      run_ms(20);
+      motion_get_current(&now);
+      if (kin_fk(&now, &est) == KIN_OK) {
+        float d = sqrtf((est.x_mm - 220.0f) * (est.x_mm - 220.0f) + (est.y_mm - 120.0f) * (est.y_mm - 120.0f) +
+                        (est.z_mm - 12.0f) * (est.z_mm - 12.0f));
+        if (d < best) best = d;
+      }
+    }
+    CHECK(best < 1.0f, "the arm reached the base drop point 220 120 12");
+    CHECK(strcmp(screen_line(0), "S0 IDLE") == 0, "placed, home, S0");
+  }
+
+  printf("== ik build: a far box needs the wrist up first: the planner adds a raise step\n");
+  {
+    int raise;
+    say("pick"); say("red box"); pi_link_on_tx_done();
+    pi_rx("OBJ red_box 300 90 15\n");
+    log_capture();
+    say("yes");
+    for (int i = 0; i < 1500 && strcmp(screen_line(0), "S4 HOLDING") != 0; i++) run_ms(20);
+    raise = log_has(", 6 steps") || log_has(", 7 steps");
+    log_release();
+    CHECK(raise, "300 90 15: grasp planned with raise steps (wrist up before, shoulder up after)");
+    CHECK(strcmp(screen_line(0), "S4 HOLDING") == 0, "and grasped -> S4");
+    motion_get_current(&now);
+    CHECK(kin_fk(&now, &est) == KIN_OK && fabsf(est.x_mm - 300.0f) < 1.0f && fabsf(est.y_mm - 90.0f) < 1.0f,
+          "lifted above the far box");
+    say("base"); say("yes");
+    for (int i = 0; i < 2000 && strcmp(screen_line(0), "S0 IDLE") != 0; i++) run_ms(20);
+    CHECK(strcmp(screen_line(0), "S0 IDLE") == 0, "placed at base, home, S0");
+  }
+
+  printf("== ik build: a near box only fits with the short approach (30 mm)\n");
+  {
+    say("pick"); say("red box"); pi_link_on_tx_done();
+    pi_rx("OBJ red_box 200 60 15\n");
+    say("yes");
+    for (int i = 0; i < 1500 && strcmp(screen_line(0), "S4 HOLDING") != 0; i++) run_ms(20);
+    CHECK(strcmp(screen_line(0), "S4 HOLDING") == 0, "200 60 15 grasped -> S4");
+    motion_get_current(&now);
+    CHECK(kin_fk(&now, &est) == KIN_OK && est.z_mm > 15.0f - 10.5f + 30.0f - 1.0f && est.z_mm < 15.0f - 10.5f + 50.0f - 1.0f,
+          "lifted 30..50 mm above the grasp point (the 50 mm approach does not fit there)");
+  }
+
   printf("\n%d passed, %d failed\n", passes, fails);
   return fails ? 1 : 0;
 }
@@ -297,12 +357,47 @@ static int voice_hand_dry_run(void)
   motion_init(); pi_link_init(); lcd_init(); modes_init();
   run_ms(BOOT_MS);
 
+  printf("== voice page (dry run): the LCD shows the task state and the position to confirm\n");
+  lcd_pass(100);
+  tap(100, 160);                                       /* home: Start */
+  tap(230, 170);                                       /* Voice card -> voice page */
+  lcd_clear_log();
+  say("pick"); say("red box"); pi_link_on_tx_done();
+  pi_rx("OBJ red_box 182 -45 30\n");
+  lcd_pass(100);
+  CHECK(lcd_drew_text("S2 CONFIRM BOX  182 -45 30 mm"), "voice page: state + position before yes");
+  CHECK(lcd_voice_pick() == LCD_BOX_RED && lcd_voice_detected(LCD_BOX_RED), "voice page: red picked and ticked");
+  say("stop");
+  lcd_pass(100);
+  CHECK(lcd_drew_text("S0 IDLE  Gripper: EMPTY"), "voice page: back to S0");
+
   printf("== voice hand (dry run): live palm position from the pi\n");
   say("pick"); say("red box"); pi_link_on_tx_done();
   pi_rx("OBJ red_box 182 -45 30\n");
   say("yes");
   run_ms(8000);
   CHECK(strcmp(screen_line(0), "S4 HOLDING") == 0, "dry-run grasp -> S4 holding");
+
+  printf("== jog step slider (voice page, top right): 1.00 cm, then a forward jog moves 10 mm\n");
+  {
+    char line[LCD_COLS];
+    lcd_clear_log();
+    tap(240, 20);                                      /* middle of the track: 1.00 cm */
+    CHECK(lcd_drew_text("JOG STEP 1.00 cm"), "slider shows 1.00 cm");
+    say("forward");
+    snprintf(line, sizeof line, "%s", screen_line(1));
+    CHECK(strcmp(screen_line(0), "S6 JOG QUEUE") == 0 && strcmp(line, "Queue 1/10 step 1.00 cm") == 0,
+          "forward -> S6, one 1.00 cm step queued");
+    log_capture();
+    say("yes");
+    run_ms(3000);
+    int moved = log_has("move to 192 -45 89 mm");     /* held at 182 -45 89.5 (top 30 - 10.5 + lift 70), +X 10 mm */
+    log_release();
+    CHECK(moved, "the queued step moves 10 mm forward (+X)");
+    CHECK(strcmp(screen_line(0), "S4 HOLDING") == 0, "queue done -> S4 holding");
+    tap(304, 20);                                      /* right end: back to the 2.00 cm default */
+    CHECK(lcd_drew_text("JOG STEP 2.00 cm"), "slider right end = 2.00 cm");
+  }
 
   say("hand");
   CHECK(strcmp(screen_line(0), "S7 CONFIRM PLACE") == 0 && strcmp(screen_line(1), "Place at HAND?") == 0, "hand -> S7 asks");
@@ -338,11 +433,19 @@ static int voice_hand_dry_run(void)
   CHECK(g_log != NULL, "log capture works (tmpfile)");
   pi_rx("OBJ hand 101 -4 279\n");
   int placing = strcmp(screen_line(0), "S8 PLACING") == 0;
-  run_ms(8000);
+  int proc = lcd_status_shown() == LCD_STATUS_PROCESSING;
+  int complete = 0;
+  for (int i = 0; i < 400 && strcmp(screen_line(0), "S0 IDLE") != 0; i++) {
+    run_ms(20);
+    if (strcmp(screen_line(0), "S9 GOING HOME") == 0 && lcd_status_shown() == LCD_STATUS_COMPLETE) complete = 1;
+  }
   int above = log_has("move to 101 -4 329 mm"), release = log_has("move to 101 -4 309 mm");
   int open_ = log_has("gripper OPEN"), palm = log_has("move to 101 -4 279 mm");
   log_release();
   CHECK(placing, "OBJ hand -> S8 placing");
+  CHECK(proc, "lcd: PROCESSING while placing");
+  CHECK(complete, "lcd: COMPLETE while it goes home after the place");
+  CHECK(lcd_status_shown() == 0, "lcd: no pop-up once back in S0");
   CHECK(above, "first above the palm (+APPROACH_MM)");
   CHECK(release && open_, "opens at palm + HAND_RELEASE_MM");
   CHECK(!palm, "never goes down to the palm itself");
@@ -372,7 +475,7 @@ static int voice_hand_dry_run(void)
   pi_rx("OBJ station 50 60 120\n");
   placing = strcmp(screen_line(0), "S8 PLACING") == 0;
   run_ms(8000);
-  above = log_has("move to 50 60 170 mm"); release = log_has("move to 50 60 140 mm");
+  above = log_has("move to 50 60 170 mm"); release = log_has("move to 50 60 145 mm");
   open_ = log_has("gripper OPEN"); palm = log_has("move to 50 60 120 mm");
   log_release();
   CHECK(placing, "OBJ station -> S8 placing");
@@ -625,14 +728,15 @@ int main(void)
     int same = 1;
     for (int j = 0; j < ARM_N_JOINTS; j++) if (after.deg[j] != before.deg[j]) same = 0;
     CHECK(same, "entering cartesian sets no target and moves nothing");
-    CHECK(kin_fk_enabled() && !kin_ik_enabled(), "default build: FK on, voice/global IK off");
+    CHECK(kin_fk_enabled() && !kin_ik_enabled(), "default build: FK on, global kin_ik() off");
+    CHECK(kin_ik_voice_enabled(), "default build: voice IK is on (its own guard)");
     CHECK(kin_ik_cartesian_enabled(), "default build: Cartesian IK is on");
     CHECK(strcmp(screen_line(0), "X: 251 mm") == 0, "cartesian is ready and describes the FK pose");
     CHECK(motion_get_speed() == SPEED_FINE, "cartesian entry forces the safe FINE speed");
     CHECK(kin_fk(&before, &est) == KIN_OK, "FK estimate available for the lcd");
     voice_out = before;
     CHECK(kin_ik(&est, &before, &voice_out) == KIN_NOT_READY,
-          "voice/global kin_ik() stays fail-closed after Cartesian activation");
+          "global kin_ik() stays fail-closed (modes use their own entry points)");
 
     /* 5 mm up from home is outside the J5 limit: refuse, hold, keep the accepted pose. */
     char z_line[LCD_COLS];
@@ -710,7 +814,7 @@ int main(void)
   CHECK(strcmp(screen_line(1), "182 -45 30 mm") == 0, "position shown for confirmation");
   say("yes");
   CHECK(strcmp(screen_line(0), "S2 CONFIRM BOX") == 0,
-        "yes with voice/global IK still off: refuses to move, stays S2");
+        "yes: 182 -45 30 is out of the arm's reach at every pitch: refuses to move, stays S2");
   say("stop");
   CHECK(strcmp(screen_line(0), "S0 IDLE") == 0, "stop in a waiting state cancels -> S0");
 
@@ -733,9 +837,11 @@ int main(void)
   CHECK(cur(0) == 60.0f, "S11: nothing moves before yes");
   say("yes");
   CHECK(strcmp(screen_line(0), "S9 GOING HOME") == 0, "home + yes -> moving");
+  CHECK(lcd_status_shown() == LCD_STATUS_PROCESSING, "lcd: PROCESSING while going home");
   run_ms(500);
   say("stop");
   CHECK(strcmp(screen_line(0), "S10 STOPPED") == 0, "stop while moving -> S10");
+  CHECK(lcd_status_shown() == LCD_STATUS_STOPPED_EMPTY, "lcd: STOPPED, gripper empty");
   float at = cur(0);
   run_ms(1000);
   CHECK(cur(0) == at, "S10: arm holds");
@@ -751,6 +857,7 @@ int main(void)
                    * This checks completion, not physical open/close direction. */
   CHECK(cur(0) == 85.0f, "home from S10 reaches home");
   CHECK(strcmp(screen_line(0), "S0 IDLE") == 0, "then back to S0");
+  CHECK(lcd_status_shown() == 0, "lcd: no pop-up in S0");
   CHECK(cur(5) == APP_GRIPPER_OPEN_DEG, "home from S10 opened the gripper");
 
   printf("== gripper: setpoints and direction (J6 replacement, lower angle = closed)\n");

@@ -45,4 +45,8 @@ typedef enum {
 void lcd_show_status(lcd_status_t status);
 void lcd_hide_status(void);      /* removes the pop-up and redraws the page below it */
 
+/* read-only, for the host tests and the logic */
+int  lcd_status_shown(void);     /* the status pop-up on screen now, 0 = none */
+bool lcd_voice_detected(lcd_box_t box);
+
 #endif /* APP_LCD_H */

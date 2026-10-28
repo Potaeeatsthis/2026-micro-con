@@ -4,7 +4,7 @@
  * the target pose is only accepted if ik solves it AND motion takes the solution unchanged;
  * otherwise the arm holds, the last accepted pose stays and the lcd shows the reason
  * (OUT OF REACH / JOINT LIMIT / IK NOT READY / MOTION REFUSED).
- * Cartesian-only IK is activated by ARM_CARTESIAN_IK_ENABLED; voice kin_ik() stays fail-closed.
+ * Cartesian-only IK is activated by ARM_CARTESIAN_IK_ENABLED (voice has its own, ARM_VOICE_IK_ENABLED).
  * Entering the mode never commands motion. IK fixes J4 at ARM_J4_ZERO_DEG, so the first accepted
  * move from the installed home (J4 90) rolls J4 to the reference (88, the supervised bench move).
  * If J4 is further than CART_MAX_ROLL_DEG from the reference, the mode stays blocked and shows

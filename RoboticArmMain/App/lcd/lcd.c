@@ -5,18 +5,18 @@
  *         Group card  -> GROUP page (group 1..3 = S1+S2, S3+S4, S5+S6, same layout).
  *         Cartesian card -> CARTESIAN page (arm with axis arrows, X/Y/Z numbers, Back).
  *         a mode card switches the mode at once (no confirm: choosing a mode moves nothing).
- *         Voice card -> VOICE page (camera check marks + "Pick Color") -> Proceed -> confirm pop-up
- *                       -> DESTINATION page (drop in destination / drop now / custom)
- *                       -> confirm pop-up -> PROCESSING pop-up ... see the status pop-ups below
- *                       custom -> CUSTOM page (distance slider, queue) -> Proceed -> confirm pop-up.
- *         confirm pop-ups only before the arm moves on its own (voice pick, drop, custom queue).
+ *         Voice card -> voice mode + VOICE page (camera check marks + "Pick Color"). since 28 Oct 2026
+ *                       mode_voice drives it (lcd.h hooks): "Pick Color" = the colour said, a tick on each
+ *                       colour the pi found, the status pop-ups below. voice WORDS drive the task.
+ *                       the older touch flow (Proceed -> confirm -> DESTINATION / CUSTOM pages) is kept
+ *                       behind VOICE_TOUCH_FLOW 0: it is not wired to mode_voice.
  *         Back returns to the previous page (SELECT, or the voice page before).
  *
  * pop-ups (drawn on top of the page, only they get touch while open):
  *   confirm   "CONFIRM ACTION ?"  No / Yes: both remove it
  *   status    processing / stopped (holding) / stopped (empty) / complete, for every box colour.
- *             shown with lcd_show_status() by the voice logic. DEBUG_STATUS_TAP: tapping the pop-up steps
- *             through them (processing -> stopped holding -> stopped empty -> complete -> HOME).
+ *             shown with lcd_show_status() by mode_voice. a tap hides the pop-up (the task goes on);
+ *             DEBUG_STATUS_TAP 1 instead steps through them (processing -> ... -> complete -> HOME).
  *         touch zones belong to a page, so a button is only active while its page is shown.
  *
  * the pages are built from shared components (lcd_assets: header, Back / Proceed buttons, X/Y/Z rows,
@@ -75,9 +75,12 @@ typedef enum {
 typedef enum { CF_NONE = 0, CF_PICK, CF_DROP_DEST, CF_DROP_NOW, CF_CUSTOM } confirm_t;
 typedef enum { OV_NONE = 0, OV_CONFIRM, OV_STATUS } overlay_t;
 
-/* DEBUG helpers until the camera / voice logic drives the screens (set to 0 to switch them off) */
-#define DEBUG_VOICE_TOUCH 1   /* voice page: tap a colour card = toggle its check mark; tap "Pick Color" = next colour */
-#define DEBUG_STATUS_TAP  1   /* tap a status pop-up = next status; the last one goes back to HOME */
+/* DEBUG helpers from before mode_voice drove the screens. off since 28 Oct 2026: mode_voice now sets the
+ * colour, the ticks and the pop-ups (lcd.h hooks), and voice words drive the task */
+#define DEBUG_VOICE_TOUCH 0   /* voice page: tap a colour card = toggle its check mark; tap "Pick Color" = next colour */
+#define DEBUG_STATUS_TAP  0   /* tap a status pop-up = next status; the last one goes back to HOME */
+#define VOICE_TOUCH_FLOW  0   /* voice page Proceed -> confirm -> DEST / CUSTOM pages (touch flow, not wired to
+                               * mode_voice yet): off, so a tap cannot show a task that is not happening */
 
 #define LCD_BG           0x0842u   /* rgb565 of the page background (8,11,16) */
 #define LCD_ROW_BG       0x0882u   /* rgb565 of the X/Y/Z row fill (13,17,23) */
@@ -105,15 +108,19 @@ static char     s_val_shown[3][8];
 static int      s_speed_shown = -1;           /* -1 = tag not drawn yet, else 0 FINE / 1 FAST */
 static int      s_label_x, s_label_y;         /* the line under the X/Y/Z rows (draw_value_label) */
 static char     s_label_shown[LCD_COLS];
+#if !VOICE_TOUCH_FLOW
+static char     s_vinfo_shown[2][40];         /* voice page: state line + message line (draw_voice_info) */
+#endif
 static uint32_t s_last_values;
 static overlay_t    s_ov;                     /* pop-up on top of the page */
 static confirm_t    s_conf;
 static lcd_status_t s_status;
-static int      s_pick = LCD_BOX_BLUE;        /* colour asked for by voice, -1 = none (test colour: blue) */
+static int      s_pick = -1;                  /* colour asked for by voice, -1 = none */
 static int      s_pick_drawn = -2;
 static bool     s_detected[LCD_BOX_COUNT];    /* camera says: this colour is on the table */
 static int8_t   s_det_drawn[LCD_BOX_COUNT];
 static int      s_dist = 2;                   /* custom page: distance in cm, 1..20 */
+static int      s_jog01 = 200;                /* voice page jog step slider, 0.1 mm: 0..200 = 0.00..2.00 cm */
 
 #define SLIDER_X0        (LCD_POS_SLIDER_X + 6)    /* x of 0 cm on the track */
 #define SLIDER_TRACK_Y   (LCD_POS_SLIDER_Y + 9)
@@ -154,7 +161,9 @@ static const touch_zone_t VOICE_ZONES[] = {
   { 162, 112, 131, 35, 0, 3, NAV_NONE,   ACT_BOX_TOGGLE, NULL },                               /* blue card  (debug) */
   {  14, 157, 289, 40, 0, 0, NAV_NONE,   ACT_PICK_CYCLE, NULL },                               /* Pick Color (debug) */
   {  14, 201,  78, 28, 0, 0, SCR_SELECT, ACT_NONE,       NULL },                               /* Back     */
+#if VOICE_TOUCH_FLOW
   { 224, 201,  78, 28, 0, 0, NAV_NONE,   ACT_CONFIRM_PICK, NULL },                             /* Proceed  */
+#endif
 };
 static const touch_zone_t DEST_ZONES[] = {
   {   8,  95, 100, 75, 0, 0, NAV_NONE,   ACT_CONFIRM_DROP_DEST, NULL },                        /* drop in destination */
@@ -286,6 +295,42 @@ static void draw_pick_text(void)
   s_pick_drawn = s_pick;
 }
 
+/* voice page, right of the Back button (the Proceed spot is free while VOICE_TOUCH_FLOW is 0): two size-1
+ * lines. line 1 (white) = the voice task state and its detail, e.g. "S2 CONFIRM BOX  260 20 15 mm", so the
+ * position can be checked before saying yes. line 2 (yellow) = the latest lcd_show_message() for a few
+ * seconds (OUT OF REACH, JOINT LIMIT, BOX NOT FOUND, PI NOT RESPONDING ...). redrawn only on change */
+#if !VOICE_TOUCH_FLOW
+#define VINFO_X      100
+#define VINFO_W      216                        /* to x 316 */
+#define VINFO_CHARS  36                         /* 6 px per character at size 1 */
+static void draw_voice_info(void)
+{
+  char want[2][40] = { "", "" };
+#if APP_USE_MODES
+  if (modes_current() == MODE_VOICE) {
+    char d[2][LCD_COLS];
+    memset(d, 0, sizeof d);
+    modes_describe(d, 2);
+    snprintf(want[0], sizeof want[0], "%.*s", VINFO_CHARS, d[0]);
+    if (d[1][0] != '\0' && (int)strlen(want[0]) + 2 < VINFO_CHARS) {
+      size_t n = strlen(want[0]);
+      snprintf(&want[0][n], sizeof want[0] - n, "  %.*s", VINFO_CHARS - (int)n - 2, d[1]);
+    }
+  }
+#endif
+  if (s_msg[0] != '\0' && (int32_t)(s_msg_until - HAL_GetTick()) > 0) {
+    snprintf(want[1], sizeof want[1], "%.*s", VINFO_CHARS, s_msg);
+  }
+  for (int i = 0; i < 2; i++) {
+    if (strcmp(s_vinfo_shown[i], want[i]) == 0) continue;
+    int y = LCD_POS_BTN_BACK_Y + 2 + i * 13;
+    lcd_port_fill(VINFO_X, y, VINFO_W, 10, LCD_BG);
+    if (want[i][0] != '\0') lcd_port_text(VINFO_X, y, want[i], i ? LCD_YELLOW : LCD_WHITE, LCD_BG, 1);
+    memcpy(s_vinfo_shown[i], want[i], sizeof s_vinfo_shown[i]);
+  }
+}
+#endif /* !VOICE_TOUCH_FLOW */
+
 static void draw_slider(void)
 {
   int cx = SLIDER_X0 + (s_dist * 29) / 4;                       /* 7.25 px per cm */
@@ -293,6 +338,39 @@ static void draw_slider(void)
   lcd_port_fill(SLIDER_X0, SLIDER_TRACK_Y, cx - SLIDER_X0, 3, LCD_WHITE);   /* the part already chosen */
   lcd_port_asset(LCD_A_KNOB, cx - 6, SLIDER_TRACK_Y - 5);
   lcd_port_asset(LCD_A_DIST(s_dist), LCD_POS_DIST_VAL_X, LCD_POS_DIST_VAL_Y);
+}
+
+/* voice page, top right in the header (right of "VOICE MODE"): the jog-queue step, 0.00..2.00 cm in
+ * 0.05 cm steps. tap or drag; each change posts EVT_TOUCH_STEP_CM (0.1 mm) to the voice task, which uses
+ * it for the next jog words. the header background there is LCD_BG */
+#define JOG_SL_X0     176                       /* track: x 176..304 = 0.00..2.00 cm */
+#define JOG_SL_W      128
+#define JOG_SL_Y      27                        /* track line (3 px) */
+#define JOG_SL_TOUCH_X 160                      /* touch area x 160..319, y 0..39 */
+#define JOG_SL_MAX    200
+static void draw_jog_slider(void)
+{
+  char t[48];
+  int cx = JOG_SL_X0 + (s_jog01 * JOG_SL_W) / JOG_SL_MAX;
+  lcd_port_fill(JOG_SL_TOUCH_X, 0, LCD_WIDTH_PX - JOG_SL_TOUCH_X, 38, LCD_BG);
+  snprintf(t, sizeof t, "JOG STEP %d.%02d cm", s_jog01 / 100, s_jog01 % 100);
+  lcd_port_text(JOG_SL_X0, 8, t, LCD_WHITE, LCD_BG, 1);
+  lcd_port_fill(JOG_SL_X0, JOG_SL_Y, JOG_SL_W, 3, LCD_GREY);            /* the whole range */
+  if (cx > JOG_SL_X0) lcd_port_fill(JOG_SL_X0, JOG_SL_Y, cx - JOG_SL_X0, 3, LCD_WHITE);   /* chosen part */
+  lcd_port_asset(LCD_A_KNOB, cx - 6, JOG_SL_Y - 5);
+}
+
+static void jog_slider_set_from_x(int x)
+{
+  int v = ((x - JOG_SL_X0) * (JOG_SL_MAX / 5) + JOG_SL_W / 2) / JOG_SL_W * 5;   /* nearest 0.05 cm */
+  if (x < JOG_SL_X0) v = 0;
+  if (v < 0) v = 0;
+  if (v > JOG_SL_MAX) v = JOG_SL_MAX;
+  if (v != s_jog01) {
+    s_jog01 = v;
+    draw_jog_slider();
+    (void)app_event_post(EVT_TOUCH_STEP_CM, 0, v, 0, 0);
+  }
 }
 
 static void slider_set_from_x(int x)
@@ -353,7 +431,15 @@ static void show_screen(screen_t s)
       for (int i = 0; i < LCD_BOX_COUNT; i++) draw_card(i);
       lcd_port_asset(LCD_A_PANEL_PICK, LCD_POS_PANEL_PICK_X, LCD_POS_PANEL_PICK_Y);
       draw_pick_text();
+      draw_jog_slider();
+#if VOICE_TOUCH_FLOW
       draw_buttons();
+#else
+      lcd_port_asset(LCD_A_BTN_BACK, LCD_POS_BTN_BACK_X, LCD_POS_BTN_BACK_Y);   /* no Proceed: words drive */
+      memset(s_vinfo_shown, 0, sizeof s_vinfo_shown);
+      s_vinfo_shown[0][0] = s_vinfo_shown[1][0] = '\x01';   /* never matches: draw both lines now */
+      draw_voice_info();
+#endif
       break;
     case SCR_DEST:
       lcd_port_fill(0, 0, LCD_WIDTH_PX, LCD_HEIGHT_PX, LCD_BG);
@@ -555,7 +641,10 @@ static void confirm_answer(bool yes)
 
 static void status_tapped(void)
 {
-#if DEBUG_STATUS_TAP
+#if !DEBUG_STATUS_TAP
+  close_overlay();                   /* a tap hides the pop-up (the page and the other modes stay usable);
+                                      * the voice task itself is not changed by it */
+#else
   switch (s_status) {
     case LCD_STATUS_PROCESSING:       open_status(LCD_STATUS_STOPPED_HOLDING); break;
     case LCD_STATUS_STOPPED_HOLDING:  open_status(LCD_STATUS_STOPPED_EMPTY);   break;
@@ -603,6 +692,16 @@ void lcd_show_status(lcd_status_t status)
 void lcd_hide_status(void)
 {
   if (s_ov != OV_NONE) close_overlay();
+}
+
+int lcd_status_shown(void)
+{
+  return (s_ov == OV_STATUS) ? (int)s_status : 0;
+}
+
+bool lcd_voice_detected(lcd_box_t box)
+{
+  return ((int)box >= 0 && (int)box < LCD_BOX_COUNT) ? s_detected[box] : false;
 }
 
 static void run_action(uint8_t act, uint16_t arg)
@@ -671,6 +770,9 @@ static void poll_touch(void)
       y >= LCD_POS_SLIDER_Y && y < LCD_POS_SLIDER_Y + 30) {
     slider_set_from_x(x);                       /* while the finger is down: tap or drag */
   }
+  if (s_screen == SCR_VOICE && down && x >= JOG_SL_TOUCH_X && y < 40) {
+    jog_slider_set_from_x(x);                   /* jog step: tap or drag */
+  }
   if (down && !s_touch_down) {                  /* act on touch-down only: a held finger cannot hit the next page */
     for (uint32_t i = 0; i < n; i++) {
       const touch_zone_t *z = &zones[i];
@@ -698,6 +800,9 @@ void lcd_step(void)
       if (s_det_drawn[i] != (s_detected[i] ? 1 : 0)) draw_card(i);
     }
     if (s_pick_drawn != s_pick) draw_pick_text();
+#if !VOICE_TOUCH_FLOW
+    draw_voice_info();
+#endif
     return;
   }
   if (s_screen == SCR_SINGLE || s_screen == SCR_GROUP || s_screen == SCR_CART) {
