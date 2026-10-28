@@ -121,6 +121,11 @@ static bool     s_detected[LCD_BOX_COUNT];    /* camera says: this colour is on 
 static int8_t   s_det_drawn[LCD_BOX_COUNT];
 static int      s_dist = 2;                   /* custom page: distance in cm, 1..20 */
 static int      s_jog01 = 200;                /* voice page jog step slider, 0.1 mm: 0..200 = 0.00..2.00 cm */
+static int      s_vspeed_shown = -1;          /* voice page FINE / FAST tag: -1 = redraw, 0 FINE, 1 FAST */
+#define QUEUE_TXT_LEN   160                   /* 10 x ", backward 2.00" + "[]" fits */
+static char     s_queue_txt[QUEUE_TXT_LEN];   /* voice page jog queue pop-up text, "" = hidden */
+static char     s_queue_drawn[QUEUE_TXT_LEN]; /* what the pop-up on the glass shows */
+static bool     s_queue_on_glass;             /* the pop-up covers the camera panel right now */
 
 #define SLIDER_X0        (LCD_POS_SLIDER_X + 6)    /* x of 0 cm on the track */
 #define SLIDER_TRACK_Y   (LCD_POS_SLIDER_Y + 9)
@@ -331,6 +336,50 @@ static void draw_voice_info(void)
 }
 #endif /* !VOICE_TOUCH_FLOW */
 
+/* voice page, jog queue pop-up (lcd_voice_set_queue). drawn over the camera panel only (x 14..302,
+ * y 49..151): the header (jog step slider, y < 40), "Pick Color" and the Back row stay free. it is NOT an
+ * overlay: poll_touch() never sees it, so the slider and the other zones keep working under it. while it is
+ * up the camera cards are not drawn (lcd_step); hiding it redraws the panel and the cards. only on change */
+#define QPOP_X      LCD_POS_PANEL_CAM_X
+#define QPOP_Y      LCD_POS_PANEL_CAM_Y
+#define QPOP_W      289                         /* the camera panel picture */
+#define QPOP_H      103
+#define QPOP_CHARS  45                          /* (289 - 2 * 8) / 6 px per size-1 character */
+#define QPOP_LINES  5
+static void draw_queue_popup(void)
+{
+  if (s_queue_txt[0] == '\0') {
+    if (!s_queue_on_glass) return;
+    s_queue_on_glass = false;
+    s_queue_drawn[0] = '\0';
+    lcd_port_asset(LCD_A_PANEL_CAM, LCD_POS_PANEL_CAM_X, LCD_POS_PANEL_CAM_Y);   /* what it was covering */
+    for (int i = 0; i < LCD_BOX_COUNT; i++) draw_card(i);
+    return;
+  }
+  if (s_queue_on_glass && strcmp(s_queue_drawn, s_queue_txt) == 0) return;
+  lcd_port_fill(QPOP_X, QPOP_Y, QPOP_W, QPOP_H, LCD_GREY);                  /* 1 px frame */
+  lcd_port_fill(QPOP_X + 1, QPOP_Y + 1, QPOP_W - 2, QPOP_H - 2, LCD_ROW_BG);
+  lcd_port_text(QPOP_X + 8, QPOP_Y + 8, "JOG QUEUE   say YES / UNDO / NO", LCD_YELLOW, LCD_ROW_BG, 1);
+  /* word wrap: break after ", " so one entry ("forward 1.25") never splits */
+  const char *p = s_queue_txt;
+  for (int line = 0; line < QPOP_LINES && *p != '\0'; line++) {
+    int len = (int)strlen(p);
+    if (len > QPOP_CHARS) {
+      len = QPOP_CHARS;
+      while (len > 0 && p[len] != ' ') len--;     /* last space that still fits */
+      if (len == 0) len = QPOP_CHARS;             /* no space at all: hard cut */
+    }
+    char buf[QPOP_CHARS + 1];
+    memcpy(buf, p, (size_t)len);
+    buf[len] = '\0';
+    lcd_port_text(QPOP_X + 8, QPOP_Y + 26 + line * 13, buf, LCD_WHITE, LCD_ROW_BG, 1);
+    p += len;
+    while (*p == ' ') p++;
+  }
+  memcpy(s_queue_drawn, s_queue_txt, sizeof s_queue_drawn);
+  s_queue_on_glass = true;
+}
+
 static void draw_slider(void)
 {
   int cx = SLIDER_X0 + (s_dist * 29) / 4;                       /* 7.25 px per cm */
@@ -358,6 +407,18 @@ static void draw_jog_slider(void)
   lcd_port_fill(JOG_SL_X0, JOG_SL_Y, JOG_SL_W, 3, LCD_GREY);            /* the whole range */
   if (cx > JOG_SL_X0) lcd_port_fill(JOG_SL_X0, JOG_SL_Y, cx - JOG_SL_X0, 3, LCD_WHITE);   /* chosen part */
   lcd_port_asset(LCD_A_KNOB, cx - 6, JOG_SL_Y - 5);
+  s_vspeed_shown = -1;                          /* the fill above cleared the speed tag too */
+}
+
+/* voice page, header right end, same row as the slider label: the motion speed the voice moves use
+ * (FINE white / FAST yellow; it is toggled in the manual modes with the joystick press) */
+static void draw_voice_speed(void)
+{
+  int fast = (motion_get_speed() == SPEED_FAST) ? 1 : 0;
+  if (fast == s_vspeed_shown) return;
+  lcd_port_fill(LCD_WIDTH_PX - 30, 6, 30, 10, LCD_BG);
+  lcd_port_text(LCD_WIDTH_PX - 28, 8, fast ? "FAST" : "FINE", fast ? LCD_YELLOW : LCD_WHITE, LCD_BG, 1);
+  s_vspeed_shown = fast;
 }
 
 static void jog_slider_set_from_x(int x)
@@ -432,6 +493,7 @@ static void show_screen(screen_t s)
       lcd_port_asset(LCD_A_PANEL_PICK, LCD_POS_PANEL_PICK_X, LCD_POS_PANEL_PICK_Y);
       draw_pick_text();
       draw_jog_slider();
+      draw_voice_speed();
 #if VOICE_TOUCH_FLOW
       draw_buttons();
 #else
@@ -440,6 +502,8 @@ static void show_screen(screen_t s)
       s_vinfo_shown[0][0] = s_vinfo_shown[1][0] = '\x01';   /* never matches: draw both lines now */
       draw_voice_info();
 #endif
+      s_queue_on_glass = false;                 /* the page was just drawn under it: draw it again on top */
+      draw_queue_popup();
       break;
     case SCR_DEST:
       lcd_port_fill(0, 0, LCD_WIDTH_PX, LCD_HEIGHT_PX, LCD_BG);
@@ -684,6 +748,16 @@ int lcd_voice_pick(void)
   return s_pick;
 }
 
+void lcd_voice_set_queue(const char *text)
+{
+  snprintf(s_queue_txt, sizeof s_queue_txt, "%s", text != NULL ? text : "");
+}
+
+const char *lcd_voice_queue(void)
+{
+  return s_queue_txt;
+}
+
 void lcd_show_status(lcd_status_t status)
 {
   if (status >= LCD_STATUS_PROCESSING && status <= LCD_STATUS_COMPLETE) open_status(status);
@@ -796,10 +870,12 @@ void lcd_step(void)
   }
   if (s_ov != OV_NONE) return;                  /* never draw under a pop-up */
   if (s_screen == SCR_VOICE) {                  /* redraw only what changed */
-    for (int i = 0; i < LCD_BOX_COUNT; i++) {
+    draw_queue_popup();                         /* first: hiding it redraws the cards below */
+    for (int i = 0; i < LCD_BOX_COUNT && !s_queue_on_glass; i++) {   /* not under the queue pop-up */
       if (s_det_drawn[i] != (s_detected[i] ? 1 : 0)) draw_card(i);
     }
     if (s_pick_drawn != s_pick) draw_pick_text();
+    draw_voice_speed();                         /* only when FINE / FAST changed */
 #if !VOICE_TOUCH_FLOW
     draw_voice_info();
 #endif

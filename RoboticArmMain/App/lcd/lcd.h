@@ -35,6 +35,13 @@ void lcd_voice_set_detected(lcd_box_t box, bool detected);
 void lcd_voice_set_pick(int box);
 int  lcd_voice_pick(void);
 
+/* jog queue pop-up (voice page, S6 JOG QUEUE): the queued jog words with their step in cm, e.g.
+ * "[forward 1.25, right 1.10]". "" or NULL hides it. it covers only the camera panel: the header with the
+ * jog step slider, "Pick Color" and the Back row stay visible, and it takes no touch (the slider keeps
+ * working under it). redrawn only when the text changes */
+void lcd_voice_set_queue(const char *text);
+const char *lcd_voice_queue(void);   /* read-only, for the host tests */
+
 /* status pop-ups, written for every colour: the box colour comes from lcd_voice_set_pick() */
 typedef enum {
   LCD_STATUS_PROCESSING = 1,     /* "Processing ...  Holding : <colour> box   Say Stop"            */

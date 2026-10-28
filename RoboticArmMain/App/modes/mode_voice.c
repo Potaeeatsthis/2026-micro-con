@@ -134,6 +134,7 @@ static const cart_pose_t DEST_POSE[3] = {
 typedef enum { JOG_FWD = 0, JOG_BACK, JOG_LEFT, JOG_RIGHT } jog_dir_t;
 static const float JOG_VEC[4][2] = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } };
 static const char *const JOG_NAME[4] = { "FWD", "BACK", "LEFT", "RIGHT" };
+static const char *const JOG_WORD[4] = { "forward", "backward", "left", "right" };   /* as said, for the lcd */
 
 /* ---------------------------------------------------------------- states */
 typedef enum {
@@ -443,9 +444,30 @@ static int lcd_box_of(object_id_t o)
   }
 }
 
+/* jog queue pop-up on the voice page: "[forward 1.25, right 1.10]" while S6 has entries, else hidden.
+ * called on every state change (lcd_sync) and after every jog word / undo in S6 */
+static void lcd_queue_sync(void)
+{
+#if APP_USE_LCD
+  char t[160];
+  size_t n = 0;
+  t[0] = '\0';
+  if (s_state == S6_JOG_QUEUE && s_queue_n > 0) {
+    n += (size_t)snprintf(&t[n], sizeof t - n, "[");
+    for (int i = 0; i < s_queue_n && n < sizeof t; i++) {
+      n += (size_t)snprintf(&t[n], sizeof t - n, "%s%s %d.%02d", i ? ", " : "", JOG_WORD[s_queue[i].dir],
+                            s_queue[i].step_01 / 100, s_queue[i].step_01 % 100);
+    }
+    if (n < sizeof t) (void)snprintf(&t[n], sizeof t - n, "]");
+  }
+  lcd_voice_set_queue(t);
+#endif
+}
+
 static void lcd_sync(void)
 {
 #if APP_USE_LCD
+  lcd_queue_sync();
   switch (s_state) {
     case S3_GRASPING: case S8A_RUN_QUEUE: case S8B_PLACING:
       lcd_show_status(LCD_STATUS_PROCESSING);
@@ -774,6 +796,7 @@ static void on_word(int w)
         s_queue_n = 0;
         set_state(S4_HOLDING);
       }
+      lcd_queue_sync();                              /* the pop-up follows every add / undo */
       break;
     }
 
@@ -840,6 +863,7 @@ static void exit_(void)
   s_queue_n = 0;
 #if APP_USE_LCD
   lcd_hide_status();                                  /* no voice pop-up over the other modes' pages */
+  lcd_voice_set_queue("");                            /* the queue was just cleared */
 #endif
 #if APP_USE_VOICE
   voice_set_accept_mask(VOICE_ACCEPT_ALL);            /* other modes do not use words */

@@ -360,7 +360,16 @@ static int voice_hand_dry_run(void)
   printf("== voice page (dry run): the LCD shows the task state and the position to confirm\n");
   lcd_pass(100);
   tap(100, 160);                                       /* home: Start */
+  lcd_clear_log();
   tap(230, 170);                                       /* Voice card -> voice page */
+  CHECK(lcd_drew_text("FINE"), "voice page shows the motion speed (FINE)");
+  app_event_post(EVT_JOY_PRESS, 0, 0, 0, 0);           /* joystick press = fine / fast, also in voice */
+  lcd_pass(40);
+  CHECK(motion_get_speed() == SPEED_FAST, "a joystick press in voice mode switches to FAST");
+  CHECK(lcd_drew_text("FAST"), "and the voice page follows it (FAST)");
+  app_event_post(EVT_JOY_PRESS, 0, 0, 0, 0);
+  lcd_pass(40);
+  CHECK(motion_get_speed() == SPEED_FINE, "a second press goes back to FINE");
   lcd_clear_log();
   say("pick"); say("red box"); pi_link_on_tx_done();
   pi_rx("OBJ red_box 182 -45 30\n");
@@ -388,6 +397,15 @@ static int voice_hand_dry_run(void)
     snprintf(line, sizeof line, "%s", screen_line(1));
     CHECK(strcmp(screen_line(0), "S6 JOG QUEUE") == 0 && strcmp(line, "Queue 1/10 step 1.00 cm") == 0,
           "forward -> S6, one 1.00 cm step queued");
+    CHECK(strcmp(lcd_voice_queue(), "[forward 1.00]") == 0, "jog queue pop-up text is [forward 1.00]");
+    lcd_step();
+    CHECK(lcd_drew_text("[forward 1.00]"), "the voice page draws the jog queue pop-up");
+    tap(208, 20);                                      /* the slider still works under the pop-up: 0.50 cm */
+    CHECK(lcd_drew_text("JOG STEP 0.50 cm"), "slider usable while the queue pop-up is up");
+    say("right");
+    CHECK(strcmp(lcd_voice_queue(), "[forward 1.00, right 0.50]") == 0, "queue pop-up adds right 0.50");
+    say("undo");
+    CHECK(strcmp(lcd_voice_queue(), "[forward 1.00]") == 0, "undo removes the last entry from the pop-up");
     log_capture();
     say("yes");
     run_ms(3000);
@@ -1078,22 +1096,26 @@ int main(void)
     run_ms(20);
     CHECK(fabsf(cur(J3_ELBOW) - setup.deg[J3_ELBOW]) < 0.01f, "two queued detents have not arrived");
 
-    /* A huge detent is refused while the two accepted requests are still ahead. */
+    /* A huge detent is refused while the two accepted requests are still ahead: nothing is cancelled. */
+    motion_get_target(&accepted);
     app_event_post(EVT_ENC_STEP, 0, 100, 0, 0);
     run_ms(20);
+    motion_get_target(&target);
+    int kept = 1;
+    for (int j = 0; j < ARM_N_JOINTS; j++) if (fabsf(target.deg[j] - accepted.deg[j]) > 0.001f) kept = 0;
+    CHECK(kept, "the refused detent keeps the accepted target (no hold)");
+    run_ms(3000);
     motion_get_current(&current);
-    CHECK(kin_fk(&current, &held_est) == KIN_OK, "held pose FK");
+    CHECK(kin_fk(&current, &done_est) == KIN_OK && fabsf(done_est.z_mm - (start_est.z_mm - 10.0f)) < 0.5f,
+          "the arm finishes the two accepted detents (Z -10)");
 
-    /* Reverse one detent: rebase on the held pose, so this is Z +5 where the arm stopped. */
+    /* Reverse one detent: from the accepted pose, Z +5. */
     app_event_post(EVT_ENC_STEP, 0, 1, 0, 0);
     run_ms(2000);
     motion_get_target(&target);
     CHECK(kin_fk(&target, &up_est) == KIN_OK, "reverse detent target FK");
-    CHECK(up_est.z_mm > held_est.z_mm + 4.0f && up_est.z_mm < held_est.z_mm + 6.0f,
-          "reverse detent rebases on the held pose (Z +5)");
-    CHECK(up_est.z_mm > start_est.z_mm + 3.0f,
-          "reverse detent moves up from the held pose, not down from the cancelled request");
-    CHECK(fabsf(tgt(J6_GRIPPER) - j6) < 0.001f, "the rebase path does not touch the gripper");
+    CHECK(fabsf(up_est.z_mm - (done_est.z_mm + 5.0f)) < 0.5f, "reverse detent: Z +5 from the accepted pose");
+    CHECK(fabsf(tgt(J6_GRIPPER) - j6) < 0.001f, "the refusal path does not touch the gripper");
   }
 
   printf("== fatal fault during motion: freezes (last test, latches until reset)\n");

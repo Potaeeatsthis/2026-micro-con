@@ -83,7 +83,8 @@ static bool handle_global(const app_event_t *e)
       modes_request((arm_mode_t)e->arg);
       return true;
     case EVT_JOY_PRESS:
-      if (ops(s_cur)->manual) motion_toggle_speed();   /* fine/fast in manual modes */
+      /* fine/fast in manual modes and in voice (the speed every voice move uses; the LCD shows it) */
+      if (ops(s_cur)->manual || s_cur == MODE_VOICE) motion_toggle_speed();
       return true;
     case EVT_FAULT:
       if (e->v[0] != 0) lcd_show_message("FAULT - RESET BOARD", 10000u);
