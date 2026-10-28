@@ -63,7 +63,19 @@ int main(void)
   post(EVT_ENC_PRESS);
   run_ms(20);
   CHECK(ik_bench_test_state() == IKB_BOOT, "still booting");
-  run_ms(BOOT_MS);
+  while (!motion_started()) {                          /* tick until the last joint gets its home pulse */
+    g_tick += 20;
+    motion_tick();
+    if (!motion_started()) ik_bench_test_step();
+  }
+  app_event_post(EVT_ENC_PRESS, 0, 0, 0, 0);           /* captured on the final start-up tick, still queued */
+  ik_bench_test_step();                                /* the pass that arms */
+  CHECK(ik_bench_test_state() == IKB_READY, "a press queued at the end of start-up is not GO");
+  run_ms(100);
+  CHECK(ik_bench_test_state() == IKB_READY && tgt(J3_ELBOW) == home.deg[J3_ELBOW], "nothing moves");
+  post(EVT_ENC_PRESS);                                 /* 100 ms after READY: inside the arming time */
+  CHECK(ik_bench_test_state() == IKB_READY, "a press right after arming is ignored too");
+  run_ms(600);
   CHECK(motion_started() && at(&home), "every joint at home");
   CHECK(ik_bench_test_state() == IKB_READY, "ready after start-up");
   CHECK(strcmp(ik_bench_test_status(), "KNOB PRESS = GO") == 0, "screen asks for a press");

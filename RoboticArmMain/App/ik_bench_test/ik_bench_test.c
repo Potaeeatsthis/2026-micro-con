@@ -35,6 +35,10 @@
 #define IK_BENCH_MAX_DELTA_DEG 30.0f    /* refuse a solution that moves any joint further than this */
 #endif
 
+#ifndef IK_BENCH_ARM_MS
+#define IK_BENCH_ARM_MS        500u     /* after READY appears, presses are ignored this long */
+#endif
+
 #define REDRAW_MS  100u                 /* while the arm is moving */
 #define TEXT_SIZE  2
 #define LINE_H     26
@@ -45,6 +49,7 @@ static const cart_pose_t TARGET = { IK_BENCH_X_MM, IK_BENCH_Y_MM, IK_BENCH_Z_MM,
 static ik_bench_state_t s_state = IKB_BOOT;
 static joint_vec_t      s_sol;
 static bool             s_have_sol;
+static uint32_t         s_ready_ms;     /* when READY was entered: GO needs a press after IK_BENCH_ARM_MS */
 static int              s_max_j;        /* joint with the biggest change, and how much */
 static float            s_max_d;
 static bool             s_have_err;     /* after arriving: FK of the reached pose minus the target */
@@ -150,6 +155,11 @@ static void plan(void)
     set_status(IKB_NO_SOLUTION, b, LCD_RED);
     return;
   }
+  /* arming: a press queued before READY (e.g. on the last start-up tick, or a second press while
+   * re-planning) must not count as GO. drop what is queued and wait IK_BENCH_ARM_MS for a fresh press */
+  app_event_t e;
+  while (app_event_pop(&e)) { }
+  s_ready_ms = HAL_GetTick();
   set_status(IKB_READY, "KNOB PRESS = GO", LCD_GREEN);
 }
 
@@ -223,7 +233,11 @@ void ik_bench_test_step(void)
       bool any = press || e.type == EVT_JOY_PRESS;
       switch (s_state) {
         case IKB_READY:
-          if (press) (void)go(&s_sol, IKB_MOVING, "MOVING. ANY PRESS = STOP");
+          if (press && ms_since(HAL_GetTick(), s_ready_ms) < IK_BENCH_ARM_MS) {
+            LOG("ik-bench: press ignored (just armed, press again)\r\n");
+          } else if (press) {
+            (void)go(&s_sol, IKB_MOVING, "MOVING. ANY PRESS = STOP");
+          }
           break;
         case IKB_NO_SOLUTION:
           if (press) plan();
