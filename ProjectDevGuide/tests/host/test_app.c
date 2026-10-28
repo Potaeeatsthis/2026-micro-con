@@ -17,6 +17,7 @@
 #include "modes/modes.h"
 #include "modes/gripper.h"
 #include "kinematics/kinematics.h"
+#include "kinematics/arm_geometry.h"
 #include "lcd/lcd_assets.h"
 #include "lcd/lcd.h"
 
@@ -230,7 +231,7 @@ static int ik_callers(void)
   run_ms(BOOT_MS);
 
   printf("== ik build (test only): voice refuses a box no pitch reaches, before anything moves\n");
-  CHECK(kin_ik_enabled(), "this build activates IK (host test only, firmware stays 0)");
+  CHECK(kin_ik_enabled(), "this build activates global/voice IK (host test only; firmware keeps it 0)");
   say("pick"); say("red box"); pi_link_on_tx_done();
   pi_rx("OBJ red_box 182 -45 30\n");
   CHECK(strcmp(screen_line(0), "S2 CONFIRM BOX") == 0, "OBJ -> S2");
@@ -613,23 +614,61 @@ int main(void)
   CHECK(cur(0) == 85.0f, "idle voice mode does not move");
 
   printf("== mode switch from the lcd mode cards\n");
-  app_event_post(EVT_TOUCH_MODE_TAB, MODE_CARTESIAN, 0, 0, 0); run_ms(60);
-  CHECK(modes_current() == MODE_CARTESIAN, "touch card -> cartesian");
+  motion_set_speed(SPEED_FAST);                        /* Cartesian entry must restore FINE */
   {
-    /* FK is on (estimated X/Y/Z), IK is not activated: cartesian must not move anything */
-    joint_vec_t before, after;
+    joint_vec_t before, after, voice_out;
     cart_pose_t est;
     motion_get_target(&before);
-    CHECK(kin_fk_enabled() && !kin_ik_enabled(), "default build: FK on, IK off");
-    CHECK(kin_fk(&before, &est) == KIN_OK, "FK estimate available for the lcd");
-    CHECK(strcmp(screen_line(0), "IK DISABLED") == 0, "cartesian says IK DISABLED");
-    app_event_post(EVT_ENC_STEP, 0, 3, 0, 0);
-    app_event_post(EVT_ENC_PRESS, 0, 0, 0, 0);          /* would toggle the gripper */
-    run_ms(500);
+    app_event_post(EVT_TOUCH_MODE_TAB, MODE_CARTESIAN, 0, 0, 0); run_ms(60);
+    CHECK(modes_current() == MODE_CARTESIAN, "touch card -> cartesian");
     motion_get_target(&after);
     int same = 1;
     for (int j = 0; j < ARM_N_JOINTS; j++) if (after.deg[j] != before.deg[j]) same = 0;
-    CHECK(same, "encoder turn and press in cartesian change no target (Z and gripper blocked)");
+    CHECK(same, "entering cartesian sets no target and moves nothing");
+    CHECK(kin_fk_enabled() && !kin_ik_enabled(), "default build: FK on, voice/global IK off");
+    CHECK(kin_ik_cartesian_enabled(), "default build: Cartesian IK is on");
+    CHECK(strcmp(screen_line(0), "X: 251 mm") == 0, "cartesian is ready and describes the FK pose");
+    CHECK(motion_get_speed() == SPEED_FINE, "cartesian entry forces the safe FINE speed");
+    CHECK(kin_fk(&before, &est) == KIN_OK, "FK estimate available for the lcd");
+    voice_out = before;
+    CHECK(kin_ik(&est, &before, &voice_out) == KIN_NOT_READY,
+          "voice/global kin_ik() stays fail-closed after Cartesian activation");
+
+    /* 5 mm up from home is outside the J5 limit: refuse, hold, keep the accepted pose. */
+    char z_line[LCD_COLS];
+    snprintf(z_line, sizeof z_line, "%s", screen_line(2));
+    motion_get_target(&before);
+    app_event_post(EVT_ENC_STEP, 0, 1, 0, 0); run_ms(500);
+    motion_get_target(&after);
+    same = 1;
+    for (int j = 0; j < ARM_N_JOINTS; j++) if (after.deg[j] != before.deg[j]) same = 0;
+    CHECK(same, "Z+ refusal holds the previous target (no old motion continues)");
+    CHECK(strcmp(screen_line(2), z_line) == 0, "Z+ refusal does not advance the accepted pose");
+
+    /* 5 mm down from home is accepted; J4 finishes at the IK reference, J6 is untouched. */
+    float z0 = est.z_mm;
+    app_event_post(EVT_ENC_STEP, 0, -1, 0, 0); run_ms(2000);
+    motion_get_target(&after);
+    CHECK(fabsf(after.deg[J4_WRIST_ROLL] - ARM_J4_ZERO_DEG) < 0.01f,
+          "the first accepted move rolls J4 to the IK reference");
+    CHECK(fabsf(cur(J4_WRIST_ROLL) - ARM_J4_ZERO_DEG) < 0.01f,
+          "J4 finishes the 2 deg roll inside the bench-tested range");
+    CHECK(after.deg[J3_ELBOW] > before.deg[J3_ELBOW] + 1.0f, "Z- reaches a new IK target");
+    CHECK(kin_fk(&after, &est) == KIN_OK && fabsf(est.z_mm - (z0 - 5.0f)) < 0.5f,
+          "encoder -1 -> 5 mm down");
+    CHECK(after.deg[J6_GRIPPER] == before.deg[J6_GRIPPER], "a Z move leaves the gripper alone");
+
+    /* The gripper is manual in Cartesian: only an explicit press toggles it. */
+    float j6 = tgt(J6_GRIPPER);
+    app_event_post(EVT_ENC_PRESS, 0, 0, 0, 0); run_ms(200);
+    CHECK(tgt(J6_GRIPPER) != j6, "encoder press still toggles the manual gripper");
+
+    /* Restore home before the rest of the suite (J1 is moved by the IK solution). */
+    joint_vec_t home;
+    for (int j = 0; j < ARM_N_JOINTS; j++) home.deg[j] = servo_cal(j)->home_deg;
+    CHECK(motion_set_target_exact(&home) == MOTION_OK, "cartesian test can return home");
+    run_ms(3000);
+    CHECK(fabsf(cur(J1_BASE) - 85.0f) < 0.01f, "home restored before manual-mode tests");
   }
   app_event_post(EVT_TOUCH_MODE_TAB, MODE_JOINT_GROUP, 0, 0, 0); run_ms(60);
   CHECK(modes_current() == MODE_JOINT_GROUP, "touch card -> joint group");
@@ -670,7 +709,8 @@ int main(void)
   CHECK(strcmp(screen_line(0), "S2 CONFIRM BOX") == 0, "OBJ red_box -> S2");
   CHECK(strcmp(screen_line(1), "182 -45 30 mm") == 0, "position shown for confirmation");
   say("yes");
-  CHECK(strcmp(screen_line(0), "S2 CONFIRM BOX") == 0, "yes with no ik yet: refuses to move, stays S2");
+  CHECK(strcmp(screen_line(0), "S2 CONFIRM BOX") == 0,
+        "yes with voice/global IK still off: refuses to move, stays S2");
   say("stop");
   CHECK(strcmp(screen_line(0), "S0 IDLE") == 0, "stop in a waiting state cancels -> S0");
 
@@ -805,6 +845,81 @@ int main(void)
   tap(230, 170);                                       /* Voice card: leave the joint modes */
   lcd_pass(200);
   CHECK(modes_current() == MODE_VOICE, "back to voice mode");
+
+  printf("== cartesian roll guard: far J4 blocks entry, align and re-enter recovers\n");
+  {
+    joint_vec_t before, after;
+    motion_set_joint_target(J4_WRIST_ROLL, 120.0f);
+    run_ms(4000);
+    CHECK(fabsf(cur(J4_WRIST_ROLL) - 120.0f) < 0.01f, "manual J4 setup reaches 120 deg");
+    motion_get_target(&before);
+    app_event_post(EVT_TOUCH_MODE_TAB, MODE_CARTESIAN, 0, 0, 0); run_ms(60);
+    CHECK(modes_current() == MODE_CARTESIAN, "cartesian entered with far J4");
+    char align[LCD_COLS];
+    snprintf(align, sizeof align, "ALIGN J4 %d", (int)ARM_J4_ZERO_DEG);
+    CHECK(strcmp(screen_line(0), align) == 0, "far J4 shows the model reference to align to");
+    motion_get_target(&after);
+    int same = 1;
+    for (int j = 0; j < ARM_N_JOINTS; j++) if (after.deg[j] != before.deg[j]) same = 0;
+    CHECK(same, "blocked entry sets no target");
+    app_event_post(EVT_ENC_STEP, 0, -1, 0, 0);
+    app_event_post(EVT_ENC_PRESS, 0, 0, 0, 0);
+    run_ms(500);
+    motion_get_target(&after);
+    same = 1;
+    for (int j = 0; j < ARM_N_JOINTS; j++) if (after.deg[j] != before.deg[j]) same = 0;
+    CHECK(same, "knob and gripper do nothing while the roll guard blocks");
+    CHECK(fabsf(cur(J4_WRIST_ROLL) - 120.0f) < 0.01f, "the blocked mode does not auto-align J4");
+
+    /* Align in a manual mode, then re-enter. */
+    app_event_post(EVT_TOUCH_MODE_TAB, MODE_JOINT_GROUP, 0, 0, 0); run_ms(60);
+    motion_set_joint_target(J4_WRIST_ROLL, ARM_J4_ZERO_DEG);
+    run_ms(4000);
+    CHECK(fabsf(cur(J4_WRIST_ROLL) - ARM_J4_ZERO_DEG) < 0.01f, "manual align reaches the reference");
+    app_event_post(EVT_TOUCH_MODE_TAB, MODE_CARTESIAN, 0, 0, 0); run_ms(60);
+    CHECK(modes_current() == MODE_CARTESIAN, "cartesian re-entered after alignment");
+    CHECK(strcmp(screen_line(0), align) != 0, "aligned J4 clears the roll block");
+    CHECK(strncmp(screen_line(0), "X: ", 3) == 0, "aligned J4 makes Cartesian ready");
+  }
+
+  printf("== cartesian rebase: queued accepted requests cannot be resumed after a refusal\n");
+  {
+    joint_vec_t setup = { .deg = { 85.0f, 125.0f, 157.0f, 88.0f, 35.0f, 40.0f } };
+    joint_vec_t current, target;
+    cart_pose_t start_est, held_est, up_est;
+
+    app_event_post(EVT_TOUCH_MODE_TAB, MODE_JOINT_GROUP, 0, 0, 0); run_ms(60);
+    CHECK(motion_set_target_exact(&setup) == MOTION_OK, "near-bench setup pose accepted");
+    run_ms(3000);
+    motion_get_current(&current);
+    CHECK(kin_fk(&current, &start_est) == KIN_OK, "setup pose FK");
+    app_event_post(EVT_TOUCH_MODE_TAB, MODE_CARTESIAN, 0, 0, 0); run_ms(60);
+    CHECK(modes_current() == MODE_CARTESIAN, "cartesian on the clear setup pose");
+    float j6 = tgt(J6_GRIPPER);
+
+    /* Queue two accepted -5 mm requests in one main-loop pass, before the arm moves. */
+    app_event_post(EVT_ENC_STEP, 0, -1, 0, 0);
+    app_event_post(EVT_ENC_STEP, 0, -1, 0, 0);
+    run_ms(20);
+    CHECK(fabsf(cur(J3_ELBOW) - setup.deg[J3_ELBOW]) < 0.01f, "two queued detents have not arrived");
+
+    /* A huge detent is refused while the two accepted requests are still ahead. */
+    app_event_post(EVT_ENC_STEP, 0, 100, 0, 0);
+    run_ms(20);
+    motion_get_current(&current);
+    CHECK(kin_fk(&current, &held_est) == KIN_OK, "held pose FK");
+
+    /* Reverse one detent: rebase on the held pose, so this is Z +5 where the arm stopped. */
+    app_event_post(EVT_ENC_STEP, 0, 1, 0, 0);
+    run_ms(2000);
+    motion_get_target(&target);
+    CHECK(kin_fk(&target, &up_est) == KIN_OK, "reverse detent target FK");
+    CHECK(up_est.z_mm > held_est.z_mm + 4.0f && up_est.z_mm < held_est.z_mm + 6.0f,
+          "reverse detent rebases on the held pose (Z +5)");
+    CHECK(up_est.z_mm > start_est.z_mm + 3.0f,
+          "reverse detent moves up from the held pose, not down from the cancelled request");
+    CHECK(fabsf(tgt(J6_GRIPPER) - j6) < 0.001f, "the rebase path does not touch the gripper");
+  }
 
   printf("== fatal fault during motion: freezes (last test, latches until reset)\n");
   motion_set_joint_target(J1_BASE, 120.0f);

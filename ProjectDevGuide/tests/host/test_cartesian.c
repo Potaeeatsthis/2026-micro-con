@@ -1,0 +1,164 @@
+/* test_cartesian.c - host checks for the input-enabled Cartesian path
+ *
+ * owner: modes / IK.
+ * test_app.c is built with APP_USE_INPUT=0, so it cannot exercise the joystick XY path. This test
+ * calls the real MODE_CARTESIAN_OPS enter/step/on_event directly with a fake joystick, real
+ * motion / servo / calibration / kinematics and the real gripper code. lcd_show_message is a stub.
+ *
+ * Checks: XY changes only the expected axis in one 20 ms step; centring the stick issues no new
+ * request (an already queued target is not cancelled); a refusal holds the current pose and the next
+ * XY request rebases on that held pose, not on the cancelled request; voice kin_ik() stays blocked;
+ * entering/moving Cartesian does not touch the gripper. No HAL, no board.
+ */
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
+#include "main.h"
+#include "tim.h"
+#include "common/app_events.h"
+#include "common/app_fault.h"
+#include "safety/safety.h"
+#include "motion/motion.h"
+#include "motion/servo.h"
+#include "kinematics/kinematics.h"
+#include "kinematics/arm_geometry.h"
+#include "modes/mode_ops.h"
+#include "lcd/lcd.h"
+
+/* ---------------------------------------------------------------- fakes */
+GPIO_TypeDef fGPIOB = {1}, fGPIOC = {2}, fGPIOE = {4};
+TIM_TypeDef fTIM3, fTIM4, fTIM6;
+TIM_HandleTypeDef htim3 = { &fTIM3, {0} }, htim4 = { &fTIM4, {0} }, htim6 = { &fTIM6, {0} };
+static uint32_t g_tick = 1000;
+uint32_t HAL_GetTick(void) { return g_tick; }
+GPIO_PinState HAL_GPIO_ReadPin(GPIO_TypeDef *p, uint16_t pin) { (void)p; (void)pin; return GPIO_PIN_SET; }
+void HAL_GPIO_WritePin(GPIO_TypeDef *p, uint16_t pin, GPIO_PinState s) { (void)p; (void)pin; (void)s; }
+void HAL_GPIO_TogglePin(GPIO_TypeDef *p, uint16_t pin) { (void)p; (void)pin; }
+HAL_StatusTypeDef HAL_TIM_PWM_Start(TIM_HandleTypeDef *h, uint32_t ch) { (void)h; (void)ch; return HAL_OK; }
+
+static float g_joy_x, g_joy_y;
+float input_joy_x(void) { return g_joy_x; }
+float input_joy_y(void) { return g_joy_y; }
+
+static char g_msg[32];
+void lcd_show_message(const char *msg, uint32_t duration_ms)
+{
+  (void)duration_ms;
+  snprintf(g_msg, sizeof g_msg, "%s", msg);
+}
+
+/* ---------------------------------------------------------------- helpers */
+static int fails, passes;
+#define CHECK(cond, msg) do { if (cond) { passes++; } else { fails++; printf("  FAIL: %s (line %d)\n", (msg), __LINE__); } } while (0)
+#define BOOT_MS (MOTION_BOOT_STAGGER_MS * ARM_N_JOINTS + 100u)
+
+static void run_motion_ms(uint32_t ms)
+{
+  for (uint32_t t = 0; t < ms; t += 20) { g_tick += 20; motion_tick(); }
+}
+static void control_tick(void)
+{
+  g_tick += 20;
+  motion_tick();
+  MODE_CARTESIAN_OPS.step();
+}
+static void target_fk(cart_pose_t *p)
+{
+  joint_vec_t j;
+  motion_get_target(&j);
+  CHECK(kin_fk(&j, p) == KIN_OK, "target FK");
+}
+static void current_fk(cart_pose_t *p)
+{
+  joint_vec_t j;
+  motion_get_current(&j);
+  CHECK(kin_fk(&j, p) == KIN_OK, "current FK");
+}
+static int same_joints(const joint_vec_t *a, const joint_vec_t *b)
+{
+  for (int j = 0; j < ARM_N_JOINTS; j++) if (fabsf(a->deg[j] - b->deg[j]) > 0.001f) return 0;
+  return 1;
+}
+
+int main(void)
+{
+  const joint_vec_t setup = { .deg = { 85.0f, 125.0f, 157.0f, 88.0f, 35.0f, 40.0f } };
+  joint_vec_t cur, tgt;
+  cart_pose_t p0, p1, held, ahead, retry;
+  app_event_t e;
+
+  app_events_init();
+  motion_init();
+  kin_init();
+  run_motion_ms(BOOT_MS);
+
+  printf("== setup: near-bench clear pose, Cartesian ready, voice still blocked\n");
+  CHECK(motion_set_target_exact(&setup) == MOTION_OK, "setup pose accepted");
+  run_motion_ms(4000);
+  motion_get_current(&cur);
+  CHECK(fabsf(cur.deg[J3_ELBOW] - setup.deg[J3_ELBOW]) < 0.01f, "setup pose reached");
+  MODE_CARTESIAN_OPS.enter();
+  CHECK(kin_ik_cartesian_enabled() && !kin_ik_enabled(), "Cartesian on, voice/global off");
+  motion_get_target(&tgt);
+  CHECK(tgt.deg[J6_GRIPPER] == setup.deg[J6_GRIPPER], "entry leaves the gripper alone");
+  target_fk(&p0);
+  {
+    joint_vec_t seed = setup, out;
+    cart_pose_t target = p0;
+    target.x_mm += 1.0f;
+    CHECK(kin_ik(&target, &seed, &out) == KIN_NOT_READY, "voice/global kin_ik() still refuses");
+  }
+
+  printf("== XY: one 20 ms step moves only the commanded axis\n");
+  g_joy_x = 1.0f; g_joy_y = 0.0f;
+  control_tick();
+  target_fk(&p1);
+  CHECK(p1.x_mm > p0.x_mm + 0.2f && fabsf(p1.y_mm - p0.y_mm) < 0.2f,
+        "X+ moves X, not Y");
+  p0 = p1;
+
+  g_joy_x = 0.0f; g_joy_y = 1.0f;
+  control_tick();
+  target_fk(&p1);
+  CHECK(p1.y_mm > p0.y_mm + 0.2f && fabsf(p1.x_mm - p0.x_mm) < 0.2f,
+        "Y+ moves Y, not X");
+  p0 = p1;
+
+  printf("== centre: no new request; an already queued target is not cancelled\n");
+  g_joy_x = 0.0f; g_joy_y = 0.0f;
+  motion_get_target(&tgt);
+  joint_vec_t before = tgt;
+  control_tick();
+  motion_get_target(&tgt);
+  CHECK(same_joints(&before, &tgt), "centred stick sets no new request");
+  run_motion_ms(200);
+  control_tick();                                      /* still centred: refresh dt, issue nothing */
+  motion_get_target(&tgt);
+  CHECK(same_joints(&before, &tgt), "the queued target still holds while the arm moves");
+
+  printf("== refusal: hold current, then XY retry rebases on the held pose\n");
+  e.type = EVT_ENC_STEP; e.arg = 0; e.v[0] = -1; e.v[1] = 0; e.v[2] = 0;
+  MODE_CARTESIAN_OPS.on_event(&e);
+  MODE_CARTESIAN_OPS.on_event(&e);                     /* two accepted requests ahead of the arm */
+  target_fk(&ahead);
+  e.v[0] = 100;                                        /* 500 mm: unreachable */
+  MODE_CARTESIAN_OPS.on_event(&e);
+  CHECK(strcmp(g_msg, "OUT OF REACH") == 0, "the extreme request is refused");
+  motion_get_current(&cur);
+  current_fk(&held);
+  motion_get_target(&tgt);
+  CHECK(same_joints(&cur, &tgt), "refusal holds the target at the current pose");
+  CHECK(fabsf(held.z_mm - ahead.z_mm) > 5.0f, "the cancelled request was ahead of the held pose");
+
+  g_joy_x = 0.5f; g_joy_y = 0.0f;
+  control_tick();                                      /* retry: must start from the held pose */
+  target_fk(&retry);
+  CHECK(fabsf(retry.z_mm - held.z_mm) < 0.5f,
+        "XY retry keeps Z at the held pose, not the cancelled request");
+  CHECK(retry.z_mm > ahead.z_mm + 5.0f, "XY retry did not resume the cancelled request");
+  CHECK(fabsf(retry.x_mm - (held.x_mm + 0.2f)) < 0.2f, "XY retry increments X from the held pose");
+  CHECK(tgt.deg[J6_GRIPPER] == setup.deg[J6_GRIPPER], "no automatic gripper command on approach");
+
+  printf("\n%d passed, %d failed\n", passes, fails);
+  return fails ? 1 : 0;
+}

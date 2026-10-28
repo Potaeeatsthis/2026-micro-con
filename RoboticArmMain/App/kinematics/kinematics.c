@@ -10,7 +10,8 @@
  *                      + Ry(q2+q3)*( v_EW + Rz(q4)*Ry(q5)*t ) ]
  * IK uses the workbook planar closed form with q4 = 0, because cart_pose_t has
  * only one orientation scalar. See kinematics.h for the pitch projection and
- * branch/status rules.
+ * branch/status rules. kin_ik_cartesian() is the Cartesian-only entry point; it
+ * shares the solver but has its own guard, so voice kin_ik() stays fail-closed.
  */
 #include "kinematics/kinematics.h"
 #include "kinematics/arm_geometry.h"
@@ -27,9 +28,9 @@
 #define KIN_R_TOL_MM        1e-4f
 #define KIN_APPROACH_EPS    1e-4f
 
-/* the IK solver is compiled when IK is activated, or for the bench test only (kin_ik_bench). the bench
- * build does NOT activate kin_ik(): cartesian and voice keep getting KIN_NOT_READY */
-#if ARM_GEOMETRY_MEASURED || APP_USE_IK_BENCH_TEST
+/* The solver is compiled when global IK, normal Cartesian IK, or the bench needs it. The bench build
+ * deliberately does NOT enable kin_ik() or kin_ik_cartesian(): only kin_ik_bench() may use the solver. */
+#if ARM_GEOMETRY_MEASURED || (ARM_CARTESIAN_IK_ENABLED && !APP_USE_IK_BENCH_TEST) || APP_USE_IK_BENCH_TEST
 #define KIN_IK_SOLVER 1
 #else
 #define KIN_IK_SOLVER 0
@@ -277,6 +278,18 @@ kin_status_t kin_ik(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_
 #endif
 }
 
+kin_status_t kin_ik_cartesian(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out)
+{
+#if !ARM_CARTESIAN_IK_ENABLED || APP_USE_IK_BENCH_TEST
+  (void)pose;
+  (void)seed;
+  (void)out;
+  return KIN_NOT_READY;
+#else
+  return ik_solve(pose, seed, out);
+#endif
+}
+
 #if APP_USE_IK_BENCH_TEST
 kin_status_t kin_ik_bench(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out)
 {
@@ -338,6 +351,14 @@ kin_status_t kin_fk(const joint_vec_t *joints, cart_pose_t *out)
 
 bool kin_fk_enabled(void) { return ARM_FK_ENABLED != 0; }
 bool kin_ik_enabled(void) { return ARM_GEOMETRY_MEASURED != 0; }
+bool kin_ik_cartesian_enabled(void)
+{
+#if ARM_CARTESIAN_IK_ENABLED && !APP_USE_IK_BENCH_TEST
+  return true;
+#else
+  return false;
+#endif
+}
 
 const char *kin_status_name(kin_status_t s)
 {

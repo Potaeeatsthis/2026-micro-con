@@ -1,7 +1,8 @@
 /* host test of App/ik_bench_test/ (one supervised IK move), built by run.sh with its own flags:
  * APP_USE_IK_BENCH_TEST 1, MOTION 1, MODES 0, LCD 0, INPUT 1, KINEMATICS 1, and ARM_GEOMETRY_MEASURED
- * left at its firmware default 0. checks that kin_ik() stays off, that the screen moves only through
- * motion_set_target_exact() to the one IK solution, that a press stops it, and that it goes home.
+ * left at its firmware default 0. checks that kin_ik() and kin_ik_cartesian() both stay off, that the
+ * screen moves only through motion_set_target_exact() to the one IK solution, that a press stops it,
+ * and that it goes home.
  * the knob goes through the real input.c (pin sampled in input_tick, event posted by input_step), so
  * arming is tested on the press EDGE time, including a late main loop and a knob held across start-up. */
 #include <math.h>
@@ -70,12 +71,21 @@ int main(void)
   kin_init();
   ik_bench_test_init();
 
-  printf("== IK stays off for everything except this screen\n");
+  printf("== voice IK stays off; the Cartesian API is disabled in this bench build\n");
   {
     cart_pose_t p = { 250.0f, 13.0f, 120.0f, 150.0f };
     joint_vec_t out = home;
-    CHECK(ARM_GEOMETRY_MEASURED == 0 && !kin_ik_enabled(), "activation guard unchanged (0)");
-    CHECK(kin_ik(&p, &home, &out) == KIN_NOT_READY, "kin_ik() still refuses: cartesian / voice stay blocked");
+    CHECK(ARM_GEOMETRY_MEASURED == 0 && !kin_ik_enabled(), "global/voice activation guard unchanged (0)");
+    CHECK(kin_ik(&p, &home, &out) == KIN_NOT_READY, "kin_ik() still refuses: voice stays blocked");
+    CHECK(ARM_CARTESIAN_IK_ENABLED == 1, "the Cartesian flag is at its normal default in this build");
+    CHECK(!kin_ik_cartesian_enabled(), "bench build: Cartesian API stays off even with the flag at 1");
+    joint_vec_t cart_out = home;
+    CHECK(kin_ik_cartesian(&p, &home, &cart_out) == KIN_NOT_READY, "bench Cartesian API refuses");
+    int cart_unchanged = 1;
+    for (int j = 0; j < ARM_N_JOINTS; j++) {
+      if (cart_out.deg[j] != home.deg[j]) cart_unchanged = 0;
+    }
+    CHECK(cart_unchanged, "bench Cartesian refusal preserves out");
     CHECK(kin_ik_bench(&p, &home, &out) == KIN_OK, "kin_ik_bench() solves the bench target");
   }
 

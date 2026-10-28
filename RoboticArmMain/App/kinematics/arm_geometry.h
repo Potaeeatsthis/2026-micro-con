@@ -28,15 +28,22 @@
  * proven by joint axes. J5 is explicitly provisional in the workbook. Retest
  * on the real arm before trusting them for hardware.
  *
- * Two separate guards (28 Oct 2026):
- *   ARM_FK_ENABLED 1         FK is available: the LCD shows an ESTIMATED X/Y/Z from the commanded angles.
- *                            FK never commands motion, so it cannot move the arm.
- *   ARM_GEOMETRY_MEASURED 0  the IK activation guard (not a measurement claim): kin_ik() returns
- *                            KIN_NOT_READY, so Cartesian and voice pose moves stay blocked. Host tests may
- *                            override it with -DARM_GEOMETRY_MEASURED=1; firmware stays 0 until the owner
- *                            explicitly activates IK. voice pitch search and clamped-motion handling are done
- *                            (28 Oct 2026); next is the supervised bench move (App/ik_bench_test/, which does
- *                            NOT change this guard), see ProjectDevGuide/docs/kinematics.md.
+ * Three separate guards (28 Oct 2026):
+ *   ARM_FK_ENABLED 1              FK is available: the LCD shows an ESTIMATED X/Y/Z from the commanded angles.
+ *                                 FK never commands motion, so it cannot move the arm.
+ *   ARM_CARTESIAN_IK_ENABLED 1    Cartesian mode may use kin_ik_cartesian(). The owner authorised this
+ *                                 Cartesian-only activation after the supervised bench move (which moved
+ *                                 J4 from the installed home 90 deg to the IK reference 88 deg). Voice is
+ *                                 NOT affected: it keeps calling kin_ik().
+ *   ARM_GEOMETRY_MEASURED 0       the global/voice IK activation guard (not a measurement claim):
+ *                                 kin_ik() returns KIN_NOT_READY, so voice pose moves stay blocked. Host
+ *                                 tests may override it with -DARM_GEOMETRY_MEASURED=1; firmware stays 0
+ *                                 until the owner explicitly activates global/voice IK. Voice pitch search
+ *                                 and clamped-motion handling are done (28 Oct 2026); see
+ *                                 ProjectDevGuide/docs/kinematics.md.
+ *
+ * The IK bench build (APP_USE_IK_BENCH_TEST) is special: it compiles the bench solver only and both
+ * kin_ik() and kin_ik_cartesian() refuse, so the bench screen cannot activate a normal IK caller.
  */
 #ifndef APP_ARM_GEOMETRY_H
 #define APP_ARM_GEOMETRY_H
@@ -44,8 +51,11 @@
 #ifndef ARM_FK_ENABLED
 #define ARM_FK_ENABLED 1
 #endif
+#ifndef ARM_CARTESIAN_IK_ENABLED
+#define ARM_CARTESIAN_IK_ENABLED 1       /* Cartesian-only IK: do not change without the owner */
+#endif
 #ifndef ARM_GEOMETRY_MEASURED
-#define ARM_GEOMETRY_MEASURED 0          /* IK activation: do not change without the owner */
+#define ARM_GEOMETRY_MEASURED 0          /* global/voice IK activation: do not change without the owner */
 #endif
 
 /* Shoulder axis point S in the robot frame. */

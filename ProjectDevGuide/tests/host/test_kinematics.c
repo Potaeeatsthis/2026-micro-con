@@ -1,9 +1,12 @@
 /* test_kinematics.c - host checks for App/kinematics
  *
  * owner: IK / mechanical member.
- * Two builds of the same file:
- *   default                  ARM_GEOMETRY_MEASURED = 0: IK fail-closed, FK available (ARM_FK_ENABLED 1)
- *   -DARM_GEOMETRY_MEASURED=1 the workbook CAD FK/IK math, linked with -lm
+ * Three builds of the same file:
+ *   default                       ARM_GEOMETRY_MEASURED=0, ARM_CARTESIAN_IK_ENABLED=1:
+ *                                 voice/global IK fail-closed, Cartesian IK available, FK available
+ *   -DARM_CARTESIAN_IK_ENABLED=0  both normal IK APIs fail-closed, FK available
+ *   -DARM_GEOMETRY_MEASURED=1 -DARM_CARTESIAN_IK_ENABLED=0
+ *                                 the workbook CAD FK/IK math, linked with -lm
  * No HAL, no motion hardware. Run: sh ProjectDevGuide/tests/host/run.sh
  */
 #include <math.h>
@@ -90,7 +93,12 @@ int main(void)
         "default IK checks the guard before null inputs");
   CHECK(joint_is_sentinel(&out), "default IK null call leaves out unchanged");
 
-  CHECK(kin_fk_enabled() && !kin_ik_enabled(), "default: FK available, IK not activated");
+  CHECK(kin_fk_enabled() && !kin_ik_enabled(), "default: FK available, voice/global IK not activated");
+#if ARM_CARTESIAN_IK_ENABLED
+  CHECK(kin_ik_cartesian_enabled(), "default: Cartesian IK is activated");
+#else
+  CHECK(!kin_ik_cartesian_enabled(), "Cartesian IK guard is 0: Cartesian is disabled");
+#endif
 
   /* FK at the candidate reference angles (model q = 0) gives the workbook TCP0 */
   const joint_vec_t ref = { .deg = { ARM_J1_ZERO_DEG, ARM_J2_ZERO_DEG, ARM_J3_ZERO_DEG,
@@ -104,11 +112,39 @@ int main(void)
   CHECK(kin_fk(NULL, &p) == KIN_OUT_OF_REACH, "default FK rejects a null input");
   CHECK(pose_is_sentinel(&p), "default FK null call leaves out unchanged");
 
-  /* the same reference pose as an IK request is still refused: FK does not unlock IK */
-  const cart_pose_t ref_pose = { 10.15f, 9.52f, 438.50f, p.pitch_deg };
+  /* the same reference pose as an IK request: voice/global IK stays refused, Cartesian may solve */
+  cart_pose_t ref_pose;
+  set_sentinel_pose(&ref_pose);
+  CHECK(kin_fk(&ref, &ref_pose) == KIN_OK, "reference FK for the IK target");
   set_sentinel_joint(&out);
   CHECK(kin_ik(&ref_pose, &ref, &out) == KIN_NOT_READY && joint_is_sentinel(&out),
-        "IK of the FK result is still refused by default");
+        "voice/global IK of the FK result is still refused by default");
+
+#if ARM_CARTESIAN_IK_ENABLED
+  {
+    joint_vec_t cart_out;
+    set_sentinel_joint(&cart_out);
+    CHECK(kin_ik_cartesian(&ref_pose, &ref, &cart_out) == KIN_OK,
+          "Cartesian IK solves the FK reference pose");
+    for (int i = 0; i < 5; i++) {
+      CHECK_NEAR(cart_out.deg[i], ref.deg[i], 0.1f, "Cartesian round-trip joint angle");
+    }
+    CHECK_NEAR(cart_out.deg[J6_GRIPPER], ref.deg[J6_GRIPPER], 0.0f,
+               "Cartesian IK copies J6 from the seed");
+    set_sentinel_joint(&cart_out);
+    CHECK(kin_ik_cartesian(NULL, NULL, &cart_out) == KIN_OUT_OF_REACH,
+          "Cartesian IK checks arguments once activated");
+    CHECK(joint_is_sentinel(&cart_out), "Cartesian null call leaves out unchanged");
+  }
+#else
+  {
+    joint_vec_t cart_out;
+    set_sentinel_joint(&cart_out);
+    CHECK(kin_ik_cartesian(&ref_pose, &ref, &cart_out) == KIN_NOT_READY,
+          "Cartesian IK is fail-closed when its guard is 0");
+    CHECK(joint_is_sentinel(&cart_out), "Cartesian guard refusal leaves out unchanged");
+  }
+#endif
 
   return finish();
 }
@@ -173,6 +209,12 @@ int main(void)
   };
 
   kin_init();
+
+#if ARM_CARTESIAN_IK_ENABLED && !APP_USE_IK_BENCH_TEST
+  CHECK(kin_ik_cartesian_enabled(), "global build: Cartesian IK is also enabled");
+#else
+  CHECK(!kin_ik_cartesian_enabled(), "global-only build: Cartesian IK stays off");
+#endif
 
   for (int i = 0; i < 9; i++) {
     check_fk_vector(fk_q[i], fk_p[i][0], fk_p[i][1], fk_p[i][2]);

@@ -19,7 +19,10 @@
  *                     out is unchanged.
  *   KIN_JOINT_LIMIT   a geometric solution exists, but a servo limit, the J2/J5
  *                     coupling, or the seed J6 range fails. out is unchanged.
- *   KIN_NOT_READY     IK: activation guard off (ARM_GEOMETRY_MEASURED 0).
+ *   KIN_NOT_READY     IK: the caller's activation guard is off (kin_ik:
+ *                     ARM_GEOMETRY_MEASURED 0; kin_ik_cartesian:
+ *                     ARM_CARTESIAN_IK_ENABLED 0, or any APP_USE_IK_BENCH_TEST
+ *                     build, which keeps normal IK callers off).
  *                     FK: disabled (ARM_FK_ENABLED 0), or it cannot express
  *                     pitch from a degenerate approach projection.
  *                     out is unchanged.
@@ -56,8 +59,15 @@ typedef enum {
 void         kin_init(void);
 
 /* pose -> joints. seed = current joints, used to pick the closest elbow branch.
- * out is written only when KIN_OK. out->deg[J6_GRIPPER] is copied from seed. */
+ * out is written only when KIN_OK. out->deg[J6_GRIPPER] is copied from seed.
+ * Voice keeps using this function; it stays gated by ARM_GEOMETRY_MEASURED. */
 kin_status_t kin_ik(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out);
+
+/* Cartesian mode only: the same solver and status rules as kin_ik(), gated by
+ * ARM_CARTESIAN_IK_ENABLED. It never unlocks kin_ik()/voice, and a bench build
+ * (APP_USE_IK_BENCH_TEST) always returns KIN_NOT_READY. The solver fixes J4 at
+ * ARM_J4_ZERO_DEG; caller decides whether the seed roll is close enough. */
+kin_status_t kin_ik_cartesian(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out);
 
 /* joints -> pose (used to start cartesian mode from where the arm is now).
  * all six input angles must be finite; FK does not enforce servo software
@@ -74,7 +84,8 @@ const char  *kin_status_name(kin_status_t s);
 kin_status_t kin_ik_bench(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out);
 #endif
 
-bool         kin_fk_enabled(void);   /* ARM_FK_ENABLED: estimated X/Y/Z available */
-bool         kin_ik_enabled(void);   /* ARM_GEOMETRY_MEASURED: IK may produce targets */
+bool         kin_fk_enabled(void);             /* ARM_FK_ENABLED: estimated X/Y/Z available */
+bool         kin_ik_enabled(void);             /* ARM_GEOMETRY_MEASURED: voice/global IK may produce targets */
+bool         kin_ik_cartesian_enabled(void);   /* Cartesian may produce targets; false in a bench build */
 
 #endif /* APP_KINEMATICS_H */
