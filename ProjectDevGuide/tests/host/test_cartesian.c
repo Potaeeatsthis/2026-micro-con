@@ -136,33 +136,29 @@ int main(void)
   motion_get_target(&tgt);
   CHECK(same_joints(&before, &tgt), "the queued target still holds while the arm moves");
 
-  printf("== refusal: no hold, the last accepted target stays and the next request continues from it\n");
+  printf("== knob refusal: hold and rebase on the held pose; the stick continues from there\n");
   {
-    joint_vec_t accepted;
+    joint_vec_t cur_j;
     e.type = EVT_ENC_STEP; e.arg = 0; e.v[0] = -1; e.v[1] = 0; e.v[2] = 0;
     MODE_CARTESIAN_OPS.on_event(&e);
     MODE_CARTESIAN_OPS.on_event(&e);                   /* two accepted requests ahead of the arm */
     target_fk(&ahead);
-    motion_get_target(&accepted);
+    run_motion_ms(100);                                /* part of the way */
     e.v[0] = 100;                                      /* 500 mm: unreachable */
     MODE_CARTESIAN_OPS.on_event(&e);
     CHECK(strcmp(g_msg, "OUT OF REACH") == 0, "the extreme request is refused");
     motion_get_target(&tgt);
-    CHECK(same_joints(&accepted, &tgt), "refusal keeps the last accepted target (no hold, no jerk)");
-    g_joy_x = 0.0f; g_joy_y = 0.5f;                    /* half up = +X */
-    control_tick();                                    /* the arm still trails the target: nothing new */
-    motion_get_target(&tgt);
-    CHECK(same_joints(&accepted, &tgt), "while the joints trail the target, the stick adds nothing");
-    g_joy_y = 0.0f;
-    run_motion_ms(3000);                               /* the arm finishes the accepted target */
+    motion_get_current(&cur_j);
+    CHECK(same_joints(&cur_j, &tgt), "a refused knob request holds the arm where it is");
     current_fk(&held);
-    CHECK(fabsf(held.z_mm - ahead.z_mm) < 0.5f, "the arm reaches the last accepted pose (Z -10)");
-    g_joy_y = 0.5f;
+    CHECK(held.z_mm > ahead.z_mm + 1.0f, "held before the queued -10 mm");
+    g_joy_x = 0.0f; g_joy_y = 0.5f;                    /* half up = +X */
     control_tick();
     target_fk(&retry);
-    CHECK(fabsf(retry.z_mm - ahead.z_mm) < 0.5f && retry.x_mm > ahead.x_mm + 0.02f,
-          "the next request continues +X from the accepted pose");
+    CHECK(fabsf(retry.z_mm - held.z_mm) < 0.5f && retry.x_mm > held.x_mm + 0.02f,
+          "the next stick request continues +X from the held pose");
     g_joy_y = 0.0f;
+    run_motion_ms(1000);
     CHECK(tgt.deg[J6_GRIPPER] == setup.deg[J6_GRIPPER], "no automatic gripper command on approach");
   }
 

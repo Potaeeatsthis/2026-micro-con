@@ -344,7 +344,7 @@ static void draw_voice_info(void)
 #define QPOP_Y      LCD_POS_PANEL_CAM_Y
 #define QPOP_W      289                         /* the camera panel picture */
 #define QPOP_H      103
-#define QPOP_CHARS  45                          /* (289 - 2 * 8) / 6 px per size-1 character */
+#define QPOP_CHARS  40                          /* lcd_port_text() draws at most 40 characters per call */
 #define QPOP_LINES  5
 static void draw_queue_popup(void)
 {

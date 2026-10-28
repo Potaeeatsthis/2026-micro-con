@@ -67,8 +67,13 @@ allows in that loop pass (`kin_ik_cartesian` from the current joints, then the X
 **Failure handling.** IK or exact-motion failure only shows the reason (`OUT OF REACH`, `JOINT LIMIT`
 ...) and keeps the last **accepted** target: no `motion_hold()`, so the arm finishes the last good
 request smoothly instead of stopping with a jerk. `s_pose` stays that accepted pose and the next
-encoder or XY request continues from it. Because the lead is bounded, the accepted target is never
-far ahead of the arm, so a reverse input cannot resume an old, distant request.
+XY request continues from it. Because the lead is bounded, the accepted target is never far ahead of
+the arm, so a reverse input cannot resume an old, distant request.
+
+**Knob (Z).** Detents are discrete and can queue ahead of the arm, so the lead bound does not cover
+them. A detent against the Z travel still pending starts from the current pose (FK of the commanded
+joints), so turning back always moves the arm back. A refused detent calls `motion_hold()` and rebases
+`s_pose` on the held pose; if that FK fails the mode blocks until it is re-entered.
 
 **Pitch.** `pitch_deg` is the tool approach in the arm's vertical plane: **0 = gripper pointing up,
 180 = straight down**, smaller = tilted toward the reach. Home is about 148. Voice used 0 (up) for every

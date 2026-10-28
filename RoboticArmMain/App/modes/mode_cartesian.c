@@ -20,6 +20,11 @@
  *     last accepted target (at most CART_LEAD_S of motion away) and the next request continues from it.
  *     before, each refusal held the arm and the next request started from the held pose: near a limit
  *     that gave move -> refuse -> stop -> retry stutter. motion.c ramps the speed (APP_RAMP_S).
+ *   - the knob (Z, 5 mm per detent) is discrete and can queue several detents ahead of the arm, so it
+ *     is not covered by the lead bound. a detent against the Z travel still pending starts from where
+ *     the arm is now (FK of the current joints), not from the queued pose: turning back always moves
+ *     the arm back. a refused detent holds the arm and rebases on the held pose (an unreachable turn
+ *     means "stop here"), the old behaviour for discrete requests.
  */
 #include "modes/mode_ops.h"
 #include "modes/gripper.h"
@@ -117,6 +122,45 @@ static void enter(void)
 
 static void exit_(void) { motion_hold(); }
 
+/* s_pose = FK of the current commanded joints. false = FK failed: the mode blocks (re-enter) */
+static bool rebase_on_current(void)
+{
+  joint_vec_t now;
+  motion_get_current(&now);
+  kin_status_t fk = kin_fk(&now, &s_pose);
+  if (fk != KIN_OK) {
+    s_last_status = fk;
+    s_ready = false;
+    lcd_show_message(kin_status_name(fk), 3000u);
+    return false;
+  }
+  return true;
+}
+
+/* knob detent: Z by Z_STEP_MM per detent (see the header: reversal and refusal rebase) */
+static void z_detents(int detents)
+{
+  float dz = (float)detents * Z_STEP_MM;
+  joint_vec_t cj, tj;
+  cart_pose_t cp, tp;
+  motion_get_current(&cj);
+  motion_get_target(&tj);
+  if (kin_fk(&cj, &cp) == KIN_OK && kin_fk(&tj, &tp) == KIN_OK) {
+    float pending = tp.z_mm - cp.z_mm;              /* Z still to travel to the accepted target */
+    if ((dz > 0.0f && pending < -0.5f) || (dz < 0.0f && pending > 0.5f)) {
+      if (!rebase_on_current()) return;            /* turning back: from where the arm is */
+    }
+  }
+  cart_pose_t p = s_pose;
+  p.z_mm += dz;
+  if (try_pose(&p)) {
+    s_pose = p;
+  } else {
+    motion_hold();                                  /* refused discrete request: stop here and rebase */
+    (void)rebase_on_current();
+  }
+}
+
 /* blocked mode: a knob turn / press or a stick push shows WHY nothing moves (on the lcd page too),
  * instead of silently doing nothing. it never moves anything */
 static void show_block_reason(void)
@@ -135,12 +179,9 @@ static void on_event(const app_event_t *e)
     return;
   }
   switch ((evt_type_t)e->type) {
-    case EVT_ENC_STEP: {
-      cart_pose_t p = s_pose;
-      p.z_mm += (float)e->v[0] * Z_STEP_MM;
-      if (try_pose(&p)) s_pose = p;
+    case EVT_ENC_STEP:
+      z_detents(e->v[0]);
       break;
-    }
     case EVT_ENC_PRESS:
       if (gripper_command(!s_gripper_closed)) s_gripper_closed = !s_gripper_closed;
       else lcd_show_message("GRIPPER LIMIT", 2000u);         /* state unchanged, J6 held */

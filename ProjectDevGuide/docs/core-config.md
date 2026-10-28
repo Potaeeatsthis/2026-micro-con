@@ -170,7 +170,12 @@ changes by at most `speed / APP_RAMP_S` per second (`APP_RAMP_S` 0.25 s: FINE 10
 0.25 s), and it brakes with the discrete stopping speed `sqrt(h^2 + 2 a |err|) - h` (`h = a dt / 2`) so it
 lands on the target with no residual step. Moves are synchronised: a joint's speed and acceleration are
 scaled by its share of the largest remaining error (min 5 %), so all joints start and arrive together.
-`motion_hold()`, the jog timeout and a fatal fault set the velocity to 0 at once (a stop is never ramped).
+Braking (and reversing) always uses the full accel, so a fast joint given a small share of a new move
+stops within its normal ramp distance. Jogged joints are speed commands, outside the synchronisation.
+`motion_hold()`, the jog timeout, a jog release (stick back to 0: the ramped joint trails the jog target,
+so only clearing the speed kept it moving ~5 deg at FAST) and a fatal fault set the velocity to 0 at once.
+A coasting reversal never enters the J2/J5 coupled zone that the accepted endpoint avoids (the floor uses
+the current pose and the pending target), so an accepted exact target is never rewritten by the tick.
 PWM is still 50 Hz and the joint limits are unchanged.
 
 **Timing log.** `APP_TIMING_LOG 1` (local config) prints every 2 s on USART3 the slowest pass of

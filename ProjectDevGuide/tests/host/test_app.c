@@ -861,6 +861,77 @@ int main(void)
   run_ms(1000);
   CHECK(cur(1) - j2 < 2.5f, "jog not refreshed: stops after ~150 ms, not 10 deg");
 
+  printf("== jog release: the ramped joint stops where it is, another joint's move is kept\n");
+  {
+    motion_set_speed(SPEED_FAST);
+    float j1_goal = cur(J1_BASE) + 10.0f;
+    motion_set_joint_target(J1_BASE, j1_goal);
+    for (int i = 0; i < 25; i++) { motion_jog(J3_ELBOW, -45.0f); g_tick += 20; motion_tick(); }   /* 0.5 s FAST */
+    float moved = 0.0f;
+    motion_jog(J3_ELBOW, 0.0f);                      /* stick back to the centre */
+    float at = cur(J3_ELBOW);
+    for (int i = 0; i < 50; i++) {
+      g_tick += 20; motion_tick();
+      if (fabsf(cur(J3_ELBOW) - at) > moved) moved = fabsf(cur(J3_ELBOW) - at);
+    }
+    CHECK(moved == 0.0f, "jog release: the joint stops at once (it used to coast ~5 deg)");
+    CHECK(cur(J1_BASE) == j1_goal, "an absolute move on another joint is not cancelled");
+    motion_set_speed(SPEED_FINE);
+  }
+
+  printf("== braking: a fast joint whose new move is tiny (small share) stops within its ramp distance\n");
+  {
+    joint_vec_t t;
+    motion_set_speed(SPEED_FAST);
+    float j1_0 = cur(J1_BASE);
+    motion_set_joint_target(J1_BASE, j1_0 + 30.0f);
+    for (int i = 0; i < 15; i++) { g_tick += 20; motion_tick(); }   /* 0.3 s: J1 at full speed */
+    float at = cur(J1_BASE);
+    motion_get_current(&t);
+    t.deg[J4_WRIST_ROLL] += 40.0f;                   /* the big move: J1's share of it is 5 % */
+    CHECK(motion_set_target_exact(&t) == MOTION_OK, "new target: J1 stays, J4 +40");
+    float over = 0.0f;
+    for (int i = 0; i < 300; i++) {
+      g_tick += 20; motion_tick();
+      if (cur(J1_BASE) - at > over) over = cur(J1_BASE) - at;
+    }
+    CHECK(over < 6.0f, "J1 coasts at most its full-accel stop (~5.6 deg), not ~100 deg at 5 % accel");
+    CHECK(cur(J1_BASE) == at && cur(J4_WRIST_ROLL) == t.deg[J4_WRIST_ROLL], "both end on the new target");
+    t.deg[J4_WRIST_ROLL] -= 40.0f;
+    (void)motion_set_target_exact(&t);
+    for (int i = 0; i < 300; i++) { g_tick += 20; motion_tick(); }
+    motion_set_speed(SPEED_FINE);
+  }
+
+  printf("== coupled reversal: an accepted J2/J5 target is never rewritten by a coast\n");
+  {
+    joint_vec_t t, g;
+    motion_get_current(&t);
+    t.deg[J2_SHOULDER] = 120.0f;
+    t.deg[J5_WRIST_PITCH] = 70.0f;
+    CHECK(motion_set_target_exact(&t) == MOTION_OK, "setup: J2 120, J5 70 (wrist up)");
+    for (int i = 0; i < 400; i++) { g_tick += 20; motion_tick(); }
+    motion_set_speed(SPEED_FAST);
+    t.deg[J2_SHOULDER] = 60.0f;
+    CHECK(motion_set_target_exact(&t) == MOTION_OK, "J2 down to 60 (allowed: J5 70)");
+    for (int i = 0; i < 200 && cur(J2_SHOULDER) > 93.0f; i++) { g_tick += 20; motion_tick(); }
+    CHECK(cur(J2_SHOULDER) <= 93.0f && cur(J2_SHOULDER) > 90.0f, "J2 near 93, still moving down fast");
+    t.deg[J2_SHOULDER] = 100.0f;
+    t.deg[J5_WRIST_PITCH] = 25.0f;
+    CHECK(motion_set_target_exact(&t) == MOTION_OK, "exact J2 100 / J5 25 accepted (J2 still above 90)");
+    int kept = 1, safe = 1;
+    for (int i = 0; i < 400; i++) {
+      g_tick += 20; motion_tick();
+      motion_get_target(&g);
+      if (g.deg[J5_WRIST_PITCH] != 25.0f || g.deg[J2_SHOULDER] != 100.0f) kept = 0;
+      if (cur(J2_SHOULDER) < 90.0f && cur(J5_WRIST_PITCH) < 65.0f) safe = 0;
+    }
+    CHECK(kept, "the accepted target is never changed (J5 stays 25, not 65)");
+    CHECK(safe, "the coupling holds every tick");
+    CHECK(cur(J2_SHOULDER) == 100.0f && cur(J5_WRIST_PITCH) == 25.0f, "and the arm reaches the accepted target");
+    motion_set_speed(SPEED_FINE);
+  }
+
   printf("== fast speed toggle + arrival event\n");
   app_events_drain();
   motion_toggle_speed();
@@ -1074,12 +1145,11 @@ int main(void)
     CHECK(strncmp(screen_line(0), "X: ", 3) == 0, "aligned J4 makes Cartesian ready");
   }
 
-  printf("== cartesian refusal: no hold; the arm finishes the accepted target, the next detent continues from it\n");
+  printf("== cartesian knob: a refused detent holds and rebases; turning back goes back from where the arm is\n");
   {
     joint_vec_t setup = { .deg = { 85.0f, 125.0f, 157.0f, 88.0f, 35.0f, 40.0f } };
     joint_vec_t current, target;
-    cart_pose_t start_est, done_est, up_est;
-    joint_vec_t accepted;
+    cart_pose_t start_est, held_est, up_est, mid_est;
 
     app_event_post(EVT_TOUCH_MODE_TAB, MODE_JOINT_GROUP, 0, 0, 0); run_ms(60);
     CHECK(motion_set_target_exact(&setup) == MOTION_OK, "near-bench setup pose accepted");
@@ -1096,26 +1166,39 @@ int main(void)
     run_ms(20);
     CHECK(fabsf(cur(J3_ELBOW) - setup.deg[J3_ELBOW]) < 0.01f, "two queued detents have not arrived");
 
-    /* A huge detent is refused while the two accepted requests are still ahead: nothing is cancelled. */
-    motion_get_target(&accepted);
+    /* An unreachable upward request is refused while the two accepted requests are still ahead:
+     * the arm holds where it is and the next detent starts from there. */
     app_event_post(EVT_ENC_STEP, 0, 100, 0, 0);
     run_ms(20);
-    motion_get_target(&target);
-    int kept = 1;
-    for (int j = 0; j < ARM_N_JOINTS; j++) if (fabsf(target.deg[j] - accepted.deg[j]) > 0.001f) kept = 0;
-    CHECK(kept, "the refused detent keeps the accepted target (no hold)");
-    run_ms(3000);
     motion_get_current(&current);
-    CHECK(kin_fk(&current, &done_est) == KIN_OK && fabsf(done_est.z_mm - (start_est.z_mm - 10.0f)) < 0.5f,
-          "the arm finishes the two accepted detents (Z -10)");
+    motion_get_target(&target);
+    int held = 1;
+    for (int j = 0; j < ARM_N_JOINTS; j++) if (target.deg[j] != current.deg[j]) held = 0;
+    CHECK(held, "the refused detent holds the arm where it is");
+    CHECK(kin_fk(&current, &held_est) == KIN_OK && held_est.z_mm > start_est.z_mm - 5.0f,
+          "held well above the queued -10 mm");
 
-    /* Reverse one detent: from the accepted pose, Z +5. */
+    /* One detent up: from the held pose, Z +5 (it used to stay 5 mm below the start and keep descending). */
     app_event_post(EVT_ENC_STEP, 0, 1, 0, 0);
-    run_ms(2000);
+    run_ms(20);
     motion_get_target(&target);
     CHECK(kin_fk(&target, &up_est) == KIN_OK, "reverse detent target FK");
-    CHECK(fabsf(up_est.z_mm - (done_est.z_mm + 5.0f)) < 0.5f, "reverse detent: Z +5 from the accepted pose");
-    CHECK(fabsf(tgt(J6_GRIPPER) - j6) < 0.001f, "the refusal path does not touch the gripper");
+    CHECK(fabsf(up_est.z_mm - (held_est.z_mm + 5.0f)) < 0.5f && up_est.z_mm > start_est.z_mm + 3.0f,
+          "after a refusal, one detent up goes up: Z +5 from the held pose");
+    run_ms(3000);
+
+    /* No refusal: two detents down, then one up before arrival goes up from where the arm is. */
+    app_event_post(EVT_ENC_STEP, 0, -1, 0, 0);
+    app_event_post(EVT_ENC_STEP, 0, -1, 0, 0);
+    run_ms(200);
+    motion_get_current(&current);
+    CHECK(kin_fk(&current, &mid_est) == KIN_OK, "mid-way FK");
+    app_event_post(EVT_ENC_STEP, 0, 1, 0, 0);
+    run_ms(20);
+    motion_get_target(&target);
+    CHECK(kin_fk(&target, &up_est) == KIN_OK && up_est.z_mm > mid_est.z_mm + 3.5f,
+          "turning back before arrival: the new target is above the arm, not 5 mm under the start");
+    CHECK(fabsf(tgt(J6_GRIPPER) - j6) < 0.001f, "the knob path does not touch the gripper");
   }
 
   printf("== fatal fault during motion: freezes (last test, latches until reset)\n");
