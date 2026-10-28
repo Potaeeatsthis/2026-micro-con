@@ -3,7 +3,7 @@
  * pages:  HOME (picture, Start) -> SELECT MODE (picture, four cards) -> STATUS (text lines below).
  *         Single card -> SINGLE page (servo 1..6 selector, arm picture follows, X/Y/Z numbers, Back).
  *         Group card  -> GROUP page (group 1..3 = S1+S2, S3+S4, S5+S6, same layout).
- *         Cartesian card -> CARTESIAN page (arm with axis arrows, X/Y/Z numbers, Back).
+ *         Cartesian card -> CARTESIAN page (arm with axis arrows, X/Y/Z numbers, Z / PITCH encoder button, Back).
  *         a mode card switches the mode at once (no confirm: choosing a mode moves nothing).
  *         Voice card -> voice mode + VOICE page (camera check marks + "Pick Color"). since 28 Oct 2026
  *                       mode_voice drives it (lcd.h hooks): "Pick Color" = the colour said, a tick on each
@@ -50,6 +50,7 @@
 #include <string.h>
 #if APP_USE_MODES
 #include "modes/modes.h"
+#include "modes/mode_cartesian.h"
 #endif
 #if APP_USE_VOICE
 #include "voice/voice.h"
@@ -91,6 +92,10 @@ typedef enum { OV_NONE = 0, OV_CONFIRM, OV_STATUS } overlay_t;
 #define SPEED_TAG_Y      LCD_POS_BTN_PROCEED_Y
 #define SPEED_TAG_W      78
 #define SPEED_TAG_H      28
+#define CART_ENC_X       100                    /* Cartesian page: Z / PITCH button between Back and speed */
+#define CART_ENC_Y       LCD_POS_BTN_BACK_Y
+#define CART_ENC_W       118
+#define CART_ENC_H       28
 #define SERVO_COUNT      6
 #define GROUP_COUNT      3
 #define NAV_NONE 0xFFu
@@ -106,6 +111,7 @@ static int      s_servo;                      /* single page: 0..5 */
 static int      s_group;                      /* group page: 0..2 */
 static char     s_val_shown[3][8];
 static int      s_speed_shown = -1;           /* -1 = tag not drawn yet, else 0 FINE / 1 FAST */
+static int      s_cart_enc_shown = -1;        /* Cartesian page Z / PITCH button: -1 = redraw */
 static int      s_label_x, s_label_y;         /* the line under the X/Y/Z rows (draw_value_label) */
 static char     s_label_shown[LCD_COLS];
 #if !VOICE_TOUCH_FLOW
@@ -157,6 +163,7 @@ static const touch_zone_t GROUP_ZONES[] = {
   {  14, 201,  78,  28, 0, 0, SCR_SELECT, ACT_NONE,       NULL },                              /* Back     */
 };
 static const touch_zone_t CART_ZONES[] = {
+  { CART_ENC_X, CART_ENC_Y, CART_ENC_W, CART_ENC_H, EVT_TOUCH_SELECT, 0, NAV_NONE, ACT_NONE, NULL }, /* Z / PITCH */
   {  14, 201,  78,  28, 0, 0, SCR_SELECT, ACT_NONE,       NULL },                              /* Back     */
 };
 static const touch_zone_t VOICE_ZONES[] = {
@@ -208,7 +215,26 @@ static void draw_value_label(void)
 {
   bool msg = s_msg[0] != '\0' && (int32_t)(s_msg_until - HAL_GetTick()) > 0;
   char want[LCD_COLS];
-  snprintf(want, sizeof want, "%.*s", VALUE_LABEL_CHARS, msg ? s_msg : "XYZ ESTIMATED, mm");
+  if (msg) {
+    snprintf(want, sizeof want, "%.*s", VALUE_LABEL_CHARS, s_msg);
+  } else {
+    bool cart_ready = false;
+    bool cart_pitch = false;
+    float pitch = 0.0f;
+#if APP_USE_MODES
+    if (s_screen == SCR_CART && mode_cartesian_ready()) {
+      cart_ready = true;
+      cart_pitch = mode_cartesian_encoder_pitch();
+      pitch = mode_cartesian_pitch_deg();
+    }
+#endif
+    if (cart_ready) {
+      if (cart_pitch) snprintf(want, sizeof want, "PITCH %d deg", (int)pitch);
+      else            snprintf(want, sizeof want, "Z 5mm  PITCH %d", (int)pitch);
+    } else {
+      snprintf(want, sizeof want, "XYZ ESTIMATED, mm");
+    }
+  }
   if (strcmp(s_label_shown, want) == 0) return;
   lcd_port_fill(s_label_x, s_label_y, VALUE_LABEL_W, 8, LCD_BG);
   lcd_port_text(s_label_x, s_label_y, want, msg ? LCD_YELLOW : LCD_GREY, LCD_BG, 1);
@@ -268,6 +294,21 @@ static void draw_speed_tag(int fast)
   lcd_port_fill(SPEED_TAG_X, SPEED_TAG_Y, SPEED_TAG_W, SPEED_TAG_H, LCD_BG);
   lcd_port_text(SPEED_TAG_X + 15, SPEED_TAG_Y + 6, fast ? "FAST" : "FINE", fast ? LCD_YELLOW : LCD_WHITE, LCD_BG, 2);
   s_speed_shown = fast;
+}
+
+/* Cartesian page: the encoder target. The mode owns it; this only draws the getter and redraws when
+ * it changes (the touch zone posts EVT_TOUCH_SELECT v[0] = 0). */
+static void draw_cart_enc_button(void)
+{
+  int pitch = 0;
+#if APP_USE_MODES
+  pitch = mode_cartesian_encoder_pitch() ? 1 : 0;
+#endif
+  if (pitch == s_cart_enc_shown) return;
+  lcd_port_fill(CART_ENC_X, CART_ENC_Y, CART_ENC_W, CART_ENC_H, LCD_GREY);
+  lcd_port_text(CART_ENC_X + 6, CART_ENC_Y + 6, pitch ? "PITCH" : "Z",
+                pitch ? LCD_YELLOW : LCD_WHITE, LCD_GREY, 2);
+  s_cart_enc_shown = pitch;
 }
 
 /* the page shows the joint / group the joystick really moves: the mode owns the selection */
@@ -484,6 +525,8 @@ static void show_screen(screen_t s)
       lcd_port_asset(LCD_A_CART_ARM, LCD_POS_CART_ARM_X, LCD_POS_CART_ARM_Y);
       draw_rows(LCD_ROWS_CART_X, CART_Y);
       draw_back();
+      s_cart_enc_shown = -1;                    /* the encoder target is drawn from the mode getter */
+      draw_cart_enc_button();
       break;
     case SCR_VOICE:
       lcd_port_fill(0, 0, LCD_WIDTH_PX, LCD_HEIGHT_PX, LCD_BG);
@@ -885,6 +928,7 @@ void lcd_step(void)
     sync_selection();                           /* every pass: the picture follows a knob click at once */
     int fast = (motion_get_speed() == SPEED_FAST) ? 1 : 0;
     if (fast != s_speed_shown) draw_speed_tag(fast);
+    if (s_screen == SCR_CART) draw_cart_enc_button();
     draw_value_label();                         /* message or the XYZ label, only when it changes */
     if (s_last_values == 0u || ms_since(now, s_last_values) >= SINGLE_VALUES_MS) {
       s_last_values = now | 1u;                 /* never 0, so 0 can mean "draw now" */

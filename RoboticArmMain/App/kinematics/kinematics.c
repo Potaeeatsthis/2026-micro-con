@@ -12,6 +12,8 @@
  * only one orientation scalar. See kinematics.h for the pitch projection and
  * branch/status rules. kin_ik_cartesian() is the Cartesian-only entry point; it
  * shares the solver but has its own guard, so voice kin_ik() stays fail-closed.
+ * kin_ik_cartesian_diag() runs the same solve and records the closest failed
+ * branch and its joint/coupling/geometry reason; it does not change the result.
  */
 #include "kinematics/kinematics.h"
 #include "kinematics/arm_geometry.h"
@@ -103,6 +105,29 @@ static bool kin_joints_finite(const joint_vec_t *j)
 
 #endif /* ARM_FK_ENABLED || KIN_IK_SOLVER */
 
+static void kin_diag_reset(kin_diag_t *d)
+{
+  if (d == NULL) return;
+  d->status = KIN_OK;
+  d->reason = KIN_DIAG_NONE;
+  d->joint = -1;
+  d->branch = -1;
+  d->limit_deg = 0.0f;
+  d->value_deg = 0.0f;
+}
+
+static void kin_diag_set(kin_diag_t *d, kin_status_t st, kin_reason_t why, int joint, int branch,
+                         float limit, float value)
+{
+  if (d == NULL) return;
+  d->status = st;
+  d->reason = why;
+  d->joint = joint;
+  d->branch = branch;
+  d->limit_deg = limit;
+  d->value_deg = value;
+}
+
 #if KIN_IK_SOLVER
 static bool kin_pose_finite(const cart_pose_t *p)
 {
@@ -164,6 +189,34 @@ static float kin_candidate_distance(const float cand[5], const joint_vec_t *seed
   }
   return d;
 }
+
+/* Diagnostic only: the periodic representative closest to seed, even when it is outside the installed
+ * range, so two failed branches can be compared on the same footing. Never used by the solver. */
+static float kin_servo_nearest(int joint, float raw_deg, float seed_deg)
+{
+  (void)joint;
+  if (!isfinite((double)raw_deg) || !isfinite((double)seed_deg)) return raw_deg;
+  float base = fmodf(raw_deg, 360.0f);
+  if (base < 0.0f) base += 360.0f;
+  float best = base;
+  float best_d = fabsf(base - seed_deg);
+  for (int k = -1; k <= 1; k++) {
+    float c = base + 360.0f * (float)k;
+    float d = fabsf(c - seed_deg);
+    if (d < best_d) { best = c; best_d = d; }
+  }
+  return best;
+}
+
+/* Diagnostic only: which joint the coupling rule rejects first. The message points at the joint
+ * whose floor must be restored (J2 >= 90 or J5 >= 65). */
+static int kin_coupling_joint(const float cand[5])
+{
+  if (cand[J2_SHOULDER] < MOTION_J2_COUPLED_DEG) return J2_SHOULDER;
+  if (cand[J5_WRIST_PITCH] < MOTION_J5_WRIST_UP_DEG) return J5_WRIST_PITCH;
+  return J2_SHOULDER;
+}
+
 #endif /* KIN_IK_SOLVER */
 
 void kin_init(void)
@@ -172,16 +225,29 @@ void kin_init(void)
 }
 
 #if KIN_IK_SOLVER
-static kin_status_t ik_solve(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out)
+static kin_status_t ik_solve_diag(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out,
+                                  kin_diag_t *diag)
 {
-  if (pose == NULL || seed == NULL || out == NULL) return KIN_OUT_OF_REACH;
+  kin_diag_reset(diag);
+  if (pose == NULL || seed == NULL || out == NULL) {
+    kin_diag_set(diag, KIN_OUT_OF_REACH, KIN_DIAG_INVALID, -1, -1, 0.0f, 0.0f);
+    return KIN_OUT_OF_REACH;
+  }
 
   joint_vec_t seed_local = *seed;
-  if (!kin_pose_finite(pose) || !kin_joints_finite(&seed_local)) return KIN_OUT_OF_REACH;
+  if (!kin_pose_finite(pose) || !kin_joints_finite(&seed_local)) {
+    kin_diag_set(diag, KIN_OUT_OF_REACH, KIN_DIAG_INVALID, -1, -1, 0.0f, 0.0f);
+    return KIN_OUT_OF_REACH;
+  }
 
   const servo_cal_t *j6cal = servo_cal(J6_GRIPPER);
   if (seed_local.deg[J6_GRIPPER] < j6cal->min_deg ||
-      seed_local.deg[J6_GRIPPER] > j6cal->max_deg) return KIN_JOINT_LIMIT;
+      seed_local.deg[J6_GRIPPER] > j6cal->max_deg) {
+    bool below = seed_local.deg[J6_GRIPPER] < j6cal->min_deg;
+    kin_diag_set(diag, KIN_JOINT_LIMIT, below ? KIN_DIAG_JOINT_MIN : KIN_DIAG_JOINT_MAX,
+                 J6_GRIPPER, -1, below ? j6cal->min_deg : j6cal->max_deg, seed_local.deg[J6_GRIPPER]);
+    return KIN_JOINT_LIMIT;
+  }
 
   const float l2 = sqrtf(ARM_UPPER_X_MM * ARM_UPPER_X_MM + ARM_UPPER_Z_MM * ARM_UPPER_Z_MM);
   const float l3 = sqrtf(ARM_FOREARM_X_MM * ARM_FOREARM_X_MM +
@@ -193,10 +259,19 @@ static kin_status_t ik_solve(const cart_pose_t *pose, const joint_vec_t *seed, j
   const float y = pose->y_mm;
   const float z = pose->z_mm;
   const float r = sqrtf(x * x + y * y);
-  if (!isfinite((double)r)) return KIN_OUT_OF_REACH;
+  if (!isfinite((double)r)) {
+    kin_diag_set(diag, KIN_OUT_OF_REACH, KIN_DIAG_GEOMETRY, -1, -1, 0.0f, 0.0f);
+    return KIN_OUT_OF_REACH;
+  }
 
-  if (r < fabsf(y_t) - KIN_R_TOL_MM) return KIN_OUT_OF_REACH;
-  if (r <= KIN_R_TOL_MM && fabsf(y_t) <= KIN_R_TOL_MM) return KIN_OUT_OF_REACH;
+  if (r < fabsf(y_t) - KIN_R_TOL_MM) {
+    kin_diag_set(diag, KIN_OUT_OF_REACH, KIN_DIAG_GEOMETRY, -1, -1, 0.0f, 0.0f);
+    return KIN_OUT_OF_REACH;
+  }
+  if (r <= KIN_R_TOL_MM && fabsf(y_t) <= KIN_R_TOL_MM) {
+    kin_diag_set(diag, KIN_OUT_OF_REACH, KIN_DIAG_GEOMETRY, -1, -1, 0.0f, 0.0f);
+    return KIN_OUT_OF_REACH;
+  }
 
   float radial_sq = r * r - y_t * y_t;
   if (radial_sq < 0.0f) radial_sq = 0.0f;
@@ -212,8 +287,14 @@ static kin_status_t ik_solve(const cart_pose_t *pose, const joint_vec_t *seed, j
   const float dz = z - oz - ARM_SHOULDER_Z_MM;
 
   float dcos = (dx * dx + dz * dz - l2 * l2 - l3 * l3) / (2.0f * l2 * l3);
-  if (!isfinite((double)dcos)) return KIN_OUT_OF_REACH;
-  if (dcos < -1.0f - KIN_D_TOL || dcos > 1.0f + KIN_D_TOL) return KIN_OUT_OF_REACH;
+  if (!isfinite((double)dcos)) {
+    kin_diag_set(diag, KIN_OUT_OF_REACH, KIN_DIAG_GEOMETRY, -1, -1, 0.0f, 0.0f);
+    return KIN_OUT_OF_REACH;
+  }
+  if (dcos < -1.0f - KIN_D_TOL || dcos > 1.0f + KIN_D_TOL) {
+    kin_diag_set(diag, KIN_OUT_OF_REACH, KIN_DIAG_GEOMETRY, -1, -1, 0.0f, 0.0f);
+    return KIN_OUT_OF_REACH;
+  }
   if (dcos < -1.0f) dcos = -1.0f;
   if (dcos > 1.0f) dcos = 1.0f;
 
@@ -224,6 +305,10 @@ static kin_status_t ik_solve(const cart_pose_t *pose, const joint_vec_t *seed, j
   bool have = false;
   float best_dist = 0.0f;
   float best[5] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+  bool have_fail = false;
+  float fail_dist = 0.0f;
+  kin_diag_t fail;
+  kin_diag_reset(&fail);
 
   for (int b = 0; b < 2; b++) {
     const float branch = (b == 0) ? 1.0f : -1.0f;
@@ -241,30 +326,92 @@ static kin_status_t ik_solve(const cart_pose_t *pose, const joint_vec_t *seed, j
       ARM_J5_ZERO_DEG + ARM_J5_SIGN * (q5 * KIN_RAD2DEG)
     };
     float cand[5];
-    bool ok = true;
+    float near[5];
+    bool limits_ok = true;
+    int limit_joint = -1;
+    kin_reason_t limit_reason = KIN_DIAG_NONE;
+    float limit_bound = 0.0f;
+    float limit_value = 0.0f;
     for (int i = 0; i < 5; i++) {
-      if (!kin_servo_candidate(i, raw[i], seed_local.deg[i], &cand[i])) {
-        ok = false;
-        break;
+      bool ok = kin_servo_candidate(i, raw[i], seed_local.deg[i], &cand[i]);
+      near[i] = ok ? cand[i] : kin_servo_nearest(i, raw[i], seed_local.deg[i]);
+      if (!ok) {
+        limits_ok = false;
+        if (limit_joint < 0) {
+          const servo_cal_t *cal = servo_cal(i);
+          limit_joint = i;
+          limit_value = near[i];
+          if (!isfinite((double)near[i])) {
+            limit_reason = KIN_DIAG_INVALID;
+          } else if (near[i] < cal->min_deg) {
+            limit_reason = KIN_DIAG_JOINT_MIN;
+            limit_bound = cal->min_deg;
+          } else {
+            limit_reason = KIN_DIAG_JOINT_MAX;
+            limit_bound = cal->max_deg;
+          }
+        }
       }
     }
-    if (!ok || !kin_coupling_ok(&seed_local, cand)) continue;
+    bool coupling_ok = limits_ok && kin_coupling_ok(&seed_local, cand);
 
-    float dist = kin_candidate_distance(cand, &seed_local);
-    if (!have || dist < best_dist) {
-      have = true;
-      best_dist = dist;
-      for (int i = 0; i < 5; i++) best[i] = cand[i];
+    if (limits_ok && coupling_ok) {
+      float dist = kin_candidate_distance(cand, &seed_local);
+      if (!have || dist < best_dist) {
+        have = true;
+        best_dist = dist;
+        for (int i = 0; i < 5; i++) best[i] = cand[i];
+      }
+    } else if (diag != NULL) {
+      /* the closest failed branch is the useful one to explain; measure every joint with the
+       * nearest periodic value so a branch that gave up early still has a comparable distance */
+      float dist = 0.0f;
+      bool dist_ok = true;
+      for (int i = 0; i < 5; i++) {
+        if (!isfinite((double)near[i])) { dist_ok = false; break; }
+        float e = near[i] - seed_local.deg[i];
+        dist += e * e;
+      }
+      if (!dist_ok) dist = INFINITY;
+      if (!have_fail || dist < fail_dist) {
+        have_fail = true;
+        fail_dist = dist;
+        fail.status = KIN_JOINT_LIMIT;
+        fail.branch = b;
+        if (limits_ok) {
+          fail.reason = KIN_DIAG_COUPLING;
+          fail.joint = kin_coupling_joint(cand);
+          fail.limit_deg = (fail.joint == J2_SHOULDER) ? MOTION_J2_COUPLED_DEG : MOTION_J5_WRIST_UP_DEG;
+          fail.value_deg = cand[fail.joint];
+        } else {
+          fail.reason = limit_reason;
+          fail.joint = limit_joint;
+          fail.limit_deg = limit_bound;
+          fail.value_deg = limit_value;
+        }
+      }
     }
   }
 
-  if (!have) return KIN_JOINT_LIMIT;
+  if (!have) {
+    if (diag != NULL && have_fail) {
+      *diag = fail;
+    } else {
+      kin_diag_set(diag, KIN_JOINT_LIMIT, KIN_DIAG_NONE, -1, -1, 0.0f, 0.0f);
+    }
+    return KIN_JOINT_LIMIT;
+  }
 
   joint_vec_t result;
   for (int i = 0; i < 5; i++) result.deg[i] = best[i];
   result.deg[J6_GRIPPER] = seed_local.deg[J6_GRIPPER];
   *out = result;
   return KIN_OK;
+}
+
+static kin_status_t ik_solve(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out)
+{
+  return ik_solve_diag(pose, seed, out, NULL);
 }
 #endif /* KIN_IK_SOLVER */
 
@@ -289,6 +436,21 @@ kin_status_t kin_ik_cartesian(const cart_pose_t *pose, const joint_vec_t *seed, 
   return KIN_NOT_READY;
 #else
   return ik_solve(pose, seed, out);
+#endif
+}
+
+kin_status_t kin_ik_cartesian_diag(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out,
+                                   kin_diag_t *diag)
+{
+#if !ARM_CARTESIAN_IK_ENABLED || APP_USE_IK_BENCH_TEST
+  (void)pose;
+  (void)seed;
+  (void)out;
+  kin_diag_reset(diag);
+  kin_diag_set(diag, KIN_NOT_READY, KIN_DIAG_NOT_READY, -1, -1, 0.0f, 0.0f);
+  return KIN_NOT_READY;
+#else
+  return ik_solve_diag(pose, seed, out, diag);
 #endif
 }
 

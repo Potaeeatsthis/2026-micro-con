@@ -135,14 +135,90 @@ int main(void)
     CHECK(kin_ik_cartesian(NULL, NULL, &cart_out) == KIN_OUT_OF_REACH,
           "Cartesian IK checks arguments once activated");
     CHECK(joint_is_sentinel(&cart_out), "Cartesian null call leaves out unchanged");
+
+    /* Optional diagnostics: same status/out rules, plus the closest failed branch's reason.
+     * The target poses below are FK of deliberately out-of-range joint sets. */
+    {
+      kin_diag_t d;
+      cart_pose_t target;
+
+      set_sentinel_joint(&cart_out);
+      CHECK(kin_ik_cartesian_diag(&ref_pose, &ref, &cart_out, &d) == KIN_OK,
+            "diagnostic wrapper still solves a good pose");
+      CHECK(d.status == KIN_OK && d.reason == KIN_DIAG_NONE && d.joint == -1 && d.branch == -1,
+            "success clears the diagnostic");
+
+      const joint_vec_t low_j2 = { .deg = { 85.0f, 45.0f, 88.0f, 88.0f, 96.0f, 30.0f } };
+      CHECK(kin_fk(&low_j2, &target) == KIN_OK, "low-J2 target FK");
+      set_sentinel_joint(&cart_out);
+      CHECK(kin_ik_cartesian_diag(&target, &ref, &cart_out, &d) == KIN_JOINT_LIMIT,
+            "low-J2 target refused");
+      CHECK(joint_is_sentinel(&cart_out), "low-J2 diagnostic leaves out unchanged");
+      CHECK(d.reason == KIN_DIAG_JOINT_MIN && d.joint == J2_SHOULDER &&
+            fabsf(d.limit_deg - 50.0f) < 0.01f && d.branch >= 0,
+            "diagnostic names J2 and its 50 deg minimum");
+
+      const joint_vec_t low_j5 = { .deg = { 85.0f, 125.0f, 145.0f, 88.0f, 16.0f, 30.0f } };
+      CHECK(kin_fk(&low_j5, &target) == KIN_OK, "low-J5 target FK");
+      set_sentinel_joint(&cart_out);
+      CHECK(kin_ik_cartesian_diag(&target, &ref, &cart_out, &d) == KIN_JOINT_LIMIT,
+            "low-J5 target refused");
+      CHECK(joint_is_sentinel(&cart_out), "low-J5 diagnostic leaves out unchanged");
+      CHECK(d.reason == KIN_DIAG_JOINT_MIN && d.joint == J5_WRIST_PITCH &&
+            fabsf(d.limit_deg - 25.0f) < 0.01f && d.branch >= 0,
+            "diagnostic names J5 and its 25 deg minimum");
+
+      const joint_vec_t low_couple = { .deg = { 85.0f, 65.0f, 88.0f, 88.0f, 76.0f, 30.0f } };
+      const joint_vec_t home_seed = { .deg = { 85.0f, 125.0f, 145.0f, 88.0f, 25.0f, 30.0f } };
+      CHECK(kin_fk(&low_couple, &target) == KIN_OK, "coupling target FK");
+      set_sentinel_joint(&cart_out);
+      CHECK(kin_ik_cartesian_diag(&target, &home_seed, &cart_out, &d) == KIN_JOINT_LIMIT,
+            "coupling target refused");
+      CHECK(joint_is_sentinel(&cart_out), "coupling diagnostic leaves out unchanged");
+      CHECK(d.reason == KIN_DIAG_COUPLING && d.joint == J2_SHOULDER &&
+            fabsf(d.limit_deg - 90.0f) < 0.01f && d.branch >= 0,
+            "diagnostic names the J2 coupling floor when J5 is low");
+
+      const joint_vec_t high_j2 = { .deg = { 85.0f, 125.0f, 88.0f, 88.0f, 40.0f, 30.0f } };
+      const joint_vec_t low_j2_seed = { .deg = { 85.0f, 80.0f, 88.0f, 88.0f, 70.0f, 30.0f } };
+      CHECK(kin_fk(&high_j2, &target) == KIN_OK, "J5 coupling target FK");
+      set_sentinel_joint(&cart_out);
+      CHECK(kin_ik_cartesian_diag(&target, &low_j2_seed, &cart_out, &d) == KIN_JOINT_LIMIT,
+            "J5 coupling target refused");
+      CHECK(d.reason == KIN_DIAG_COUPLING && d.joint == J5_WRIST_PITCH &&
+            fabsf(d.limit_deg - 65.0f) < 0.01f && d.branch >= 0,
+            "diagnostic names the J5 coupling floor when J2 is low");
+
+      cart_pose_t far = { 1000.0f, 0.0f, 0.0f, 0.0f };
+      set_sentinel_joint(&cart_out);
+      CHECK(kin_ik_cartesian_diag(&far, &ref, &cart_out, &d) == KIN_OUT_OF_REACH,
+            "unreachable target refused by the diagnostic path");
+      CHECK(joint_is_sentinel(&cart_out), "geometry diagnostic leaves out unchanged");
+      CHECK(d.reason == KIN_DIAG_GEOMETRY && d.joint == -1 && d.branch == -1,
+            "geometry refusal says OUT OF REACH, not a joint");
+
+      cart_pose_t bad = ref_pose;
+      bad.pitch_deg = NAN;
+      set_sentinel_joint(&cart_out);
+      CHECK(kin_ik_cartesian_diag(&bad, &ref, &cart_out, &d) == KIN_OUT_OF_REACH,
+            "non-finite pitch refused");
+      CHECK(joint_is_sentinel(&cart_out), "non-finite pitch leaves out unchanged");
+      CHECK(d.reason == KIN_DIAG_INVALID, "non-finite pitch says invalid, not a joint limit");
+    }
   }
 #else
   {
     joint_vec_t cart_out;
+    kin_diag_t d;
     set_sentinel_joint(&cart_out);
     CHECK(kin_ik_cartesian(&ref_pose, &ref, &cart_out) == KIN_NOT_READY,
           "Cartesian IK is fail-closed when its guard is 0");
     CHECK(joint_is_sentinel(&cart_out), "Cartesian guard refusal leaves out unchanged");
+    set_sentinel_joint(&cart_out);
+    CHECK(kin_ik_cartesian_diag(&ref_pose, &ref, &cart_out, &d) == KIN_NOT_READY,
+          "Cartesian diagnostic is fail-closed when its guard is 0");
+    CHECK(joint_is_sentinel(&cart_out) && d.reason == KIN_DIAG_NOT_READY,
+          "guard refusal reports NOT_READY and leaves out unchanged");
   }
 #endif
 

@@ -23,6 +23,7 @@
 #include "kinematics/kinematics.h"
 #include "kinematics/arm_geometry.h"
 #include "modes/mode_ops.h"
+#include "modes/mode_cartesian.h"
 #include "lcd/lcd.h"
 
 /* ---------------------------------------------------------------- fakes */
@@ -78,6 +79,13 @@ static int same_joints(const joint_vec_t *a, const joint_vec_t *b)
 {
   for (int j = 0; j < ARM_N_JOINTS; j++) if (fabsf(a->deg[j] - b->deg[j]) > 0.001f) return 0;
   return 1;
+}
+static float angle_diff_deg(float a, float b)
+{
+  float d = fmodf(a - b, 360.0f);
+  if (d >= 180.0f) d -= 360.0f;
+  if (d < -180.0f) d += 360.0f;
+  return d;
 }
 
 int main(void)
@@ -212,6 +220,65 @@ int main(void)
     CHECK(strcmp(g_msg, align) == 0, "stick push while blocked: shows ALIGN J4");
     motion_get_target(&tgt);
     CHECK(same_joints(&before, &tgt), "and nothing moves");
+    MODE_CARTESIAN_OPS.exit();
+  }
+
+  printf("== pitch mode: LCD event toggles Z/PITCH, 1 deg/detent keeps XYZ, refusal holds\n");
+  {
+    joint_vec_t t0, t1, t2, cur_j;
+    cart_pose_t base, after, down;
+    float j6;
+
+    MODE_CARTESIAN_OPS.exit();
+    motion_set_target_exact(&setup);
+    run_motion_ms(4000);
+    MODE_CARTESIAN_OPS.enter();
+    CHECK(mode_cartesian_ready(), "Cartesian ready for the pitch test");
+    CHECK(!mode_cartesian_encoder_pitch(), "enter defaults to Z");
+    target_fk(&base);
+    CHECK(fabsf(mode_cartesian_pitch_deg() - base.pitch_deg) < 0.05f, "getter reports the accepted pitch");
+    motion_get_target(&t0);
+    j6 = t0.deg[J6_GRIPPER];
+
+    e.type = EVT_TOUCH_SELECT; e.arg = 0; e.v[0] = 0; e.v[1] = 0; e.v[2] = 0;
+    MODE_CARTESIAN_OPS.on_event(&e);
+    CHECK(mode_cartesian_encoder_pitch(), "LCD Z/PITCH event selects pitch");
+
+    e.type = EVT_ENC_STEP; e.v[0] = 1;
+    MODE_CARTESIAN_OPS.on_event(&e);
+    target_fk(&after);
+    CHECK(fabsf(angle_diff_deg(after.pitch_deg, base.pitch_deg) - 1.0f) < 0.05f,
+          "one pitch detent asks for +1 deg");
+    CHECK(fabsf(after.x_mm - base.x_mm) < 0.5f && fabsf(after.y_mm - base.y_mm) < 0.5f &&
+          fabsf(after.z_mm - base.z_mm) < 0.5f,
+          "a pitch detent keeps the last controlled X/Y/Z");
+    CHECK(fabsf(mode_cartesian_pitch_deg() - (base.pitch_deg + 1.0f)) < 0.05f,
+          "the getter follows the accepted pitch");
+    motion_get_target(&t1);
+    CHECK(t1.deg[J6_GRIPPER] == j6, "a pitch detent leaves the gripper alone");
+    run_motion_ms(2000);
+
+    g_msg[0] = '\0';
+    e.v[0] = 5;                                        /* pitch 151 -> 156: J5 would go below 25 */
+    MODE_CARTESIAN_OPS.on_event(&e);
+    CHECK(strcmp(g_msg, "LIMIT J5 MIN 25") == 0, "a refused pitch names the closest failed joint");
+    motion_get_target(&t1);
+    motion_get_current(&cur_j);
+    CHECK(same_joints(&cur_j, &t1), "a refused pitch holds the arm where it is");
+    CHECK(fabsf(mode_cartesian_pitch_deg() - (base.pitch_deg + 1.0f)) < 0.1f,
+          "a refused pitch does not advance the accepted pitch");
+
+    e.type = EVT_TOUCH_SELECT; e.v[0] = 0;
+    MODE_CARTESIAN_OPS.on_event(&e);
+    CHECK(!mode_cartesian_encoder_pitch(), "LCD Z/PITCH event switches back to Z");
+    e.type = EVT_ENC_STEP; e.v[0] = -1;
+    MODE_CARTESIAN_OPS.on_event(&e);
+    target_fk(&down);
+    CHECK(fabsf(down.z_mm - (base.z_mm - 5.0f)) < 0.5f, "Z mode still moves 5 mm per detent");
+    CHECK(fabsf(angle_diff_deg(down.pitch_deg, base.pitch_deg + 1.0f)) < 0.05f,
+          "Z mode keeps the pitch the operator set");
+    motion_get_target(&t2);
+    CHECK(t2.deg[J6_GRIPPER] == j6, "toggling and moving leaves the gripper alone");
     MODE_CARTESIAN_OPS.exit();
   }
 

@@ -49,8 +49,12 @@ Y axis of joint group 2, so using group 2 is the usual way to end up blocked.
 
 **Cartesian controls.** The joystick moves X/Y at 20 mm/s in FINE and 60 mm/s in FAST: stick up = forward
 (+X), stick right = the arm's right (-Y), for an operator behind the arm (28 Oct 2026; mode entry
-resets to FINE). One encoder detent moves Z by 5 mm. The encoder press toggles the gripper; J6 can be
-commanded to 0 deg (closed) and there is no deadman. Centring the stick issues no new request, but it
+resets to FINE). The encoder target is selected with the LCD **Z / PITCH** button (or
+`EVT_TOUCH_SELECT` with `v[0] = 0`): **Z** = 5 mm per detent, **PITCH** = 1 deg per detent. Entering the
+mode resumes Z. A pitch detent keeps the last accepted X/Y/Z and wraps the requested pitch to
+`[-180, 180)` before the normal IK/exact-motion check; a refused pitch holds and rebases like a
+refused Z detent. The LCD shows the selected target and the current pitch. The encoder press
+toggles the gripper; J6 can be commanded to 0 deg (closed) and there is no deadman. Centring the stick issues no new request, but it
 does **not** cancel an already queued target: the arm continues to the last accepted target. Exit calls
 `motion_hold()`. There is no automatic collision checker and no software stop or emergency-stop
 guarantee; switch the servo supply off for a hard stop. Keep the workspace clear and be ready to leave
@@ -64,11 +68,14 @@ allows in that loop pass (`kin_ik_cartesian` from the current joints, then the X
 `budget / max joint change`); near a singularity the hand slows down instead of the joints jumping.
 `motion/` then ramps each joint (see below), so the motion is continuous rather than step-and-stop.
 
-**Failure handling.** IK or exact-motion failure only shows the reason (`OUT OF REACH`, `JOINT LIMIT`
-...) and keeps the last **accepted** target: no `motion_hold()`, so the arm finishes the last good
-request smoothly instead of stopping with a jerk. `s_pose` stays that accepted pose and the next
-XY request continues from it. Because the lead is bounded, the accepted target is never far ahead of
-the arm, so a reverse input cannot resume an old, distant request.
+**Failure handling.** IK or exact-motion failure only shows the reason and keeps the last **accepted**
+target: no `motion_hold()` for a joystick request, so the arm finishes the last good request smoothly
+instead of stopping with a jerk. `s_pose` stays that accepted pose and the next XY request continues
+from it. Because the lead is bounded, the accepted target is never far ahead of the arm, so a reverse
+input cannot resume an old, distant request. IK refusals use the diagnostic API and name the closest
+failed branch, e.g. `LIMIT J5 MIN 25`, `LIMIT J2 MIN 50`, `COUPLING J2>=90`, or `OUT OF REACH`; they do
+not report a generic `JOINT LIMIT` when a joint can be named. The status and success branch are
+unchanged.
 
 **Knob (Z).** Detents are discrete and can queue ahead of the arm, so the lead bound does not cover
 them. A detent against the Z travel still pending starts from the current pose (FK of the commanded
@@ -215,11 +222,18 @@ is explicitly provisional in the workbook. These are not hardware proof.
 kin_status_t kin_fk(const joint_vec_t *joints, cart_pose_t *out);
 kin_status_t kin_ik(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out);
 kin_status_t kin_ik_cartesian(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out);
+kin_status_t kin_ik_cartesian_diag(const cart_pose_t *pose, const joint_vec_t *seed,
+                                   joint_vec_t *out, kin_diag_t *diag);
 
 bool kin_fk_enabled(void);
 bool kin_ik_enabled(void);              /* global/voice guard */
 bool kin_ik_cartesian_enabled(void);    /* Cartesian guard; false in a bench build */
 ```
+
+`kin_ik_cartesian_diag()` is the same solve and guard as `kin_ik_cartesian()`, with an optional
+`kin_diag_t` that names the closest failed elbow branch and its failure (joint minimum/maximum,
+coupling, geometry or invalid input). On `KIN_OK` it is cleared (reason NONE). It never changes
+the output or the solver's choices.
 
 `joint_vec_t.deg[]` is **servo degrees 0..180**, not model angles. FK converts with
 `q = sign * (servo - zero)`. FK accepts any finite angles; it does not enforce the
@@ -333,7 +347,10 @@ before anything moves; Cartesian keeps its last accepted pose at a limit).
 joystick. It checks that X+ / Y+ change only the expected axis in one 20 ms step, that centring issues
 no new request, that a refusal keeps the last accepted target (no hold) and the next request continues
 from it, that the target never leads the arm by more than ~0.15 s of joint travel and no joint is asked
-to exceed its speed limit, that the arm stops within 3 mm after release, that the global `kin_ik()` stays blocked, and that entry/XY never command the gripper.
+to exceed its speed limit, that the arm stops within 3 mm after release, that the global `kin_ik()`
+stays blocked, and that entry/XY never command the gripper. It also toggles the LCD Z/PITCH event,
+checks 1 deg/detent keeps X/Y/Z, that a refused pitch holds and names `LIMIT J5 MIN 25`, and that
+switching back to Z resumes 5 mm detents without touching the gripper or the accepted pitch.
 
 `ProjectDevGuide/tests/host/test_kinematics.c` is compiled three times by `run.sh`:
 
@@ -349,7 +366,10 @@ default                                  Cartesian + voice on, global off: Carte
 The math build checks the nine workbook `Test_Vectors` FK cases, full-roll FK
 pitch projection, degenerate approach refusal, safe IK round trips, both elbow
 branches with seed selection, periodic pitch, J2/J5 coupling, servo limits, J6,
-null/non-finite inputs, output preservation, and `out == seed`.
+null/non-finite inputs, output preservation, and `out == seed`. The default
+build also checks `kin_ik_cartesian_diag()`: J5 minimum 25, J2 minimum 50, the
+J2/J5 coupling report, geometry OUT OF REACH, invalid non-finite pitch, and that
+every refusal leaves `out` unchanged.
 
 Run from the repo root:
 

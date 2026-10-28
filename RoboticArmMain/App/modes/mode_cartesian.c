@@ -1,15 +1,21 @@
-/* mode_cartesian.c - joystick moves X/Y, encoder moves Z, encoder press = gripper (guide 7.1)
+/* mode_cartesian.c - joystick moves X/Y, encoder moves Z or pitch, encoder press = gripper (guide 7.1)
  *
  * owner: TODO(team) (works together with the ik member)
  * the target pose is only accepted if ik solves it AND motion takes the solution unchanged;
  * otherwise nothing new is requested, the last accepted pose stays (the arm finishes it) and the lcd
- * shows the reason (OUT OF REACH / JOINT LIMIT / IK NOT READY / MOTION REFUSED).
+ * shows the reason, including the closest failed joint (e.g. LIMIT J5 MIN 25, COUPLING J2>=90).
  * Cartesian-only IK is activated by ARM_CARTESIAN_IK_ENABLED (voice has its own, ARM_VOICE_IK_ENABLED).
  * Entering the mode never commands motion. IK fixes J4 at ARM_J4_ZERO_DEG, so the first accepted
  * move from the installed home (J4 90) rolls J4 to the reference (88, the supervised bench move).
  * If J4 is further than CART_MAX_ROLL_DEG from the reference, the mode stays blocked and shows
  * ALIGN J4 <reference>; align it in a manual mode and re-enter. The mode forces SPEED_FINE on entry
  * (the operator can still toggle FAST). s_pose is the last accepted REQUESTED pose = the motion target.
+ *
+ * encoder target (28 Oct 2026): Z (5 mm per detent) or PITCH (1 deg per detent). The LCD button or
+ * EVT_TOUCH_SELECT with v[0] = 0 toggles it; the LCD reads the state through mode_cartesian.h.
+ * Pitch is wrapped to [-180, 180) before the request, so it is always finite and never runs away.
+ * A pitch detent keeps the last accepted X/Y/Z and asks the same IK/exact-motion path; a refusal
+ * holds and rebases like a Z refusal.
  *
  * smooth joystick (28 Oct 2026, it felt slow and jerky):
  *   - each XY increment is scaled so no joint has to move faster than the motion speed limit
@@ -28,6 +34,7 @@
  */
 #include "modes/mode_ops.h"
 #include "modes/gripper.h"
+#include "modes/mode_cartesian.h"
 #include "motion/motion.h"
 #include "kinematics/kinematics.h"
 #include "kinematics/arm_geometry.h"
@@ -35,6 +42,7 @@
 #include "common/app_util.h"
 #include "lcd/lcd.h"
 #include "main.h"
+#include <math.h>
 #include <stdio.h>
 #if APP_USE_INPUT
 #include "input/input.h"
@@ -43,6 +51,9 @@
 #define XY_FINE_MM_S 20.0f
 #define XY_FAST_MM_S 60.0f
 #define Z_STEP_MM    5.0f      /* per encoder detent */
+#define PITCH_STEP_DEG 1.0f    /* per encoder detent while PITCH is selected */
+#define PITCH_WRAP_MIN_DEG (-180.0f)
+#define PITCH_WRAP_MAX_DEG (180.0f)
 #define CART_MAX_ROLL_DEG 2.1f /* home J4 90 vs reference 88: bench-tested 2 deg + 0.1 margin */
 #define CART_LEAD_S  0.15f     /* the target may lead the commanded joints by this much motion at most */
 
@@ -50,8 +61,22 @@ static cart_pose_t s_pose;      /* last accepted requested pose, not the current
 static bool        s_ready;     /* guard, roll and fk all passed on enter */
 static bool        s_roll_blocked; /* enter blocked only because J4 is far from the IK reference */
 static bool        s_gripper_closed;
+static bool        s_enc_pitch; /* false = Z (default), true = pitch */
 static uint32_t    s_last_ms;
 static kin_status_t s_last_status = KIN_NOT_READY;
+
+bool mode_cartesian_encoder_pitch(void) { return s_enc_pitch; }
+bool mode_cartesian_ready(void)         { return s_ready; }
+float mode_cartesian_pitch_deg(void)    { return s_pose.pitch_deg; }
+
+/* wrap to [-180, 180), the explicit finite orientation range used for pitch requests */
+static float wrap_pitch_deg(float deg)
+{
+  if (!isfinite((double)deg)) return deg;
+  float w = fmodf(deg - PITCH_WRAP_MIN_DEG, PITCH_WRAP_MAX_DEG - PITCH_WRAP_MIN_DEG);
+  if (w < 0.0f) w += PITCH_WRAP_MAX_DEG - PITCH_WRAP_MIN_DEG;
+  return w + PITCH_WRAP_MIN_DEG;
+}
 
 #if APP_USE_INPUT
 static float joint_speed_deg_s(void)
@@ -71,15 +96,47 @@ static float max_joint_diff(const joint_vec_t *a, const joint_vec_t *b)
 }
 #endif
 
+/* one short banner from the optional IK diagnostic: the joint and bound that blocked the closest
+ * failed solution, or the geometry reason. Never a made-up "best" value: it comes from the solver. */
+static void show_ik_diagnostic(const kin_diag_t *d)
+{
+  char msg[LCD_COLS];
+  switch (d->reason) {
+    case KIN_DIAG_JOINT_MIN:
+      snprintf(msg, sizeof msg, "LIMIT J%d MIN %d", d->joint + 1, (int)d->limit_deg);
+      break;
+    case KIN_DIAG_JOINT_MAX:
+      snprintf(msg, sizeof msg, "LIMIT J%d MAX %d", d->joint + 1, (int)d->limit_deg);
+      break;
+    case KIN_DIAG_COUPLING:
+      snprintf(msg, sizeof msg, "COUPLING J%d>=%d", d->joint + 1, (int)d->limit_deg);
+      break;
+    case KIN_DIAG_GEOMETRY:
+      snprintf(msg, sizeof msg, "OUT OF REACH");
+      break;
+    case KIN_DIAG_INVALID:
+      snprintf(msg, sizeof msg, "INVALID TARGET");
+      break;
+    case KIN_DIAG_NOT_READY:
+      snprintf(msg, sizeof msg, "IK NOT READY");
+      break;
+    default:
+      snprintf(msg, sizeof msg, "%s", kin_status_name(d->status));
+      break;
+  }
+  lcd_show_message(msg, 1500u);
+}
+
 /* takes the request or not: on a refusal nothing changes (the arm finishes the last accepted target) */
 static bool try_pose(const cart_pose_t *p)
 {
   joint_vec_t now, sol;
+  kin_diag_t diag;
   motion_get_current(&now);
-  kin_status_t st = kin_ik_cartesian(p, &now, &sol);
+  kin_status_t st = kin_ik_cartesian_diag(p, &now, &sol, &diag);
   s_last_status = st;
   if (st != KIN_OK) {
-    lcd_show_message(kin_status_name(st), 1500u);
+    show_ik_diagnostic(&diag);
     return false;
   }
   sol.deg[J6_GRIPPER] = now.deg[J6_GRIPPER];
@@ -106,6 +163,7 @@ static void enter(void)
   s_roll_blocked = enabled && !roll_ok;
   s_ready = enabled && roll_ok && (fk == KIN_OK);        /* FK/roll alone do not unlock moves */
   s_gripper_closed = gripper_is_closed_at(now.deg[J6_GRIPPER]);   /* lower angle = closed */
+  s_enc_pitch = false;                                   /* default: Z, as before */
   s_last_ms = HAL_GetTick();
   if (!s_ready) {
     if (!enabled) {
@@ -161,6 +219,32 @@ static void z_detents(int detents)
   }
 }
 
+/* knob detent while PITCH is selected: 1 deg per detent, X/Y/Z kept from the last accepted pose.
+ * Like Z, a reverse turn against pending travel starts from the arm's current pitch; a refused
+ * detent holds and rebases. Pitch is wrapped to a finite range before the request. */
+static void pitch_detents(int detents)
+{
+  joint_vec_t cj, tj;
+  cart_pose_t cp, tp;
+  float dp = (float)detents * PITCH_STEP_DEG;
+  motion_get_current(&cj);
+  motion_get_target(&tj);
+  if (kin_fk(&cj, &cp) == KIN_OK && kin_fk(&tj, &tp) == KIN_OK) {
+    float pending = wrap_pitch_deg(tp.pitch_deg - cp.pitch_deg);
+    if ((dp > 0.0f && pending < -0.5f) || (dp < 0.0f && pending > 0.5f)) {
+      if (!rebase_on_current()) return;            /* turning back: from where the arm is */
+    }
+  }
+  cart_pose_t p = s_pose;
+  p.pitch_deg = wrap_pitch_deg(p.pitch_deg + dp);
+  if (try_pose(&p)) {
+    s_pose = p;
+  } else {
+    motion_hold();                                  /* refused discrete request: stop here and rebase */
+    (void)rebase_on_current();
+  }
+}
+
 /* blocked mode: a knob turn / press or a stick push shows WHY nothing moves (on the lcd page too),
  * instead of silently doing nothing. it never moves anything */
 static void show_block_reason(void)
@@ -175,12 +259,18 @@ static void show_block_reason(void)
 static void on_event(const app_event_t *e)
 {
   if (!s_ready) {
-    if (e->type == EVT_ENC_STEP || e->type == EVT_ENC_PRESS) show_block_reason();
+    if (e->type == EVT_ENC_STEP || e->type == EVT_ENC_PRESS || e->type == EVT_TOUCH_SELECT) {
+      show_block_reason();
+    }
     return;
   }
   switch ((evt_type_t)e->type) {
     case EVT_ENC_STEP:
-      z_detents(e->v[0]);
+      if (s_enc_pitch) pitch_detents(e->v[0]);
+      else             z_detents(e->v[0]);
+      break;
+    case EVT_TOUCH_SELECT:
+      if (e->v[0] == 0) s_enc_pitch = !s_enc_pitch;   /* the lcd Z/PITCH button */
       break;
     case EVT_ENC_PRESS:
       if (gripper_command(!s_gripper_closed)) s_gripper_closed = !s_gripper_closed;
@@ -246,7 +336,9 @@ static void describe(char (*lines)[LCD_COLS], int n)
   if (n > 0) snprintf(lines[0], LCD_COLS, "X: %d mm", (int)s_pose.x_mm);
   if (n > 1) snprintf(lines[1], LCD_COLS, "Y: %d mm", (int)s_pose.y_mm);
   if (n > 2) snprintf(lines[2], LCD_COLS, "Z: %d mm", (int)s_pose.z_mm);
-  if (n > 3) snprintf(lines[3], LCD_COLS, "Gripper: %s", s_gripper_closed ? "CLOSED" : "OPEN");
+  if (n > 3) snprintf(lines[3], LCD_COLS, "%s  G:%s  P:%d",
+                      s_enc_pitch ? "PITCH" : "Z", s_gripper_closed ? "CLOSED" : "OPEN",
+                      (int)s_pose.pitch_deg);
 }
 
 const mode_ops_t MODE_CARTESIAN_OPS = {

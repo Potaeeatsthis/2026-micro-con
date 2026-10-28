@@ -57,6 +57,29 @@ typedef enum {
   KIN_NOT_READY             /* geometry disabled, or FK pitch projection degenerate */
 } kin_status_t;
 
+/* Optional detail for a failed kin_ik_cartesian_diag() call. The solver still returns the same
+ * kin_status_t; this only says which candidate was closest to the seed and why that candidate
+ * failed, without any global state. joint/branch are -1 when they do not apply. limit_deg is the
+ * violated bound (0 when none); value_deg is the nearest attempted angle for that joint. */
+typedef enum {
+  KIN_DIAG_NONE = 0,
+  KIN_DIAG_INVALID,         /* null / non-finite pose or seed */
+  KIN_DIAG_GEOMETRY,        /* no geometric solution (out of reach) */
+  KIN_DIAG_JOINT_MIN,       /* closest failed solution wants a joint below its installed minimum */
+  KIN_DIAG_JOINT_MAX,       /* closest failed solution wants a joint above its installed maximum */
+  KIN_DIAG_COUPLING,        /* closest failed solution breaks the J2/J5 coupling rule */
+  KIN_DIAG_NOT_READY        /* the Cartesian guard is off */
+} kin_reason_t;
+
+typedef struct {
+  kin_status_t status;
+  kin_reason_t reason;
+  int          joint;       /* 0..5 = J1..J6, -1 = none */
+  int          branch;      /* closest failed elbow branch 0/1, -1 = none */
+  float        limit_deg;   /* violated bound, 0 = none */
+  float        value_deg;   /* nearest attempted angle, 0 = none */
+} kin_diag_t;
+
 void         kin_init(void);
 
 /* pose -> joints. seed = current joints, used to pick the closest elbow branch.
@@ -70,6 +93,12 @@ kin_status_t kin_ik(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_
  * (APP_USE_IK_BENCH_TEST) always returns KIN_NOT_READY. The solver fixes J4 at
  * ARM_J4_ZERO_DEG; caller decides whether the seed roll is close enough. */
 kin_status_t kin_ik_cartesian(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out);
+
+/* Same solve and guard as kin_ik_cartesian(); diag (optional) explains a refusal. On KIN_OK it is
+ * cleared (reason NONE, joint/branch -1). On failure out is unchanged. The diagnostics only describe the closest branch that failed;
+ * they do not change the branch choice, limits or the successful path. */
+kin_status_t kin_ik_cartesian_diag(const cart_pose_t *pose, const joint_vec_t *seed, joint_vec_t *out,
+                                   kin_diag_t *diag);
 
 /* Voice mode only: the same solver and status rules, gated by ARM_VOICE_IK_ENABLED. A bench build
  * (APP_USE_IK_BENCH_TEST) always returns KIN_NOT_READY. */
