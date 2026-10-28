@@ -11,8 +11,9 @@
  * is not started at all. the gripper (J6) is never moved.
  *
  *   home, screen shows the target, the IK joint angles, the biggest joint change, "PRESS = GO"
- *                              (arming: presses queued before that are dropped, and a press within
- *                              IK_BENCH_ARM_MS after it is ignored: GO always needs a fresh press)
+ *                              (arming: GO needs a press whose debounced EDGE is at least IK_BENCH_ARM_MS
+ *                              after READY, judged by the edge time, not by when the event is handled.
+ *                              a knob held across start-up counts only after release + a new press)
  *   KY-040 press            -> move to the IK solution (refused if a joint would move more than
  *                              IK_BENCH_MAX_DELTA_DEG, or motion would clamp it)
  *   any press while moving  -> STOP (motion_hold); KY-023 press counts only with the stick centred

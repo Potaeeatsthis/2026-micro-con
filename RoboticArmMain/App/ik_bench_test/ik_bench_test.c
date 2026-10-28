@@ -36,7 +36,7 @@
 #endif
 
 #ifndef IK_BENCH_ARM_MS
-#define IK_BENCH_ARM_MS        500u     /* after READY appears, presses are ignored this long */
+#define IK_BENCH_ARM_MS        500u     /* GO needs a press EDGE at least this long after READY appeared */
 #endif
 
 #define REDRAW_MS  100u                 /* while the arm is moving */
@@ -49,7 +49,7 @@ static const cart_pose_t TARGET = { IK_BENCH_X_MM, IK_BENCH_Y_MM, IK_BENCH_Z_MM,
 static ik_bench_state_t s_state = IKB_BOOT;
 static joint_vec_t      s_sol;
 static bool             s_have_sol;
-static uint32_t         s_ready_ms;     /* when READY was entered: GO needs a press after IK_BENCH_ARM_MS */
+static uint32_t         s_ready_ms;     /* when READY was entered: GO needs a press edge after +IK_BENCH_ARM_MS */
 static int              s_max_j;        /* joint with the biggest change, and how much */
 static float            s_max_d;
 static bool             s_have_err;     /* after arriving: FK of the reached pose minus the target */
@@ -155,8 +155,10 @@ static void plan(void)
     set_status(IKB_NO_SOLUTION, b, LCD_RED);
     return;
   }
-  /* arming: a press queued before READY (e.g. on the last start-up tick, or a second press while
-   * re-planning) must not count as GO. drop what is queued and wait IK_BENCH_ARM_MS for a fresh press */
+  /* arming: GO must be a NEW press. the press events carry the tick of their debounced edge (input.c),
+   * so the check below is on when the knob went down, not on when this loop got to the event: a press
+   * made before or just after READY stays invalid however late it is processed, and a knob held across
+   * start-up gives no edge at all until it is released and pressed again. queued events are dropped too */
   app_event_t e;
   while (app_event_pop(&e)) { }
   s_ready_ms = HAL_GetTick();
@@ -233,8 +235,9 @@ void ik_bench_test_step(void)
       bool any = press || e.type == EVT_JOY_PRESS;
       switch (s_state) {
         case IKB_READY:
-          if (press && ms_since(HAL_GetTick(), s_ready_ms) < IK_BENCH_ARM_MS) {
-            LOG("ik-bench: press ignored (just armed, press again)\r\n");
+          if (press && (int32_t)(e.tick_ms - s_ready_ms) < (int32_t)IK_BENCH_ARM_MS) {
+            LOG("ik-bench: press ignored (pressed %ld ms after READY, press again)\r\n",
+                (long)(int32_t)(e.tick_ms - s_ready_ms));
           } else if (press) {
             (void)go(&s_sol, IKB_MOVING, "MOVING. ANY PRESS = STOP");
           }

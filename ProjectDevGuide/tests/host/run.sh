@@ -49,7 +49,7 @@ gcc -std=gnu11 -O1 -g -Wall -Wextra -Werror -Wshadow -Wno-unused-parameter \
   -DAPP_USE_IK_BENCH_TEST=1 -DAPP_USE_MOTION=1 -DAPP_USE_MODES=0 -DAPP_USE_LCD=0 -DAPP_USE_INPUT=1 \
   -DAPP_USE_KINEMATICS=1 \
   -I"$HERE/fake" -I"$A" -o "$T/test_ik_bench" "$HERE/test_ik_bench.c" "$A/ik_bench_test/ik_bench_test.c" \
-  "$A/common/app_events.c" "$A/common/app_fault.c" "$A/safety/safety.c" \
+  "$A/input/input.c" "$A/common/app_events.c" "$A/common/app_fault.c" "$A/safety/safety.c" \
   "$A/motion/motion.c" "$A/motion/servo.c" "$A/motion/servo_cal.c" "$A/kinematics/kinematics.c" \
   "$HERE/fake/lcd_port_fake.c" -lm
 # kinematics: the default build has FK on and IK fail-closed; the second build enables IK for the test only.
