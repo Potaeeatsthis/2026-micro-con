@@ -119,7 +119,7 @@ stays in its reset state (an input nobody reads), which is harmless. ("Set all f
 Manager stays off: it would reconfigure every free pin on the board.) Manual modes (Single Joint, Joint
 Group, Cartesian) move whenever no fatal fault is latched, with no Enable button.
 
-**Joystick press (KY-023 SW) = Fine/Fast speed toggle in every manual mode**, accepted only while
+**Joystick press (KY-023 SW) = Fine/Fast speed toggle in every manual mode and in voice mode** (28 Oct 2026), accepted only while
 the stick is near its centre (so an accidental press while pushing the stick does nothing).
 The knob press (KY-040 SW) keeps the mode-specific actions from `robotic-arm-guide.md`.
 
@@ -164,6 +164,18 @@ never merged): the timers and pins above work on all six channels. Lessons for `
   (J1: 500 → 2430 µs over 180°), `APP_SPEED_FINE_DEG_S` 10 °/s gives 0.2° ≈ 2 µs per 20 ms frame,
   below the SG deadband, so an SG joint moves in jumps. The test ran at 60 °/s (≈ 13 µs per frame)
   and was smooth. Choose the fine speed with this in mind.
+
+**Motion profile (28 Oct 2026, `App/motion/motion.c`).** Each tick every joint has a velocity that
+changes by at most `speed / APP_RAMP_S` per second (`APP_RAMP_S` 0.25 s: FINE 10 deg/s is reached in
+0.25 s), and it brakes with the discrete stopping speed `sqrt(h^2 + 2 a |err|) - h` (`h = a dt / 2`) so it
+lands on the target with no residual step. Moves are synchronised: a joint's speed and acceleration are
+scaled by its share of the largest remaining error (min 5 %), so all joints start and arrive together.
+`motion_hold()`, the jog timeout and a fatal fault set the velocity to 0 at once (a stop is never ramped).
+PWM is still 50 Hz and the joint limits are unchanged.
+
+**Timing log.** `APP_TIMING_LOG 1` (local config) prints every 2 s on USART3 the slowest pass of
+`voice_step()`, `modes_step()` (Cartesian / voice IK runs here), `lcd_step()` and the whole loop, in
+microseconds. Measure with it before changing any update rate.
 
 ### 4.2 KY-040 — TIM1 encoder mode
 Combined channels: Encoder Mode, **Encoder Mode TI1 and TI2**, prescaler 0, period 65535,

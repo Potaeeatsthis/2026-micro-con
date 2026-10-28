@@ -123,6 +123,9 @@ made after the run (gripper state per step, log order) were build-checked only.
   for a few seconds (`OUT OF REACH`, `JOINT LIMIT`, `BOX NOT FOUND`, `PI NOT RESPONDING` ...).
   Top right of the voice page (in the header): the **jog step slider**, 0.00-2.00 cm in 0.05 cm steps (default
   2.00 cm = the old 20 mm). Tap or drag; the next jog words (`forward` ...) use it (`EVT_TOUCH_STEP_CM`, 0.1 mm).
+  Right of the slider: **FINE / FAST** (white / yellow), the speed every voice move uses (joystick press toggles).
+  In S6 the **jog queue pop-up** covers the camera panel only: `[forward 1.23, right 1.11]` (cm, in the order
+  spoken) with `say YES / UNDO / NO`. It is not an overlay, so the slider and Back keep working under it.
   A tap hides the pop-up (the task goes on; use `stop` to stop). The old touch flow (Proceed -> confirm ->
   DESTINATION / CUSTOM pages) is off (`VOICE_TOUCH_FLOW 0` in `lcd.c`): words drive the task.
 

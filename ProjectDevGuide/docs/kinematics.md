@@ -56,11 +56,19 @@ does **not** cancel an already queued target: the arm continues to the last acce
 guarantee; switch the servo supply off for a hard stop. Keep the workspace clear and be ready to leave
 the mode.
 
-**Failure handling.** IK or exact-motion failure calls `motion_hold()`, so an older pending target
-cannot keep moving the arm. `s_pose` stays the last **accepted requested** pose for the LCD, but both
-the encoder and XY control increments after a failure rebase on the FK of the held **current** pose.
-Otherwise a reverse input could resume a cancelled target that was still ahead of the arm. If that
-held-pose FK fails, the mode blocks and shows the FK status until it is re-entered.
+**Smooth joystick (28 Oct 2026).** The XY target may lead the arm by at most `CART_LEAD_S` (0.15 s)
+of joint travel at the current speed: while any arm joint is further than that from its target, no new
+XY request is made, so the target never runs far ahead and the arm stops within a few mm of where the
+stick was released. Each request is also scaled so that no joint has to move more than its speed limit
+allows in that loop pass (`kin_ik_cartesian` from the current joints, then the XY step shrunk by
+`budget / max joint change`); near a singularity the hand slows down instead of the joints jumping.
+`motion/` then ramps each joint (see below), so the motion is continuous rather than step-and-stop.
+
+**Failure handling.** IK or exact-motion failure only shows the reason (`OUT OF REACH`, `JOINT LIMIT`
+...) and keeps the last **accepted** target: no `motion_hold()`, so the arm finishes the last good
+request smoothly instead of stopping with a jerk. `s_pose` stays that accepted pose and the next
+encoder or XY request continues from it. Because the lead is bounded, the accepted target is never
+far ahead of the arm, so a reverse input cannot resume an old, distant request.
 
 **Pitch.** `pitch_deg` is the tool approach in the arm's vertical plane: **0 = gripper pointing up,
 180 = straight down**, smaller = tilted toward the reach. Home is about 148. Voice used 0 (up) for every
@@ -318,8 +326,9 @@ before anything moves; Cartesian keeps its last accepted pose at a limit).
 
 `test_cartesian.c` is built with `APP_USE_INPUT=1` and calls the real `MODE_CARTESIAN_OPS` with a fake
 joystick. It checks that X+ / Y+ change only the expected axis in one 20 ms step, that centring issues
-no new request, that a refusal holds the current pose and the next XY retry rebases on it (not on the
-cancelled request), that the global `kin_ik()` stays blocked, and that entry/XY never command the gripper.
+no new request, that a refusal keeps the last accepted target (no hold) and the next request continues
+from it, that the target never leads the arm by more than ~0.15 s of joint travel and no joint is asked
+to exceed its speed limit, that the arm stops within 3 mm after release, that the global `kin_ik()` stays blocked, and that entry/XY never command the gripper.
 
 `ProjectDevGuide/tests/host/test_kinematics.c` is compiled three times by `run.sh`:
 
