@@ -104,7 +104,12 @@ made after the run (gripper state per step, log order) were build-checked only.
   (`HOLD_EXTRA_MM`, 28 Oct 2026: carried clear of the table and station); the station release is 25 mm
   (held block centre above the top; 12 let the fingers bump the station);
   a box no pitch reaches (e.g. 182 -45 30) shows the IK status and stays in S2, nothing moves. A target motion
-  would clamp is a failed step (`MOVE FAILED` -> S10). The grasp point is the box top minus `GRASP_BELOW_TOP_MM`.
+  would clamp is a failed step (`MOVE FAILED` -> S10). The Pi reports the top face; when `OBJ` arrives,
+  `s_obj_pose` is converted **once** to the grasp centre (`z = OBJ z - GRASO_Z_OFFSET_MM`, 10 mm), and
+  `build_grasp()` must not subtract it again. A centre below Z 0 is rejected in S1 as `BOX TOO LOW` before
+  any script starts; Z 0 itself is accepted as the boundary (not a collision-free claim). The raw Pi pose is
+  kept separately for the S2 display, so the
+  operator still checks the reported top-face position (e.g. `182 -45 30 mm`), not the grasp centre.
   Camera positions come from `calib_T.npy` ([`camera-calibration.md`](camera-calibration.md)); J1 is ~14 deg
   short to the right (not fixed): keep boxes in the middle / left (Y > -100).
 - **LCD**: tap the Voice card. The VOICE page shows "Pick Color" = the colour said in S1, a tick on each colour

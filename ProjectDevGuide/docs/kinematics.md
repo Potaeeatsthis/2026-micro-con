@@ -108,10 +108,12 @@ motion moves every joint on its own at its speed limit (no Cartesian interpolati
 together), so the tool path is not straight and the pitch changes during the move. The descent onto the
 box is therefore **not** guaranteed vertical or orientation-preserving.
 
-**Grasp height.** The Pi reports the **centre of the box's top face**; the TCP is the centre of the
-**held** box (TCP z = block top - 15 / 2). Voice grasps at the top minus `GRASP_BELOW_TOP_MM`: 10.5 mm = half the 15 mm block (7.5) + 3 mm deeper,
-because the gripper sometimes missed a block on the table in the 28 Oct 2026 board test. `HAND_RELEASE_MM` / `STATION_RELEASE_MM` are
-also TCP heights (held box centre) above the palm / station top.
+**Grasp height.** The Pi reports the **centre of the box's top face**. Voice grasps at the top minus
+`GRASO_Z_OFFSET_MM`, a user-requested **10 mm calibration offset** (28 Oct 2026); it is not derived from the
+block's physical 15 mm height. `mode_voice` applies it once when `OBJ` arrives (the raw Pi pose is kept for
+the S2 display, and `s_obj_pose` becomes the grasp centre); a resulting centre below Z 0 is rejected before
+motion (Z 0 is the boundary, not a claim that a Z-0 tool pose is collision-free). `HAND_RELEASE_MM` /
+`STATION_RELEASE_MM` are also TCP heights (held box centre) above the palm / station top.
 
 With the candidate geometry and the installed limits the reachable band is narrow. Reachable Z (mm) at
 Y = 0, from home (host scan, test only):

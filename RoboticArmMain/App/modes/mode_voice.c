@@ -31,6 +31,10 @@
  * ik (28 Oct 2026): kin_ik_voice(), switched on by ARM_VOICE_IK_ENABLED. grasp and place search their pitch
  * (GRASP_PITCH_*); every pose is solved before step 1; a target motion would clamp or refuse is a
  * failed step (JOINT LIMIT / MOTION REFUSED -> MOVE FAILED -> S10), never a move to another pose.
+ * grasp centre (28 Oct 2026): the pi reports the top face; s_obj_pose is the GRASP CENTRE, i.e. the raw
+ * OBJ z minus GRASO_Z_OFFSET_MM. the offset is applied ONCE, here, when OBJ arrives; build_grasp must not
+ * subtract it again. the raw pi pose is kept only for the S2 display. a centre below Z 0 is rejected in S1
+ * with BOX TOO LOW (Z 0 itself is the boundary, not a claim that a Z-0 tool pose is collision-free).
  * the pitch is the orientation AT each waypoint only: between waypoints motion moves every joint on
  * its own at its speed limit, so the path is not straight and the pitch changes on the way. the
  * descent onto the box is therefore not guaranteed vertical (no cartesian interpolation yet).
@@ -73,12 +77,11 @@
 /* after closing, the box is lifted this much MORE than the approach (Supanut, 28 Oct 2026: hold it higher,
  * ~20 mm): it is carried higher, clear of the table and the station. dropped if the higher lift does not fit */
 #define HOLD_EXTRA_MM      20.0f
-/* the pi reports the CENTRE OF THE BOX'S TOP FACE; the IK tool point (TCP) is the centre of the HELD box
- * (arm_geometry.h: TCP z = block top - 15 / 2). so the grasp target is the top minus half the box height.
- * 7.5 = half of the 15 mm block (Supanut, 28 Oct 2026: the blocks are 15 mm tall, top Z ~15 on the table),
- * + 3 mm deeper (board test 28 Oct 2026: the gripper sometimes missed a block on the table) = 10.5 */
-#define GRASP_BELOW_TOP_MM  10.5f
-_Static_assert((int)(GRASP_BELOW_TOP_MM * 10.0f) > 0, "GRASP_BELOW_TOP_MM > 0");
+/* the pi reports the CENTRE OF THE BOX'S TOP FACE; s_obj_pose is converted to the GRASP CENTRE when the
+ * OBJ arrives, so the offset is applied exactly once there (build_grasp does not subtract it again).
+ * 10 = user calibration knob for the grasp height below the top face (28 Oct 2026). */
+#define GRASO_Z_OFFSET_MM 10.0f
+_Static_assert((int)(GRASO_Z_OFFSET_MM * 10.0f) > 0, "GRASO_Z_OFFSET_MM > 0");
 /* TODO(voice): height of the TCP (= the held box's centre) above the palm where the gripper opens. must be
  * >= half the box + clearance; if that reaches APPROACH_MM, raise APPROACH_MM too */
 #define HAND_RELEASE_MM    30.0f
@@ -161,7 +164,8 @@ static vstate_t    s_return = S0_IDLE;   /* where S7 / S11 go back to on "no" or
 static bool        s_home_open;          /* S11: open the gripper before going home (from S10) */
 static object_id_t s_obj = OBJ_NONE;
 static bool        s_pi_wait;
-static cart_pose_t s_obj_pose;           /* fixed when the user says yes in S2 */
+static cart_pose_t s_obj_pose;           /* GRASP CENTRE (pi top z - GRASO_Z_OFFSET_MM), fixed in S2 */
+static cart_pose_t s_obj_top;            /* raw pi top-face pose, for the S2 display only */
 static dest_t      s_dest = DEST_HERE;
 static bool        s_holding;            /* gripper closed on an object */
 static int         s_jog_step_01 = JOG_DEFAULT_MM * 10;   /* jog step in 0.1 mm (slider resolution) */
@@ -620,8 +624,7 @@ static bool script_fits(void)
 /* open, above, down, close, lift (the lift = approach + extra: the box is held higher than the approach) */
 static void build_grasp(float approach_mm, float lift_mm)
 {
-  cart_pose_t grasp = s_obj_pose, above, lift;
-  grasp.z_mm -= GRASP_BELOW_TOP_MM;                  /* top face (pi) -> held-box centre (TCP) */
+  cart_pose_t grasp = s_obj_pose, above, lift;         /* s_obj_pose is already the grasp centre */
   above = grasp;
   above.z_mm += approach_mm;
   lift = grasp;
@@ -926,11 +929,18 @@ static void on_event(const app_event_t *e)
       }
       else if (s_state == S1_WAIT_OBJECT && s_pi_wait && (object_id_t)e->arg == s_obj) {
         s_pi_wait = false;
-        if (lcd_box_of(s_obj) >= 0) lcd_voice_set_detected((lcd_box_t)lcd_box_of(s_obj), true);
-        s_obj_pose.x_mm = (float)e->v[0];
-        s_obj_pose.y_mm = (float)e->v[1];
-        s_obj_pose.z_mm = (float)e->v[2];
+        s_obj_top.x_mm = (float)e->v[0];
+        s_obj_top.y_mm = (float)e->v[1];
+        s_obj_top.z_mm = (float)e->v[2];
+        s_obj_top.pitch_deg = GRASP_PITCH_PREF_DEG;
+        s_obj_pose = s_obj_top;
+        s_obj_pose.z_mm = (float)e->v[2] - GRASO_Z_OFFSET_MM;   /* top face -> grasp centre, ONCE */
         s_obj_pose.pitch_deg = GRASP_PITCH_PREF_DEG;  /* start_grasp picks the final pitch */
+        if (s_obj_pose.z_mm < 0.0f) {                 /* below the table: reject, never let IK clamp it */
+          lcd_show_message("BOX TOO LOW", 3000u);
+          break;                                      /* stays in S1: say the box word again */
+        }
+        if (lcd_box_of(s_obj) >= 0) lcd_voice_set_detected((lcd_box_t)lcd_box_of(s_obj), true);
         set_state(S2_CONFIRM_OBJECT);
       }
       break;
@@ -984,7 +994,8 @@ static void describe(char (*lines)[LCD_COLS], int n)
       snprintf(lines[1], LCD_COLS, "Searching %s", pi_object_name(s_obj));
 #endif
     } else if (s_state == S2_CONFIRM_OBJECT) {
-      snprintf(lines[1], LCD_COLS, "%d %d %d mm", (int)s_obj_pose.x_mm, (int)s_obj_pose.y_mm, (int)s_obj_pose.z_mm);
+      /* raw pi top face (what the operator checks); the grasp centre is 10 mm below it */
+      snprintf(lines[1], LCD_COLS, "%d %d %d mm", (int)s_obj_top.x_mm, (int)s_obj_top.y_mm, (int)s_obj_top.z_mm);
     } else if (s_state == S6_JOG_QUEUE) {
       char q[48];
       snprintf(q, sizeof q, "Queue %d/%d step %d.%02d cm", s_queue_n, JOG_MAX_ITEMS,

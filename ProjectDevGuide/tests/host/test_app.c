@@ -265,8 +265,8 @@ static int ik_callers(void)
   CHECK(lcd_status_shown() == 0, "lcd: the pop-up goes when it holds the box (S4 waits for a word)");
   motion_get_current(&now);
   CHECK(kin_fk(&now, &est) == KIN_OK && fabsf(est.x_mm - 240.0f) < 0.5f && fabsf(est.y_mm) < 0.5f &&
-        fabsf(est.z_mm - 89.5f) < 0.5f && fabsf(est.pitch_deg - 160.0f) < 0.5f,
-        "holds the box 70 mm above the grasp point (top 30 - 10.5 + 50 + 20 = 89.5) at pitch 160");
+        fabsf(est.z_mm - 90.0f) < 0.5f && fabsf(est.pitch_deg - 160.0f) < 0.5f,
+        "holds the box 70 mm above the grasp centre (top 30 - 10 + 50 + 20 = 90) at pitch 160");
 
   printf("== ik build: cartesian keeps its last good pose at a joint limit\n");
   modes_request(MODE_CARTESIAN); run_ms(100);
@@ -383,8 +383,17 @@ static int voice_hand_dry_run(void)
   printf("== voice hand (dry run): live palm position from the pi\n");
   say("pick"); say("red box"); pi_link_on_tx_done();
   pi_rx("OBJ red_box 182 -45 30\n");
+  log_capture();
   say("yes");
   run_ms(8000);
+  int grasp20 = log_has("move to 182 -45 20 mm");     /* top 30 - 10: the offset is applied once */
+  int lift70 = log_has("move to 182 -45 70 mm");      /* grasp centre 20 + APPROACH_MM 50 */
+  int lift90 = log_has("move to 182 -45 90 mm");      /* grasp centre 20 + 50 + HOLD_EXTRA_MM 20 */
+  int doubled = log_has("move to 182 -45 12 mm");     /* top 30 - 17.5: a second subtraction would land here */
+  log_release();
+  CHECK(grasp20 && lift70, "grasp centre 20 mm and lift waypoint 70 mm (top 30 - 10 + 50)");
+  CHECK(lift90, "carried at 90 mm (grasp centre 20 + 50 + HOLD_EXTRA_MM 20)");
+  CHECK(!doubled, "no 17.5 mm subtraction: the 10 mm offset is applied only when OBJ arrives");
   CHECK(strcmp(screen_line(0), "S4 HOLDING") == 0, "dry-run grasp -> S4 holding");
 
   printf("== jog step slider (voice page, top right): 1.00 cm, then a forward jog moves 10 mm\n");
@@ -409,7 +418,7 @@ static int voice_hand_dry_run(void)
     log_capture();
     say("yes");
     run_ms(3000);
-    int moved = log_has("move to 192 -45 89 mm");     /* held at 182 -45 89.5 (top 30 - 10.5 + lift 70), +X 10 mm */
+    int moved = log_has("move to 192 -45 90 mm");     /* held at 182 -45 90 (top 30 - 10 + lift 70), +X 10 mm */
     log_release();
     CHECK(moved, "the queued step moves 10 mm forward (+X)");
     CHECK(strcmp(screen_line(0), "S4 HOLDING") == 0, "queue done -> S4 holding");
@@ -502,6 +511,37 @@ static int voice_hand_dry_run(void)
   CHECK(release && open_, "opens at drop spot + STATION_RELEASE_MM");
   CHECK(!palm, "never pushes the block down to the station top itself");
   CHECK(strcmp(screen_line(0), "S0 IDLE") == 0, "then home -> S0");
+
+  printf("== voice grasp floor: top 9 mm rejected, top 10 mm accepted at centre Z 0\n");
+  say("pick"); say("red box"); pi_link_on_tx_done();
+  lcd_clear_log();
+  log_capture();
+  pi_rx("OBJ red_box 182 -45 9\n");
+  lcd_pass(100);
+  int too_low = lcd_drew_text("BOX TOO LOW");
+  int still_s1 = strcmp(screen_line(0), "S1 WHICH BOX?") == 0;
+  say("yes");                                        /* not valid in S1: must not start anything */
+  run_ms(2000);
+  int no_script = !log_has("dry-run:") && !log_has("gripper");
+  log_release();
+  CHECK(still_s1, "top 9 -> centre -1: stays in S1, no S2 confirmation");
+  CHECK(too_low, "top 9: shows BOX TOO LOW instead of a silent / clamped grasp");
+  CHECK(no_script, "top 9: no script and no gripper step reached");
+  say("stop");                                       /* S1 -> S0 */
+
+  say("pick"); say("red box"); pi_link_on_tx_done();
+  pi_rx("OBJ red_box 182 -45 10\n");
+  CHECK(strcmp(screen_line(0), "S2 CONFIRM BOX") == 0, "top 10 -> centre Z 0 is accepted at the boundary");
+  log_capture();
+  say("yes");
+  run_ms(8000);
+  int grasp0 = log_has("move to 182 -45 0 mm");
+  int top10_above50 = log_has("move to 182 -45 50 mm");
+  int top10_lift70 = log_has("move to 182 -45 70 mm");
+  log_release();
+  CHECK(grasp0, "top 10: the grasp face is Z 0 (boundary legal; not a collision-free claim)");
+  CHECK(top10_above50 && top10_lift70, "top 10: approach Z 50 and carry Z 70 from the Z-0 centre");
+  CHECK(strcmp(screen_line(0), "S4 HOLDING") == 0, "top 10 dry-run grasp finishes holding");
 
   printf("\n%d passed, %d failed\n", passes, fails);
   return fails ? 1 : 0;
