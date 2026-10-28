@@ -73,6 +73,9 @@
 #ifndef APP_SPEED_FAST_DEG_S
 #define APP_SPEED_FAST_DEG_S    45.0f
 #endif
+#ifndef APP_RAMP_S
+#define APP_RAMP_S              0.25f /* motion: time to reach full speed (and to stop from it); accel = speed / this */
+#endif
 #ifndef APP_JOG_TIMEOUT_MS
 #define APP_JOG_TIMEOUT_MS      150u  /* a jog velocity not refreshed within this time drops to 0 */
 #endif

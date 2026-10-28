@@ -4,7 +4,16 @@
  * changes them only inside a short critical section, so the isr never sees half of a
  * 6-joint update.
  *
- * TODO(motion): acceleration limit (trapezoid) on top of the speed limit
+ * smoothing (28 Oct 2026, the arm felt slow and jerky):
+ *   - acceleration limit: each joint has a commanded speed s_vel that changes by at most
+ *     accel * DT per tick (accel = speed / APP_RAMP_S), and slows down early enough to stop on
+ *     its target (v <= sqrt(2 * accel * distance)): starts, stops and reversals ramp.
+ *   - synchronised moves: the joint with the largest remaining move runs at the speed limit,
+ *     every other joint at its share (speed and accel scaled by its distance / the largest),
+ *     so the joints of one move start and arrive together.
+ *   - unchanged: the last step snaps exactly onto the target (EVT_MOTION_DONE), the commanded
+ *     angle never leaves the joint limits / J2-J5 coupling, and motion_hold(), the jog timeout
+ *     and a safety freeze stop at once (speed 0, no ramp).
  * TODO(motion): per-joint speed limits if the shoulder needs to be slower than the wrist
  */
 #include "motion/motion.h"
@@ -15,6 +24,7 @@
 #include "common/app_log.h"
 #include "common/app_util.h"
 #include "main.h"
+#include <math.h>
 
 #define DT_S        (1.0f / (float)APP_CONTROL_HZ)
 
@@ -31,6 +41,7 @@
 
 static joint_vec_t       s_cur;                 /* commanded angle now */
 static joint_vec_t       s_tgt;                 /* where the trajectory is heading */
+static float             s_vel[ARM_N_JOINTS];   /* commanded joint speed now, deg/s (isr; hold sets 0) */
 static volatile float    s_jog_v[ARM_N_JOINTS]; /* deg/s, 0 = no jog */
 static volatile uint32_t s_jog_ms[ARM_N_JOINTS];
 static volatile speed_level_t s_speed = SPEED_FINE;
@@ -43,6 +54,8 @@ static const int         BOOT_ORDER[ARM_N_JOINTS] = { J6_GRIPPER, J1_BASE, J2_SH
 static int               s_boot_n;              /* joints that have had their first pulse */
 static uint32_t          s_boot_ms;
 static volatile bool     s_idle = true;
+
+static inline float minf(float a, float b) { return (a < b) ? a : b; }
 
 static inline uint32_t irq_save(void)       { uint32_t p = __get_PRIMASK(); __disable_irq(); return p; }
 static inline void     irq_restore(uint32_t p) { __set_PRIMASK(p); }
@@ -93,6 +106,7 @@ void motion_init(void)
     s_cur.deg[j] = servo_cal(j)->home_deg;
     s_tgt.deg[j] = s_cur.deg[j];
     s_jog_v[j] = 0.0f;
+    s_vel[j] = 0.0f;
   }
   s_started = false;
   s_boot_n = 0;
@@ -119,14 +133,24 @@ void motion_tick(void)
     for (int j = 0; j < ARM_N_JOINTS; j++) {        /* freeze: nothing jumps when allowed again */
       s_tgt.deg[j] = s_cur.deg[j];
       s_jog_v[j] = 0.0f;
+      s_vel[j] = 0.0f;
     }
     s_idle = true;
     return;                                          /* CCRs keep their last value */
   }
 
   uint32_t now = HAL_GetTick();
-  float max_step = speed_deg_s() * DT_S;
+  const float vmax = speed_deg_s();
+  const float acc = vmax / APP_RAMP_S;
   bool idle = true;
+
+  /* synchronisation: the largest remaining move sets the pace (measured before this tick's clamps
+   * and jogs: a share is only a speed scale, the limits below do not depend on it) */
+  float max_err = 0.0f;
+  for (int j = 0; j < ARM_N_JOINTS; j++) {
+    float e = absf(s_tgt.deg[j] - s_cur.deg[j]);
+    if (e > max_err) max_err = e;
+  }
 
   for (int j = 0; j < ARM_N_JOINTS; j++) {
     /* Re-clamp the stored target every tick. J2 is processed before J5, so the
@@ -136,8 +160,9 @@ void motion_tick(void)
     float v = s_jog_v[j];
     if (v != 0.0f) {
       if (ms_since(now, s_jog_ms[j]) > APP_JOG_TIMEOUT_MS) {
-        s_jog_v[j] = 0.0f;                          /* jog not refreshed: stop */
+        s_jog_v[j] = 0.0f;                          /* jog not refreshed: stop at once */
         s_tgt.deg[j] = s_cur.deg[j];
+        s_vel[j] = 0.0f;
       } else {
         s_tgt.deg[j] = clamp_joint(j, s_tgt.deg[j] + v * DT_S, &s_cur, NULL);
         idle = false;
@@ -145,13 +170,28 @@ void motion_tick(void)
     }
 
     float err = s_tgt.deg[j] - s_cur.deg[j];
-    float step = clampf(err, -max_step, max_step);
-    if (step != 0.0f && absf(err) <= max_step) {
+    float share = (max_err > 1e-6f) ? clampf(absf(err) / max_err, 0.05f, 1.0f) : 1.0f;
+    float vlim = vmax * share, alim = acc * share;
+    /* the speed this joint wants: towards the target, never faster than it can still stop. with a speed
+     * change of alim * DT per tick, stopping from v covers v^2 / (2 alim) + v * DT / 2 */
+    float h = 0.5f * alim * DT_S;
+    float vstop = sqrtf(h * h + 2.0f * alim * absf(err)) - h;
+    float vdes = (err > 0.0f) ? minf(vlim, vstop) : (err < 0.0f) ? -minf(vlim, vstop) : 0.0f;
+    float vel = s_vel[j] + clampf(vdes - s_vel[j], -alim * DT_S, alim * DT_S);   /* accel limit */
+    float step = vel * DT_S;
+    if (err != 0.0f && ((err > 0.0f && step >= err) || (err < 0.0f && step <= err))) {
       s_cur.deg[j] = s_tgt.deg[j];                  /* last step lands exactly on the target */
+      vel = 0.0f;
+    } else if (err == 0.0f && absf(vel) < alim * DT_S * 1.01f) {
+      vel = 0.0f;                                   /* at the target and slow enough: rest */
     } else {
-      s_cur.deg[j] += step;
+      bool clamped = false;
+      s_cur.deg[j] = clamp_joint(j, s_cur.deg[j] + step, &s_cur, &clamped);   /* a reversal may coast past
+                                                     * the old target: never past a limit / the coupling */
+      if (clamped) vel = 0.0f;
     }
-    if (s_cur.deg[j] != s_tgt.deg[j]) idle = false;   /* exact: the last step snaps onto the target */
+    s_vel[j] = vel;
+    if (s_cur.deg[j] != s_tgt.deg[j] || vel != 0.0f) idle = false;   /* exact: the last step snaps onto the target */
 
     servo_write_deg(j, s_cur.deg[j]);
   }
@@ -226,6 +266,7 @@ void motion_hold(void)
   for (int j = 0; j < ARM_N_JOINTS; j++) {
     s_jog_v[j] = 0.0f;
     s_tgt.deg[j] = s_cur.deg[j];
+    s_vel[j] = 0.0f;                                /* stop at once, no ramp: "stop" means stop */
   }
   irq_restore(p);
 }
@@ -236,6 +277,7 @@ void motion_hold_joint(int joint)
   uint32_t p = irq_save();
   s_jog_v[joint] = 0.0f;
   s_tgt.deg[joint] = s_cur.deg[joint];
+  s_vel[joint] = 0.0f;
   irq_restore(p);
 }
 

@@ -780,7 +780,61 @@ int main(void)
   printf("== manual motion: no hold-to-enable any more\n");
   motion_set_joint_target(J1_BASE, 100.0f);
   run_ms(500);
-  CHECK(cur(0) > 89.5f && cur(0) < 90.5f, "fine speed 10 deg/s: ~5 deg in 0.5 s");
+  /* 0.25 s ramp to 10 deg/s (1.25 deg), then 0.25 s at 10 deg/s (2.5 deg): ~3.75 deg in 0.5 s */
+  CHECK(cur(0) > 88.25f && cur(0) < 89.25f, "fine speed 10 deg/s after a 0.25 s ramp: ~3.75 deg in 0.5 s");
+  run_ms(1500);
+  CHECK(cur(0) == 100.0f && motion_is_idle(), "ramps down and stops exactly on the target");
+
+  printf("== motion: synchronised joints, acceleration ramp, smooth reversal, hold stops at once\n");
+  {
+    joint_vec_t t;
+    motion_get_current(&t);
+    float j1_0 = t.deg[J1_BASE], j3_0 = t.deg[J3_ELBOW];
+    t.deg[J1_BASE] -= 20.0f;                         /* J1 20 deg, J3 5 deg in one move */
+    t.deg[J3_ELBOW] -= 5.0f;
+    CHECK(motion_set_target_exact(&t) == MOTION_OK, "two-joint move accepted");
+    int in_step = 1, first_ok = 0, t1 = -1, t3 = -1;
+    float prev = 0.0f, max_jerk = 0.0f;
+    for (int i = 0; i < 250; i++) {
+      run_ms(20);
+      float d1 = j1_0 - cur(J1_BASE), d3 = j3_0 - cur(J3_ELBOW);
+      if (i == 4) first_ok = d1 < 0.6f;                /* 100 ms: still ramping (full speed = 1 deg) */
+      if (d1 > 0.5f && d1 < 19.5f && fabsf(4.0f * d3 - d1) > 0.6f) in_step = 0;
+      if (t1 < 0 && d1 == 20.0f) t1 = i;
+      if (t3 < 0 && d3 == 5.0f) t3 = i;
+      float step = d1 - prev;
+      prev = d1;
+      (void)step;
+    }
+    CHECK(first_ok, "starts with a ramp, not at full speed");
+    CHECK(in_step, "J3 moves in step with J1 (a quarter of J1's move all the way)");
+    CHECK(t1 >= 0 && t3 >= 0 && abs(t1 - t3) <= 1, "both joints arrive together");
+
+    /* reversal: going +, the target jumps behind: speed changes sign gradually */
+    float p0 = cur(J1_BASE), last = p0, last_step = 0.0f;
+    motion_set_joint_target(J1_BASE, p0 + 15.0f);
+    run_ms(600);
+    motion_set_joint_target(J1_BASE, p0 - 5.0f);
+    last = cur(J1_BASE);
+    last_step = 0.2f;                                /* moving + at 10 deg/s = 0.2 deg per tick */
+    for (int i = 0; i < 200; i++) {
+      run_ms(20);
+      float s = cur(J1_BASE) - last;
+      if (fabsf(s - last_step) > max_jerk) max_jerk = fabsf(s - last_step);
+      last_step = s;
+      last = cur(J1_BASE);
+    }
+    CHECK(max_jerk < 0.02f, "reversal: the step per tick changes by at most accel * dt^2 (no jump)");
+    CHECK(cur(J1_BASE) == p0 - 5.0f, "and ends exactly on the new target");
+
+    motion_set_joint_target(J1_BASE, p0 + 10.0f);
+    run_ms(500);
+    motion_hold();
+    float at = cur(J1_BASE);
+    run_ms(200);
+    CHECK(cur(J1_BASE) == at, "motion_hold stops at once (no coasting)");
+    (void)prev;
+  }
 
   printf("== jog timeout: a stale jog stops by itself\n");
   motion_jog(J2_SHOULDER, 10.0f);                  /* sent once, never refreshed */
@@ -830,7 +884,7 @@ int main(void)
 
   printf("== scripts: home, stop while moving, recovery from S10\n");
   motion_set_joint_target(J1_BASE, 60.0f); run_ms(20);   /* move away from home first */
-  run_ms(4000);
+  run_ms(6000);
   CHECK(cur(0) == 60.0f, "voice mode moves to a set target");
   say("home");
   CHECK(strcmp(screen_line(0), "S11 CONFIRM HOME") == 0, "home from S0 asks first");

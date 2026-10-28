@@ -38,7 +38,7 @@ gcc -std=gnu11 -O1 -g -Wall -Wextra -Wshadow -Wno-unused-parameter \
   -DAPP_USE_SERVO_CAL_TEST=1 -DAPP_USE_MOTION=1 -DAPP_USE_MODES=0 -DAPP_USE_LCD=0 -DAPP_USE_INPUT=1 \
   -I"$HERE/fake" -I"$A" -o "$T/test_servo_cal" "$HERE/test_servo_cal.c" "$A/servo_cal_test/servo_cal_test.c" \
   "$A/common/app_events.c" "$A/common/app_fault.c" "$A/safety/safety.c" \
-  "$A/motion/motion.c" "$A/motion/servo.c" "$A/motion/servo_cal.c" "$HERE/fake/lcd_port_fake.c"
+  "$A/motion/motion.c" "$A/motion/servo.c" "$A/motion/servo_cal.c" "$HERE/fake/lcd_port_fake.c" -lm
 # same app test with IK activated (test only): the IK callers (voice pitch search, refusals, cartesian)
 gcc -std=gnu11 -O1 -g -Wall -Wextra -Wshadow -Wno-unused-parameter \
   -DAPP_USE_INPUT=0 -DAPP_USE_VOICE=1 -DAPP_USE_PI=1 -DAPP_USE_LCD=1 -DAPP_USE_MODES=1 \
