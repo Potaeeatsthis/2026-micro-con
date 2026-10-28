@@ -3,6 +3,8 @@
 # plus test_pi_proto.c for the pi line parser (pi_link/pi_proto.c, pure code),
 # plus test_app.c again as a voice dry run (voice "hand" and "station" end to end; ik is not measured yet).
 # plus test_servo_cal.c for the bench limit screen (App/servo_cal_test/).
+# plus test_app.c with IK activated for the test only (APP_TEST_IK): the IK callers in voice / cartesian.
+# plus test_ik_bench.c for the one supervised IK move (App/ik_bench_test/), IK guard still 0.
 # the screen logic (lcd.c) is tested; the real lcd_port.c talks to the ILI9341 driver (HAL), so a fake
 # in fake/lcd_port_fake.c stands in for it here.
 # needs gcc on a pc (linux, mac, or git-bash/msys2 on windows). run from anywhere:
@@ -34,6 +36,22 @@ gcc -std=gnu11 -O1 -g -Wall -Wextra -Wshadow -Wno-unused-parameter \
   -I"$HERE/fake" -I"$A" -o "$T/test_servo_cal" "$HERE/test_servo_cal.c" "$A/servo_cal_test/servo_cal_test.c" \
   "$A/common/app_events.c" "$A/common/app_fault.c" "$A/safety/safety.c" \
   "$A/motion/motion.c" "$A/motion/servo.c" "$A/motion/servo_cal.c" "$HERE/fake/lcd_port_fake.c"
+# same app test with IK activated (test only): the IK callers (voice pitch search, refusals, cartesian)
+gcc -std=gnu11 -O1 -g -Wall -Wextra -Wshadow -Wno-unused-parameter \
+  -DAPP_USE_INPUT=0 -DAPP_USE_VOICE=1 -DAPP_USE_PI=1 -DAPP_USE_LCD=1 -DAPP_USE_MODES=1 \
+  -DARM_GEOMETRY_MEASURED=1 -DAPP_TEST_IK=1 \
+  -I"$HERE/fake" -I"$A" -o "$T/test_app_ik" "$HERE/test_app.c" \
+  "$A/common/app_events.c" "$A/common/app_fault.c" "$A/safety/safety.c" \
+  "$A/motion/motion.c" "$A/motion/servo.c" "$A/motion/servo_cal.c" "$A/kinematics/kinematics.c" \
+  "$A"/modes/*.c "$A/lcd/lcd.c" "$HERE/fake/lcd_port_fake.c" "$A/pi_link/pi_proto.c" -lm
+# the IK bench screen: motion on, modes and lcd.c off, ARM_GEOMETRY_MEASURED left at 0
+gcc -std=gnu11 -O1 -g -Wall -Wextra -Werror -Wshadow -Wno-unused-parameter \
+  -DAPP_USE_IK_BENCH_TEST=1 -DAPP_USE_MOTION=1 -DAPP_USE_MODES=0 -DAPP_USE_LCD=0 -DAPP_USE_INPUT=1 \
+  -DAPP_USE_KINEMATICS=1 \
+  -I"$HERE/fake" -I"$A" -o "$T/test_ik_bench" "$HERE/test_ik_bench.c" "$A/ik_bench_test/ik_bench_test.c" \
+  "$A/common/app_events.c" "$A/common/app_fault.c" "$A/safety/safety.c" \
+  "$A/motion/motion.c" "$A/motion/servo.c" "$A/motion/servo_cal.c" "$A/kinematics/kinematics.c" \
+  "$HERE/fake/lcd_port_fake.c" -lm
 # kinematics: the default build has FK on and IK fail-closed; the second build enables IK for the test only.
 gcc -std=gnu11 -O1 -g -Wall -Wextra -Werror -Wshadow -Wno-unused-parameter \
   -I"$A" -o "$T/test_kinematics_failclosed" "$HERE/test_kinematics.c" \
@@ -51,9 +69,15 @@ grep -E "^==|FAIL|passed" "$T/test_pi_proto.log"
 rc3=0
 "$T/test_app_dry" > "$T/test_app_dry.log" || rc3=$?
 grep -E "^==|FAIL|passed" "$T/test_app_dry.log"
+rc8=0
+"$T/test_app_ik" > "$T/test_app_ik.log" || rc8=$?
+grep -E "^==|FAIL|passed" "$T/test_app_ik.log"
 rc4=0
 "$T/test_servo_cal" > "$T/test_servo_cal.log" || rc4=$?
 grep -E "^==|FAIL|passed" "$T/test_servo_cal.log"
+rc7=0
+"$T/test_ik_bench" > "$T/test_ik_bench.log" || rc7=$?
+grep -E "^==|FAIL|passed" "$T/test_ik_bench.log"
 rc5=0
 "$T/test_kinematics_failclosed" > "$T/test_kinematics_failclosed.log" || rc5=$?
 grep -E "^==|FAIL|passed" "$T/test_kinematics_failclosed.log"
@@ -65,4 +89,6 @@ grep -E "^==|FAIL|passed" "$T/test_kinematics.log"
 [ $rc3 -ne 0 ] && exit $rc3
 [ $rc4 -ne 0 ] && exit $rc4
 [ $rc5 -ne 0 ] && exit $rc5
+[ $rc7 -ne 0 ] && exit $rc7
+[ $rc8 -ne 0 ] && exit $rc8
 exit $rc6

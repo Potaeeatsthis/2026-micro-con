@@ -49,6 +49,7 @@ HAL_StatusTypeDef HAL_UART_AbortReceive(UART_HandleTypeDef *h) { (void)h; return
 
 /* voice stubs over the real generated class order (App/voice/kws_classes.h) */
 #include "voice/kws_classes.h"
+#include <math.h>
 int voice_class_id(const char *n) { for (int i = 0; i < N_CLASSES; i++) if (!strcmp(CLASS_NAMES[i], n)) return i; return -1; }
 const char *voice_class_name(int id) { return (id >= 0 && id < N_CLASSES) ? CLASS_NAMES[id] : "?"; }
 int voice_last_word(void) { return -1; }
@@ -184,9 +185,8 @@ static void check_joint_clamp(int joint, float min_deg, float max_deg)
         tgt(joint) == max_deg, msg);
 }
 
-#if APP_VOICE_DRY_RUN
-/* second build (run.sh, -DAPP_VOICE_DRY_RUN=1): ik is not measured yet, so only a dry run can
- * reach S4 HOLDING and walk "hand" and "station" end to end. moves are read back from the dry-run log. */
+#if APP_VOICE_DRY_RUN || APP_TEST_IK
+/* stdout (LOG) captured into a temp file, for the dry-run and the ik builds */
 static FILE *g_log;
 static int   g_saved_stdout = -1;
 static void log_capture(void)
@@ -210,6 +210,80 @@ static void log_release(void)
   if (!g_log) return;
   fflush(stdout); dup2(g_saved_stdout, 1); close(g_saved_stdout); fclose(g_log); g_log = NULL;
 }
+#endif
+
+#if APP_TEST_IK
+/* third build (run.sh, -DARM_GEOMETRY_MEASURED=1 -DAPP_TEST_IK=1): the IK callers with IK activated, which
+ * firmware does not do yet. voice grasp searches one pitch for the whole script; a target no pitch
+ * reaches is refused before anything moves; cartesian keeps its last good pose at a joint limit. */
+static int same_pose(const joint_vec_t *a, const joint_vec_t *b)
+{
+  for (int j = 0; j < ARM_N_JOINTS; j++) if (fabsf(a->deg[j] - b->deg[j]) > 0.001f) return 0;
+  return 1;
+}
+
+static int ik_callers(void)
+{
+  joint_vec_t t0, t1, now;
+  cart_pose_t est;
+  motion_init(); pi_link_init(); lcd_init(); modes_init();
+  run_ms(BOOT_MS);
+
+  printf("== ik build (test only): voice refuses a box no pitch reaches, before anything moves\n");
+  CHECK(kin_ik_enabled(), "this build activates IK (host test only, firmware stays 0)");
+  say("pick"); say("red box"); pi_link_on_tx_done();
+  pi_rx("OBJ red_box 182 -45 30\n");
+  CHECK(strcmp(screen_line(0), "S2 CONFIRM BOX") == 0, "OBJ -> S2");
+  motion_get_target(&t0);
+  say("yes");
+  run_ms(500);
+  motion_get_target(&t1);
+  CHECK(strcmp(screen_line(0), "S2 CONFIRM BOX") == 0, "182 -45 30: no pitch 180..120 solves it, stays S2");
+  CHECK(same_pose(&t0, &t1), "nothing moved, the gripper did not open");
+  say("stop");
+
+  printf("== ik build: voice grasp uses the first pitch (180 -> 120) that solves every pose\n");
+  say("pick"); say("red box"); pi_link_on_tx_done();
+  pi_rx("OBJ red_box 240 0 30\n");
+  log_capture();
+  CHECK(g_log != NULL, "log capture works (tmpfile)");
+  say("yes");
+  int grasping = strcmp(screen_line(0), "S3 GRASPING") == 0;
+  run_ms(15000);
+  int p160 = log_has("voice-mode: pitch 160 deg");
+  int p_other = log_has("voice-mode: pitch 180 deg") || log_has("voice-mode: pitch 170 deg");
+  log_release();
+  CHECK(grasping, "yes -> S3 grasping");
+  CHECK(p160 && !p_other, "180 and 170 do not fit above + box, 160 does: one pitch for the script");
+  CHECK(strcmp(screen_line(0), "S4 HOLDING") == 0, "grasp finished -> S4 holding");
+  motion_get_current(&now);
+  CHECK(kin_fk(&now, &est) == KIN_OK && fabsf(est.x_mm - 240.0f) < 0.5f && fabsf(est.y_mm) < 0.5f &&
+        fabsf(est.z_mm - 80.0f) < 0.5f && fabsf(est.pitch_deg - 160.0f) < 0.5f, "ends above the box (z + 50) at pitch 160");
+
+  printf("== ik build: cartesian keeps its last good pose at a joint limit\n");
+  modes_request(MODE_CARTESIAN); run_ms(100);
+  CHECK(modes_current() == MODE_CARTESIAN, "cartesian on");
+  CHECK(strcmp(screen_line(2), "Z: 79 mm") == 0 || strcmp(screen_line(2), "Z: 80 mm") == 0,
+        "starts from the FK pose (z 80, shown truncated)");
+  app_event_post(EVT_ENC_STEP, 0, -1, 0, 0); run_ms(2000);
+  motion_get_current(&now);
+  CHECK(kin_fk(&now, &est) == KIN_OK && fabsf(est.z_mm - 75.0f) < 0.5f, "knob -1 -> 5 mm down");
+  char z_line[LCD_COLS];
+  snprintf(z_line, sizeof z_line, "%s", screen_line(2));
+  motion_get_target(&t0);
+  app_event_post(EVT_ENC_STEP, 0, 10, 0, 0); run_ms(500);       /* z 125: past the reach at pitch 160 */
+  motion_get_target(&t1);
+  CHECK(strcmp(screen_line(2), z_line) == 0, "refused: the pose stays the last good one");
+  CHECK(same_pose(&t0, &t1), "and the arm does not move");
+
+  printf("\n%d passed, %d failed\n", passes, fails);
+  return fails ? 1 : 0;
+}
+#endif
+
+#if APP_VOICE_DRY_RUN
+/* second build (run.sh, -DAPP_VOICE_DRY_RUN=1): ik is not measured yet, so only a dry run can
+ * reach S4 HOLDING and walk "hand" and "station" end to end. moves are read back from the dry-run log. */
 static uint32_t word_bit(const char *w) { return 1u << voice_class_id(w); }
 
 static int voice_hand_dry_run(void)
@@ -310,6 +384,9 @@ int main(void)
 {
 #if APP_VOICE_DRY_RUN
   return voice_hand_dry_run();
+#endif
+#if APP_TEST_IK
+  return ik_callers();
 #endif
   printf("== event queue\n");
   app_events_init();
