@@ -66,6 +66,10 @@
 #define APP_LOOP_WARN_US        100000u /* one main-loop pass longer than this loses audio */
 #endif
 
+#ifndef APP_TIMING_LOG
+#define APP_TIMING_LOG          0     /* 1 (local config) = every 2 s on USART3: max us of voice, modes (IK) and lcd per pass */
+#endif
+
 /* ---------------------------------------------------------------- motion */
 #ifndef APP_SPEED_FINE_DEG_S
 #define APP_SPEED_FINE_DEG_S    10.0f

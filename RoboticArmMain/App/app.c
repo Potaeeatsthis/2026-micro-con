@@ -46,6 +46,14 @@
 #endif
 
 static uint32_t s_loop_max_us;
+#if APP_TIMING_LOG
+/* APP_TIMING_LOG: the slowest pass of each step since the last report (us), printed every 2 s */
+static uint32_t s_t_voice_us, s_t_modes_us, s_t_lcd_us, s_t_loop_us, s_t_report_ms;
+#define TIMED(var, call) do { uint32_t t_ = timing_cycles(); call; uint32_t us_ = timing_us_since(t_); \
+                              if (us_ > (var)) (var) = us_; } while (0)
+#else
+#define TIMED(var, call) call
+#endif
 static uint32_t s_last_overrun_log_ms;
 static uint32_t s_last_beat_ms;
 
@@ -117,7 +125,7 @@ void app_loop(void)
   input_step();
 #endif
 #if APP_USE_VOICE
-  voice_step();
+  TIMED(s_t_voice_us, voice_step());
 #endif
 #if APP_USE_PI
   pi_link_step();
@@ -130,12 +138,12 @@ void app_loop(void)
   ik_bench_test_step();                           /* same: knob / stick events before the drain */
 #endif
 #if APP_USE_MODES
-  modes_step();                                   /* the only event consumer */
+  TIMED(s_t_modes_us, modes_step());              /* the only event consumer (cartesian / voice IK runs here) */
 #else
   app_events_drain();
 #endif
 #if APP_USE_LCD
-  lcd_step();                                     /* last: draws the state everyone just updated */
+  TIMED(s_t_lcd_us, lcd_step());                  /* last: draws the state everyone just updated */
 #endif
 
   app_fault_report();
@@ -148,6 +156,16 @@ void app_loop(void)
 
   uint32_t us = timing_us_since(t0);
   if (us > s_loop_max_us) s_loop_max_us = us;
+#if APP_TIMING_LOG
+  if (us > s_t_loop_us) s_t_loop_us = us;
+  if (now - s_t_report_ms >= 2000u) {
+    s_t_report_ms = now;
+    LOG("timing: max us per pass in 2 s: voice %lu, modes %lu, lcd %lu, whole loop %lu\r\n",
+        (unsigned long)s_t_voice_us, (unsigned long)s_t_modes_us, (unsigned long)s_t_lcd_us,
+        (unsigned long)s_t_loop_us);
+    s_t_voice_us = s_t_modes_us = s_t_lcd_us = s_t_loop_us = 0u;
+  }
+#endif
   if (us > APP_LOOP_WARN_US && now - s_last_overrun_log_ms > 1000u) {
     s_last_overrun_log_ms = now;
     app_fault_raise(FAULT_LOOP_OVERRUN, false);
